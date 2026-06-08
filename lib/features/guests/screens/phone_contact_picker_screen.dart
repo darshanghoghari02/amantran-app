@@ -4,6 +4,7 @@ import 'package:flutter_contacts/flutter_contacts.dart';
 import '../data/models/guest_model.dart';
 import '../data/repositories/guest_repository.dart';
 import '../data/services/contact_service.dart';
+import '../../../widgets/top_notification.dart';
 
 class PhoneContactPickerScreen extends StatefulWidget {
   const PhoneContactPickerScreen({super.key});
@@ -112,7 +113,7 @@ class _PhoneContactPickerScreenState extends State<PhoneContactPickerScreen> {
   }
 
   void _show(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    TopNotification.show(context, message: msg);
   }
 
   // ------------------------------------------------------------

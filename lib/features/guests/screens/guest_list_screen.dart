@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../data/models/guest_model.dart';
 import '../data/repositories/guest_repository.dart';
 import '../data/services/contact_service.dart';
+import '../../../widgets/top_notification.dart';
 
 import 'file_import_screen.dart';
 import 'export_sheet.dart';
@@ -58,9 +59,7 @@ class _GuestListScreenState extends State<GuestListScreen> {
 
     await repo.addAll(list);
 
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text("Imported ${list.length} contacts")),
-    );
+    TopNotification.show(context, message: "Imported ${list.length} contacts");
 
     _load();
   }

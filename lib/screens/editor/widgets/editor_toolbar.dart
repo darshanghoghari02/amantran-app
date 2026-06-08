@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 import '../../../models/template_element.dart';
 
 /// Bottom toolbar for the editor canvas.
@@ -78,14 +79,26 @@ class _EditorToolbarState extends State<EditorToolbar>
     Color(0xFF8D6E63), // Brown 400
   ];
 
-  // 🔤 GUJARATI-COMPATIBLE FONTS (BUNDLED LOCALLY)
+  // 🔤 PREMIUM TRADITIONAL & MODERN FONTS FOR WEDDING/ENGAGEMENT CARDS
   static const List<String> _fonts = [
-    'KAP011',
-    'Noto Serif Gujarati',
+    'Mogra',
+    'Poppins',
     'Hind Vadodara',
+    'Great Vibes',
+    'Playfair Display',
+    'Mukta Vaani',
+    'Noto Serif Gujarati',
     'Rasa',
     'Shrikhand',
     'Farsan',
+    'Baloo Bhai 2',
+    'Yatra One',
+    'Rozha One',
+    'KAP011',
+    'Dancing Script',
+    'Parisienne',
+    'Allura',
+    'Sacramento',
   ];
 
   @override
@@ -138,7 +151,8 @@ class _EditorToolbarState extends State<EditorToolbar>
             unselectedLabelColor: Colors.grey,
             indicatorColor: Colors.red.shade700,
             indicatorSize: TabBarIndicatorSize.label,
-            labelStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+            labelStyle:
+                const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
             tabs: const [
               Tab(icon: Icon(Icons.palette, size: 18), text: "Color"),
               Tab(icon: Icon(Icons.text_fields, size: 18), text: "Font"),
@@ -196,7 +210,8 @@ class _EditorToolbarState extends State<EditorToolbar>
                   ? Icon(
                       Icons.check,
                       size: 14,
-                      color: color == Colors.white ? Colors.black : Colors.white,
+                      color:
+                          color == Colors.white ? Colors.black : Colors.white,
                     )
                   : null,
             ),
@@ -224,13 +239,42 @@ class _EditorToolbarState extends State<EditorToolbar>
                 final font = _fonts[index];
                 final isActive = element.fontFamily == font;
 
+                TextStyle getFontPreviewStyle(String fontFamily, Color color) {
+                  final baseStyle = TextStyle(
+                    fontSize: 12,
+                    color: color,
+                    fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
+                  );
+                  if (fontFamily == 'KAP011') {
+                    return baseStyle.copyWith(fontFamily: 'KAP011');
+                  }
+                  try {
+                    return GoogleFonts.getFont(fontFamily, textStyle: baseStyle);
+                  } catch (e) {
+                    return baseStyle.copyWith(fontFamily: fontFamily);
+                  }
+                }
+
                 return Padding(
                   padding: const EdgeInsets.only(right: 8),
                   child: ChoiceChip(
-                    label: Text(font, style: const TextStyle(fontSize: 11)),
+                    label: Text(
+                      font,
+                      style: getFontPreviewStyle(
+                          font, isActive ? Colors.red.shade900 : Colors.black87),
+                    ),
                     selected: isActive,
                     selectedColor: Colors.red.shade100,
+                    backgroundColor: Colors.grey.shade50,
+                    checkmarkColor: Colors.red.shade900,
+                    showCheckmark: false,
                     onSelected: (_) => widget.onFontFamilyChanged(font),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                      side: BorderSide(
+                        color: isActive ? Colors.red.shade400 : Colors.grey.shade200,
+                      ),
+                    ),
                   ),
                 );
               },
@@ -244,7 +288,8 @@ class _EditorToolbarState extends State<EditorToolbar>
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               _alignButton(Icons.format_align_left, TextAlign.left, element),
-              _alignButton(Icons.format_align_center, TextAlign.center, element),
+              _alignButton(
+                  Icons.format_align_center, TextAlign.center, element),
               _alignButton(Icons.format_align_right, TextAlign.right, element),
               const SizedBox(width: 16),
               IconButton(
@@ -326,11 +371,14 @@ class _EditorToolbarState extends State<EditorToolbar>
             children: [
               const SizedBox(
                 width: 30,
-                child: Text("W", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                child: Text("W",
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
               ),
               IconButton(
                 icon: const Icon(Icons.remove_circle_outline, size: 20),
-                onPressed: () => widget.onSizeChanged((element.width - 5).clamp(30.0, 800.0), element.height),
+                onPressed: () => widget.onSizeChanged(
+                    (element.width - 5).clamp(30.0, 800.0), element.height),
               ),
               Expanded(
                 child: Slider(
@@ -347,11 +395,13 @@ class _EditorToolbarState extends State<EditorToolbar>
               ),
               IconButton(
                 icon: const Icon(Icons.add_circle_outline, size: 20),
-                onPressed: () => widget.onSizeChanged((element.width + 5).clamp(30.0, 800.0), element.height),
+                onPressed: () => widget.onSizeChanged(
+                    (element.width + 5).clamp(30.0, 800.0), element.height),
               ),
               SizedBox(
                 width: 35,
-                child: Text("${element.width.toInt()}", style: const TextStyle(fontSize: 11)),
+                child: Text("${element.width.toInt()}",
+                    style: const TextStyle(fontSize: 11)),
               ),
             ],
           ),
@@ -361,11 +411,14 @@ class _EditorToolbarState extends State<EditorToolbar>
             children: [
               const SizedBox(
                 width: 30,
-                child: Text("H", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                child: Text("H",
+                    style:
+                        TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
               ),
               IconButton(
                 icon: const Icon(Icons.remove_circle_outline, size: 20),
-                onPressed: () => widget.onSizeChanged(element.width, (element.height - 5).clamp(20.0, 800.0)),
+                onPressed: () => widget.onSizeChanged(
+                    element.width, (element.height - 5).clamp(20.0, 800.0)),
               ),
               Expanded(
                 child: Slider(
@@ -382,11 +435,13 @@ class _EditorToolbarState extends State<EditorToolbar>
               ),
               IconButton(
                 icon: const Icon(Icons.add_circle_outline, size: 20),
-                onPressed: () => widget.onSizeChanged(element.width, (element.height + 5).clamp(20.0, 800.0)),
+                onPressed: () => widget.onSizeChanged(
+                    element.width, (element.height + 5).clamp(20.0, 800.0)),
               ),
               SizedBox(
                 width: 35,
-                child: Text("${element.height.toInt()}", style: const TextStyle(fontSize: 11)),
+                child: Text("${element.height.toInt()}",
+                    style: const TextStyle(fontSize: 11)),
               ),
             ],
           ),

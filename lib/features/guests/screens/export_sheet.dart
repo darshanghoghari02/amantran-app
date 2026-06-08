@@ -6,6 +6,7 @@ import '../data/models/guest_model.dart';
 import '../data/services/csv_service.dart';
 import '../data/services/vcf_service.dart';
 import '../data/services/pdf_export_service.dart';
+import '../../../widgets/top_notification.dart';
 
 class ExportSheet extends StatefulWidget {
   final List<GuestModel> guests;
@@ -34,9 +35,7 @@ class _ExportSheetState extends State<ExportSheet> {
   }
 
   void _showMessage(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg)),
-    );
+    TopNotification.show(context, message: msg);
   }
 
   // ------------------------------------------------------------

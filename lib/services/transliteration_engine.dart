@@ -15,6 +15,54 @@ class TransliterationEngine {
 
   final Map<String, String> _cache = {};
 
+  Future<String> translateAsync(String text, String targetLang) async {
+    if (text.isEmpty) return '';
+    
+    final String targetCode = _getIsoCode(targetLang);
+    final cacheKey = 'trans_${targetCode}_$text';
+    if (_cache.containsKey(cacheKey)) return _cache[cacheKey]!;
+
+    try {
+      final url = Uri.parse(
+          'https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=$targetCode&dt=t&q=${Uri.encodeComponent(text)}');
+      final res = await http.get(url).timeout(const Duration(seconds: 3));
+      if (res.statusCode == 200) {
+        final List<dynamic> data = json.decode(res.body);
+        if (data.isNotEmpty && data[0] is List) {
+          final StringBuffer sb = StringBuffer();
+          for (var part in data[0]) {
+            if (part is List && part.isNotEmpty) {
+              sb.write(part[0]);
+            }
+          }
+          final result = sb.toString();
+          if (result.isNotEmpty) {
+            _cache[cacheKey] = result;
+            return result;
+          }
+        }
+      }
+    } catch (e) {
+      print("Translation error: $e");
+    }
+    
+    // Fallback to phonetic transliteration if translation fails
+    return transliterateAsync(text, lang: targetLang);
+  }
+
+  String _getIsoCode(String lang) {
+    switch (lang.toLowerCase()) {
+      case 'english': return 'en';
+      case 'gujarati': return 'gu';
+      case 'hindi': return 'hi';
+      case 'marathi': return 'mr';
+      case 'punjabi': return 'pa';
+      case 'urdu': return 'ur';
+      case 'tamil': return 'ta';
+      default: return 'gu';
+    }
+  }
+
   static const Map<String, String> _dictionary = {
     // Surnames
     'patel': 'પટેલ', 'shah': 'શાહ', 'modi': 'મોદી', 'desai': 'દેસાઈ',
@@ -84,24 +132,38 @@ class TransliterationEngine {
   };
 
   /// Main transliteration (Synchronous)
-  String transliterate(String input) {
+  String transliterate(String input, {String lang = 'Gujarati'}) {
     if (input.isEmpty) return '';
     final words = input.split(' ');
-    return words.map(_transliterateWordSync).join(' ');
+    return words.map((w) => _transliterateWordSync(w, lang)).join(' ');
   }
 
   /// Async transliteration (Google API)
-  Future<String> transliterateAsync(String input) async {
+  Future<String> transliterateAsync(String input, {String lang = 'Gujarati'}) async {
     if (input.isEmpty) return '';
+
+    // 🔥 OPTIMIZATION: For non-Gujarati languages, transliterate the entire string in one single request!
+    if (lang != 'Gujarati') {
+      final cacheKey = '${lang}_$input';
+      if (_cache.containsKey(cacheKey)) return _cache[cacheKey]!;
+
+      final apiResult = await _googleTransliterate(input, lang);
+      if (apiResult != null && apiResult.isNotEmpty) {
+        _cache[cacheKey] = apiResult;
+        return apiResult;
+      }
+      return input; // Fallback to original text if API fails
+    }
+
     final words = input.split(' ');
     final results = <String>[];
     for (final word in words) {
-      results.add(await _transliterateWordAsync(word));
+      results.add(await _transliterateWordAsync(word, lang));
     }
     return results.join(' ');
   }
 
-  String _transliterateWordSync(String word) {
+  String _transliterateWordSync(String word, String lang) {
     if (word.isEmpty) return '';
     final pb = _leadingPunct(word);
     if (pb.length == word.length) return word;
@@ -116,19 +178,28 @@ class TransliterationEngine {
     if (clean.isEmpty) return word;
 
     final lower = clean.toLowerCase();
-    if (_cache.containsKey(lower)) return '$pb${_cache[lower]}$pa';
-    if (_dictionary.containsKey(lower)) return '$pb${_dictionary[lower]}$pa';
+    final cacheKey = '${lang}_$lower';
+    if (_cache.containsKey(cacheKey)) return '$pb${_cache[cacheKey]}$pa';
+    
+    // Dictionary is only for Gujarati for now
+    if (lang == 'Gujarati' && _dictionary.containsKey(lower)) {
+      return '$pb${_dictionary[lower]}$pa';
+    }
 
-    return '$pb${_phoneticTransliterate(clean)}$pa';
+    // Default to phonetic only for Gujarati for now
+    if (lang == 'Gujarati') {
+      return '$pb${_phoneticTransliterate(clean)}$pa';
+    }
+    
+    return word; // For other languages, we rely on async API
   }
 
-  Future<String> _transliterateWordAsync(String word) async {
+  Future<String> _transliterateWordAsync(String word, String lang) async {
     if (word.isEmpty) return '';
     final pb = _leadingPunct(word);
-    if (pb.length == word.length) return word; // All punct
+    if (pb.length == word.length) return word;
 
     final pa = _trailingPunct(word);
-    // Ensure we don't overlap if word is mostly punct
     final end = word.length - pa.length;
     final start = pb.length;
 
@@ -138,33 +209,44 @@ class TransliterationEngine {
     if (clean.isEmpty) return word;
 
     final lower = clean.toLowerCase();
-    if (_cache.containsKey(lower)) return '$pb${_cache[lower]}$pa';
-    if (_dictionary.containsKey(lower)) return '$pb${_dictionary[lower]}$pa';
+    final cacheKey = '${lang}_$lower';
+    if (_cache.containsKey(cacheKey)) return '$pb${_cache[cacheKey]}$pa';
+    
+    if (lang == 'Gujarati' && _dictionary.containsKey(lower)) {
+      return '$pb${_dictionary[lower]}$pa';
+    }
 
-    final api = await _googleTransliterate(clean);
-    if (api != null && _isGujarati(api)) {
-      _cache[lower] = api;
+    final api = await _googleTransliterate(clean, lang);
+    if (api != null) {
+      _cache[cacheKey] = api;
       return '$pb$api$pa';
     }
 
-    final phonetic = _phoneticTransliterate(clean);
-    _cache[lower] = phonetic;
-    return '$pb$phonetic$pa';
-  }
-
-  bool _isGujarati(String text) {
-    // Simple check: does it contain Gujarati range characters?
-    for (int i = 0; i < text.length; i++) {
-      int code = text.codeUnitAt(i);
-      if (code >= 0x0A80 && code <= 0x0AFF) return true;
+    if (lang == 'Gujarati') {
+      final phonetic = _phoneticTransliterate(clean);
+      _cache[cacheKey] = phonetic;
+      return '$pb$phonetic$pa';
     }
-    return false;
+
+    return word;
   }
 
-  Future<String?> _googleTransliterate(String word) async {
+  String _getItcCode(String lang) {
+    switch (lang) {
+      case 'Gujarati': return 'gu-t-i0-und';
+      case 'Hindi': return 'hi-t-i0-und';
+      case 'Marathi': return 'mr-t-i0-und';
+      case 'Punjabi': return 'pa-t-i0-und';
+      case 'Urdu': return 'ur-t-i0-und';
+      default: return 'gu-t-i0-und';
+    }
+  }
+
+  Future<String?> _googleTransliterate(String word, String lang) async {
     try {
+      final itc = _getItcCode(lang);
       final url = Uri.parse(
-          'https://inputtools.google.com/request?text=${Uri.encodeComponent(word)}&itc=gu-t-i0-und&num=1');
+          'https://inputtools.google.com/request?text=${Uri.encodeComponent(word)}&itc=$itc&num=1');
       final res = await http.get(url).timeout(const Duration(seconds: 2));
       if (res.statusCode == 200) {
         final data = json.decode(res.body);

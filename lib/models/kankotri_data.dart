@@ -108,6 +108,7 @@ class KankotriData {
   final String weddingDateGu;
 
   final bool isGujarati;
+  final String activeLanguage;
   final List<TemplateElement>? customElements;
 
   KankotriData({
@@ -182,6 +183,7 @@ class KankotriData {
     this.weddingDate = "",
     this.weddingDateGu = "",
     this.isGujarati = true,
+    this.activeLanguage = 'English',
     this.customElements,
   });
 }

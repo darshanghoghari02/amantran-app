@@ -8,6 +8,7 @@ import '../../models/template_model.dart';
 import '../../models/kankotri_data.dart';
 import '../preview/preview_screen.dart';
 import '../editor/widgets/transliteration_field.dart';
+import '../../providers/language_provider.dart';
 
 class FormScreen extends StatefulWidget {
   final TemplateModel template;
@@ -57,9 +58,17 @@ class _FormScreenState extends State<FormScreen> {
     );
 
     if (picked != null) {
+      final dateStr = "${picked.day}/${picked.month}/${picked.year}";
       setState(() {
-        controller.text = "${picked.day}/${picked.month}/${picked.year}";
+        controller.text = dateStr;
       });
+      // Mark weddingDate as user-modified so it gets synced to elements
+      if (mounted) {
+        final provider = context.read<InvitationProvider>();
+        provider.updateField(() {
+          provider.weddingDate = dateStr;
+        }, fieldName: 'weddingDate');
+      }
     }
   }
 
@@ -139,11 +148,48 @@ class _FormScreenState extends State<FormScreen> {
   @override
   Widget build(BuildContext context) {
     final provider = context.watch<InvitationProvider>();
+    final lang = context.watch<LanguageProvider>();
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Create Your Kankotri"),
+        title: Text(lang.weddingDetailsLabel),
         backgroundColor: Colors.redAccent,
         foregroundColor: Colors.white,
+        actions: [
+          if (lang.invitationLanguages.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(right: 16.0),
+              child: DropdownButton<String>(
+                value: lang.invitationLanguages.contains(lang.activeInvitationLanguage)
+                    ? lang.activeInvitationLanguage
+                    : lang.invitationLanguages.first,
+                dropdownColor: Colors.white,
+                icon: const Icon(Icons.language, color: Colors.white),
+                underline: const SizedBox(),
+                style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold),
+                onChanged: (String? newValue) {
+                  if (newValue != null) {
+                    lang.setActiveInvitationLanguage(newValue);
+                  }
+                },
+                items: lang.invitationLanguages.map<DropdownMenuItem<String>>((String value) {
+                  return DropdownMenuItem<String>(
+                    value: value,
+                    child: Text(value),
+                  );
+                }).toList(),
+                selectedItemBuilder: (BuildContext context) {
+                  return lang.invitationLanguages.map<Widget>((String item) {
+                    return Center(
+                      child: Text(
+                        item,
+                        style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+                      ),
+                    );
+                  }).toList();
+                },
+              ),
+            ),
+        ],
       ),
       body: Theme(
         data: Theme.of(context).copyWith(
@@ -181,7 +227,7 @@ class _FormScreenState extends State<FormScreen> {
                         padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                       ),
-                      child: Text(isLastStep ? "Finish & Preview" : "Continue"),
+                      child: Text(isLastStep ? lang.previewLabel : lang.nextLabel),
                     ),
                   ),
                   if (currentStep > 0) const SizedBox(width: 12),
@@ -193,7 +239,7 @@ class _FormScreenState extends State<FormScreen> {
                           padding: const EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                         ),
-                        child: const Text("Back"),
+                        child: Text(lang.back),
                       ),
                     ),
                 ],
@@ -245,16 +291,18 @@ class _FormScreenState extends State<FormScreen> {
                   _buildSectionHeader("Bride & Groom"),
                   TransliterationField(
                     initialText: provider.brideNameEn,
-                    isTransliterationOn: true,
-                    label: "Bride's Name (e.g. ચિ. હાર્મી)",
-                    onChanged: (en, gu) { provider.updateField(() { provider.brideNameEn = en; provider.brideNameGu = gu; }); },
+                    isTransliterationOn: lang.activeInvitationLanguage != 'English',
+                    language: lang.activeInvitationLanguage,
+                    label: lang.brideName,
+                    onChanged: (en, gu) { provider.updateField(() { provider.brideNameEn = en; provider.brideNameGu = gu; }, fieldName: 'brideName'); },
                   ),
                   const SizedBox(height: 16),
                   TransliterationField(
                     initialText: provider.groomNameEn,
-                    isTransliterationOn: true,
-                    label: "Groom's Name (e.g. ચિ. કિશન)",
-                    onChanged: (en, gu) { provider.updateField(() { provider.groomNameEn = en; provider.groomNameGu = gu; }); },
+                    isTransliterationOn: lang.activeInvitationLanguage != 'English',
+                    language: lang.activeInvitationLanguage,
+                    label: lang.groomName,
+                    onChanged: (en, gu) { provider.updateField(() { provider.groomNameEn = en; provider.groomNameGu = gu; }, fieldName: 'groomName'); },
                   ),
                   const SizedBox(height: 16),
 
@@ -263,7 +311,7 @@ class _FormScreenState extends State<FormScreen> {
                     controller: dateController,
                     readOnly: true,
                     decoration: InputDecoration(
-                      labelText: "Wedding Date",
+                      labelText: lang.weddingDateLabel,
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                       suffixIcon: const Icon(Icons.calendar_month, color: Colors.redAccent),
                     ),
@@ -274,24 +322,27 @@ class _FormScreenState extends State<FormScreen> {
                   _buildSectionHeader("Inviter (Organizer)"),
                   TransliterationField(
                     initialText: provider.fatherNameEn,
-                    isTransliterationOn: true,
+                    isTransliterationOn: lang.activeInvitationLanguage != 'English',
+                    language: lang.activeInvitationLanguage,
                     label: "Father's Name (કમલેશકુમાર)",
-                    onChanged: (en, gu) { provider.updateField(() { provider.fatherNameEn = en; provider.fatherNameGu = gu; }); },
+                    onChanged: (en, gu) { provider.updateField(() { provider.fatherNameEn = en; provider.fatherNameGu = gu; }, fieldName: 'fatherName'); },
                   ),
                   const SizedBox(height: 16),
                   TransliterationField(
                     initialText: provider.motherNameEn,
-                    isTransliterationOn: true,
+                    isTransliterationOn: lang.activeInvitationLanguage != 'English',
+                    language: lang.activeInvitationLanguage,
                     label: "Mother's Name (વીણાબેન)",
-                    onChanged: (en, gu) { provider.updateField(() { provider.motherNameEn = en; provider.motherNameGu = gu; }); },
+                    onChanged: (en, gu) { provider.updateField(() { provider.motherNameEn = en; provider.motherNameGu = gu; }, fieldName: 'motherName'); },
                   ),
                   const SizedBox(height: 16),
                   TransliterationField(
                     initialText: provider.addressEn,
-                    isTransliterationOn: true,
+                    isTransliterationOn: lang.activeInvitationLanguage != 'English',
+                    language: lang.activeInvitationLanguage,
                     label: "Address (૧૨, વિશ્વરૂપા...)",
                     maxLines: 3,
-                    onChanged: (en, gu) { provider.updateField(() { provider.addressEn = en; provider.addressGu = gu; }); },
+                    onChanged: (en, gu) { provider.updateField(() { provider.addressEn = en; provider.addressGu = gu; }, fieldName: 'address'); },
                   ),
                 ],
               ),
@@ -345,7 +396,7 @@ class _FormScreenState extends State<FormScreen> {
                         });
                       },
                       icon: const Icon(Icons.add),
-                      label: const Text("Add Event"),
+                      label: Text(lang.addEventLabel),
                     ),
                 ],
               ),
@@ -362,18 +413,20 @@ class _FormScreenState extends State<FormScreen> {
                   _buildHelpText("Bride and Groom details are synced from Page 1."),
                   TransliterationField(
                     initialText: provider.invitationTextEn,
-                    isTransliterationOn: true,
+                    isTransliterationOn: lang.activeInvitationLanguage != 'English',
+                    language: lang.activeInvitationLanguage,
                     label: "Invitation Text / Welcome Quote",
                     maxLines: 4,
-                    onChanged: (en, gu) { provider.updateField(() { provider.invitationTextEn = en; provider.invitationTextGu = gu; }); },
+                    onChanged: (en, gu) { provider.updateField(() { provider.invitationTextEn = en; provider.invitationTextGu = gu; }, fieldName: 'invitationText'); },
                   ),
                   const SizedBox(height: 16),
                   TransliterationField(
                     initialText: provider.parentsNameFullEn,
-                    isTransliterationOn: true,
+                    isTransliterationOn: lang.activeInvitationLanguage != 'English',
+                    language: lang.activeInvitationLanguage,
                     label: "Parents Details (e.g. જોષીપુરા નિવાસી...)",
                     maxLines: 3,
-                    onChanged: (en, gu) { provider.updateField(() { provider.parentsNameFullEn = en; provider.parentsNameFullGu = gu; }); },
+                    onChanged: (en, gu) { provider.updateField(() { provider.parentsNameFullEn = en; provider.parentsNameFullGu = gu; }, fieldName: 'parentsNameFull'); },
                   ),
                 ],
               ),
@@ -402,17 +455,19 @@ class _FormScreenState extends State<FormScreen> {
                 children: [
                   TransliterationField(
                     initialText: provider.nimantrakListEn,
-                    isTransliterationOn: true,
+                    isTransliterationOn: lang.activeInvitationLanguage != 'English',
+                    language: lang.activeInvitationLanguage,
                     label: "Nimantrak List (Names)",
                     maxLines: 4,
-                    onChanged: (en, gu) { provider.updateField(() { provider.nimantrakListEn = en; provider.nimantrakListGu = gu; }); },
+                    onChanged: (en, gu) { provider.updateField(() { provider.nimantrakListEn = en; provider.nimantrakListGu = gu; }, fieldName: 'nimantrakList'); },
                   ),
                   const SizedBox(height: 16),
                   TransliterationField(
                     initialText: provider.noGiftsTextEn,
-                    isTransliterationOn: true,
+                    isTransliterationOn: lang.activeInvitationLanguage != 'English',
+                    language: lang.activeInvitationLanguage,
                     label: "No Gifts Text (ચાંદલો અસ્વીકાર્ય છે)",
-                    onChanged: (en, gu) { provider.updateField(() { provider.noGiftsTextEn = en; provider.noGiftsTextGu = gu; }); },
+                    onChanged: (en, gu) { provider.updateField(() { provider.noGiftsTextEn = en; provider.noGiftsTextGu = gu; }, fieldName: 'noGiftsText'); },
                   ),
                 ],
               ),
@@ -428,42 +483,47 @@ class _FormScreenState extends State<FormScreen> {
                 children: [
                   TransliterationField(
                     initialText: provider.snehdhinEn,
-                    isTransliterationOn: true,
+                    isTransliterationOn: lang.activeInvitationLanguage != 'English',
+                    language: lang.activeInvitationLanguage,
                     label: "Snehdhin List",
                     maxLines: 5,
-                    onChanged: (en, gu) { provider.updateField(() { provider.snehdhinEn = en; provider.snehdhinGu = gu; }); },
+                    onChanged: (en, gu) { provider.updateField(() { provider.snehdhinEn = en; provider.snehdhinGu = gu; }, fieldName: 'snehdhin'); },
                   ),
                   const SizedBox(height: 16),
                   TransliterationField(
                     initialText: provider.darshanabhilashiEn,
-                    isTransliterationOn: true,
+                    isTransliterationOn: lang.activeInvitationLanguage != 'English',
+                    language: lang.activeInvitationLanguage,
                     label: "Darshanabhilashi List",
                     maxLines: 5,
-                    onChanged: (en, gu) { provider.updateField(() { provider.darshanabhilashiEn = en; provider.darshanabhilashiGu = gu; }); },
+                    onChanged: (en, gu) { provider.updateField(() { provider.darshanabhilashiEn = en; provider.darshanabhilashiGu = gu; }, fieldName: 'darshanabhilashi'); },
                   ),
                   const SizedBox(height: 16),
                   TransliterationField(
                     initialText: provider.mameruMosalEn,
-                    isTransliterationOn: true,
+                    isTransliterationOn: lang.activeInvitationLanguage != 'English',
+                    language: lang.activeInvitationLanguage,
                     label: "Mameru / Mosal List",
                     maxLines: 3,
-                    onChanged: (en, gu) { provider.updateField(() { provider.mameruMosalEn = en; provider.mameruMosalGu = gu; }); },
+                    onChanged: (en, gu) { provider.updateField(() { provider.mameruMosalEn = en; provider.mameruMosalGu = gu; }, fieldName: 'mameruMosal'); },
                   ),
                   const SizedBox(height: 16),
                   TransliterationField(
                     initialText: provider.masiFoiLadlaEn,
-                    isTransliterationOn: true,
+                    isTransliterationOn: lang.activeInvitationLanguage != 'English',
+                    language: lang.activeInvitationLanguage,
                     label: "Masi / Foi na Ladla",
                     maxLines: 3,
-                    onChanged: (en, gu) { provider.updateField(() { provider.masiFoiLadlaEn = en; provider.masiFoiLadlaGu = gu; }); },
+                    onChanged: (en, gu) { provider.updateField(() { provider.masiFoiLadlaEn = en; provider.masiFoiLadlaGu = gu; }, fieldName: 'masiFoiLadla'); },
                   ),
                   const SizedBox(height: 16),
                   TransliterationField(
                     initialText: provider.tahukoEn,
-                    isTransliterationOn: true,
+                    isTransliterationOn: lang.activeInvitationLanguage != 'English',
+                    language: lang.activeInvitationLanguage,
                     label: "Tahuko (Poem)",
                     maxLines: 4,
-                    onChanged: (en, gu) { provider.updateField(() { provider.tahukoEn = en; provider.tahukoGu = gu; }); },
+                    onChanged: (en, gu) { provider.updateField(() { provider.tahukoEn = en; provider.tahukoGu = gu; }, fieldName: 'tahuko'); },
                   ),
                 ],
               ),
@@ -481,9 +541,11 @@ class _FormScreenState extends State<FormScreen> {
 
     return GestureDetector(
       onTap: () {
-        setState(() {
-          provider.logo.presetAsset = path;
-        });
+        final newLogo = LogoModel(
+          type: LogoType.preset,
+          presetAsset: path,
+        );
+        provider.updateLogo(newLogo);
       },
       child: Container(
         width: 80,
@@ -524,6 +586,7 @@ class _FormScreenState extends State<FormScreen> {
   // 🔥 EVENT CARD
   Widget eventCard(int index) {
     final provider = context.read<InvitationProvider>();
+    final lang = context.watch<LanguageProvider>();
     final event = provider.events[index];
     final dateCtrl = TextEditingController(text: event.date);
     
@@ -550,12 +613,13 @@ class _FormScreenState extends State<FormScreen> {
             const SizedBox(height: 12),
             TransliterationField(
               initialText: event.title,
-              isTransliterationOn: true,
-              label: "Event Name (e.g. Garba)",
+                    isTransliterationOn: lang.activeInvitationLanguage != 'English',
+                    language: lang.activeInvitationLanguage,
+              label: lang.eventNameLabel,
               onChanged: (en, gu) { provider.updateField(() { 
                 event.title = en;
                 event.titleGu = gu;
-               }); },
+               }, fieldName: 'events'); },
             ),
             const SizedBox(height: 12),
             Row(
@@ -565,7 +629,7 @@ class _FormScreenState extends State<FormScreen> {
                     controller: dateCtrl,
                     readOnly: true,
                     decoration: InputDecoration(
-                      labelText: "Date",
+                      labelText: lang.dateLabel,
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
                     ),
@@ -580,7 +644,7 @@ class _FormScreenState extends State<FormScreen> {
                     controller: TextEditingController(text: event.time),
                     readOnly: true,
                     decoration: InputDecoration(
-                      labelText: "Time",
+                      labelText: lang.timeLabel,
                       border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
                       contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
                     ),
@@ -596,12 +660,13 @@ class _FormScreenState extends State<FormScreen> {
             const SizedBox(height: 12),
             TransliterationField(
               initialText: event.place,
-              isTransliterationOn: true,
-              label: "Venue / Place",
+                    isTransliterationOn: lang.activeInvitationLanguage != 'English',
+                    language: lang.activeInvitationLanguage,
+              label: lang.venuePlaceLabel,
               onChanged: (en, gu) { provider.updateField(() { 
                 event.place = en;
                 event.placeGu = gu;
-               }); },
+               }, fieldName: 'events'); },
             ),
           ],
         ),
@@ -618,7 +683,11 @@ class _FormScreenState extends State<FormScreen> {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (_) => PreviewScreen(data: provider.data, template: widget.template),
+          builder: (_) => PreviewScreen(
+            data: provider.data,
+            template: widget.template,
+            designId: DateTime.now().millisecondsSinceEpoch.toString(),
+          ),
         ),
       );
     }

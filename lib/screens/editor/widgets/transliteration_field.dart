@@ -9,6 +9,7 @@ import '../../../services/transliteration_engine.dart';
 class TransliterationField extends StatefulWidget {
   final String initialText;
   final bool isTransliterationOn;
+  final String language; // Added language parameter
   final String label;
   final int maxLines;
   final Function(String english, String gujarati) onChanged;
@@ -17,6 +18,7 @@ class TransliterationField extends StatefulWidget {
     super.key,
     this.initialText = '',
     required this.isTransliterationOn,
+    this.language = 'Gujarati', // Default to Gujarati
     this.label = '',
     this.maxLines = 1,
     required this.onChanged,
@@ -34,13 +36,25 @@ class _TransliterationFieldState extends State<TransliterationField> {
   String _gujaratiText = '';
   String _lastValue = '';
 
+  bool _containsIndic(String s) {
+    for (int i = 0; i < s.length; i++) {
+      int code = s.codeUnitAt(i);
+      if (code >= 0x0900 && code <= 0x0DFF) return true;
+    }
+    return false;
+  }
+
   @override
   void initState() {
     super.initState();
     _englishText = widget.initialText;
-    _gujaratiText = widget.isTransliterationOn 
-        ? _engine.transliterate(widget.initialText) 
-        : widget.initialText;
+    if (widget.isTransliterationOn) {
+      _gujaratiText = _containsIndic(widget.initialText)
+          ? widget.initialText
+          : _engine.transliterate(widget.initialText, lang: widget.language);
+    } else {
+      _gujaratiText = widget.initialText;
+    }
     _controller = TextEditingController(text: _gujaratiText);
     _lastValue = _gujaratiText;
   }
@@ -74,7 +88,7 @@ class _TransliterationFieldState extends State<TransliterationField> {
     }
 
     // Now transliterate the pure English shadow text
-    _gujaratiText = _engine.transliterate(_englishText);
+    _gujaratiText = _engine.transliterate(_englishText, lang: widget.language);
     _lastValue = _gujaratiText;
 
     // Use value update to maintain selection safely
@@ -86,7 +100,7 @@ class _TransliterationFieldState extends State<TransliterationField> {
     widget.onChanged(_englishText, _gujaratiText);
 
     // Async refinement
-    _engine.transliterateAsync(_englishText).then((result) {
+    _engine.transliterateAsync(_englishText, lang: widget.language).then((result) {
       if (mounted && result != _gujaratiText && widget.isTransliterationOn) {
         setState(() {
           _gujaratiText = result;
@@ -111,7 +125,7 @@ class _TransliterationFieldState extends State<TransliterationField> {
 
   void _updateDisplay() {
     if (widget.isTransliterationOn) {
-      _gujaratiText = _engine.transliterate(_englishText);
+      _gujaratiText = _engine.transliterate(_englishText, lang: widget.language);
       _controller.text = _gujaratiText;
       _lastValue = _gujaratiText;
     } else {
@@ -136,15 +150,16 @@ class _TransliterationFieldState extends State<TransliterationField> {
             suffixIcon: widget.isTransliterationOn
                 ? Container(
                     margin: const EdgeInsets.all(8),
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
                       color: Colors.orange.shade100,
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
-                      "ગુ",
+                      widget.language.substring(0, 2).toUpperCase(),
                       style: TextStyle(
-                        fontSize: 12,
+                        fontSize: 10,
                         fontWeight: FontWeight.bold,
                         color: Colors.orange.shade800,
                       ),

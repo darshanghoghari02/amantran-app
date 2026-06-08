@@ -7,6 +7,7 @@ import '../data/models/guest_model.dart';
 import '../data/repositories/guest_repository.dart';
 import '../data/services/csv_service.dart';
 import '../data/services/vcf_service.dart';
+import '../../../widgets/top_notification.dart';
 
 class FileImportScreen extends StatefulWidget {
   const FileImportScreen({super.key});
@@ -86,9 +87,7 @@ class _FileImportScreenState extends State<FileImportScreen> {
   }
 
   void _show(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(msg)),
-    );
+    TopNotification.show(context, message: msg);
   }
 
   // ------------------------------------------------------------
