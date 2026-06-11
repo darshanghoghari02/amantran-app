@@ -4,6 +4,23 @@ String resolveImageUrl(String path) {
   if (path.isEmpty) return '';
   
   var resolvedPath = path;
+
+  // Normalize legacy /static/ paths to /assets/
+  if (resolvedPath.contains('/static/')) {
+    resolvedPath = resolvedPath.replaceAll('/static/', '/assets/');
+  } else if (resolvedPath.startsWith('static/')) {
+    resolvedPath = 'assets/${resolvedPath.substring(7)}';
+  }
+  
+  // Cloudinary URLs — already permanent, return as-is
+  if (resolvedPath.contains('res.cloudinary.com')) {
+    return resolvedPath;
+  }
+
+  // Firebase Storage URLs — already permanent, return as-is
+  if (resolvedPath.contains('firebasestorage.googleapis.com')) {
+    return resolvedPath;
+  }
   
   // Replace localhost or local IP URLs with the live backend URL
   if (resolvedPath.contains('localhost:') || 
@@ -29,6 +46,13 @@ String resolveImageUrl(String path) {
 /// Checks if the image path is a network asset (either standard http/https or dynamic unbundled assets).
 bool isNetworkImage(String path) {
   if (path.isEmpty) return false;
+
+  // Cloudinary URLs are always network images
+  if (path.contains('res.cloudinary.com')) return true;
+
+  // Firebase Storage URLs are always network images
+  if (path.contains('firebasestorage.googleapis.com')) return true;
+
   if (path.startsWith('http://') || path.startsWith('https://')) {
     return true;
   }

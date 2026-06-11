@@ -216,6 +216,30 @@ class TemplateRepository {
     });
   }
 
+  List<PageModel> _pagesFromCache(dynamic cached) {
+    return (cached as List)
+        .map((e) => PageModel.fromJson(
+            Map<String, dynamic>.from(e), e['id']?.toString() ?? ''))
+        .toList();
+  }
+
+  /// Returns cached pages instantly when available; refreshes from server in background.
+  Future<List<PageModel>> getTemplatePagesCachedFirst(String templateId) async {
+    try {
+      final box = await Hive.openBox(_cacheBoxName);
+      final List<dynamic>? cached = box.get('pages_$templateId');
+      if (cached != null && cached.isNotEmpty) {
+        final pages = _pagesFromCache(cached);
+        // Refresh from server without blocking the editor open.
+        getTemplatePages(templateId);
+        return pages;
+      }
+    } catch (e) {
+      print('Error loading cached template pages: $e');
+    }
+    return getTemplatePages(templateId);
+  }
+
   Future<List<PageModel>> getTemplatePages(String templateId) async {
     try {
       // 1. First check the main document's pages array directly from the server to bypass stale offline/Hive caches
@@ -276,7 +300,7 @@ class TemplateRepository {
       final box = await Hive.openBox(_cacheBoxName);
       final List<dynamic>? cached = box.get('pages_$templateId');
       if (cached != null) {
-        return cached.map((e) => PageModel.fromJson(Map<String, dynamic>.from(e), e['id'] ?? '')).toList();
+        return _pagesFromCache(cached);
       }
     } catch (e) {
       print("Error loading cached pages: $e");

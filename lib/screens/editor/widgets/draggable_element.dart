@@ -484,7 +484,8 @@ class DraggableElement extends StatelessWidget {
             softWrap: true,
             overflow: TextOverflow.visible,
             textAlign: element.textAlign,
-            style: element.getTextStyle(scale: sx),
+            textDirection: TemplateElement.textDirectionFor(activeLanguage),
+            style: element.getTextStyleForLanguage(activeLanguage, scale: sx),
           ),
         );
 
@@ -1485,8 +1486,9 @@ class DraggableElement extends StatelessWidget {
         content: SizedBox(
           width: 400,
           child: TransliterationField(
-            initialText: isGuj ? element.contentGujarati : element.content,
+            initialText: element.getDisplayText(activeLanguage),
             isTransliterationOn: isGuj,
+            language: activeLanguage,
             label: "Edit Content",
             maxLines: 4,
             onChanged: (en, gu) {

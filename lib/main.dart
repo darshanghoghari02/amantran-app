@@ -58,13 +58,19 @@ Future<void> main() async {
   runApp(
     MultiProvider(
       providers: [
-        ChangeNotifierProvider(create: (_) => LanguageProvider()),
+        ChangeNotifierProvider(create: (_) => AppDataProvider()),
+        ChangeNotifierProxyProvider<AppDataProvider, LanguageProvider>(
+          create: (_) => LanguageProvider(),
+          update: (_, appData, lang) {
+            lang!.reconcileWithBackend(appData.languages);
+            return lang;
+          },
+        ),
         ChangeNotifierProxyProvider<LanguageProvider, InvitationProvider>(
           create: (_) => InvitationProvider(),
           update: (_, lang, inv) => inv!..setLanguageProvider(lang),
         ),
         ChangeNotifierProvider(create: (_) => UserProvider()),
-        ChangeNotifierProvider(create: (_) => AppDataProvider()),
         ChangeNotifierProxyProvider<AppDataProvider, FavoritesProvider>(
           create: (_) => FavoritesProvider(),
           update: (_, appData, favorites) => favorites!..setAppDataProvider(appData),

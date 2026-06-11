@@ -1,15 +1,18 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../providers/app_data_provider.dart';
 import '../../providers/language_provider.dart';
 import '../../providers/invitation_provider.dart';
 import '../../providers/designs_provider.dart';
 import '../editor/editor_screen.dart';
 import '../../services/interaction_service.dart';
+import '../../services/language_registry.dart';
 import '../../models/user_design.dart';
+import '../../models/template_model.dart';
 
 class InvitationLanguageScreen extends StatefulWidget {
   final List<String> selectedLanguages;
-  final dynamic template; // Dynamic type to accept Template if routed from customize flow
+  final TemplateModel? template;
   final bool isSingleSelect; // True for customize flow, false for profile settings flow!
 
   const InvitationLanguageScreen({
@@ -28,14 +31,26 @@ class _InvitationLanguageScreenState extends State<InvitationLanguageScreen> {
   late String _singleSelected;
   late List<String> _multiSelected;
 
-  final List<Map<String, String>> _languages = [
-    {'name': 'English', 'script': 'A B C'},
-    {'name': 'Gujarati', 'script': 'ક ખ ગ'},
-    {'name': 'Hindi', 'script': 'क ख ग'},
-    {'name': 'Marathi', 'script': 'क ख ग'},
-    {'name': 'Punjabi', 'script': 'ਕ ਖ ਗ'},
-    {'name': 'Urdu', 'script': 'ا ب ت'},
-  ];
+  List<LanguagePickerItem> _availableLanguages(BuildContext context) {
+    final appData = context.watch<AppDataProvider>();
+    if (appData.languages.isNotEmpty) {
+      LanguageRegistry.instance.updateFromBackend(appData.languages);
+    }
+
+    if (widget.template != null) {
+      return LanguageRegistry.instance.filterLanguages(
+        supportedLanguageRefs: widget.template!.supportedLanguages,
+      );
+    }
+
+    if (widget.isSingleSelect) {
+      return LanguageRegistry.instance.filterLanguages(
+        allowedNames: widget.selectedLanguages.toSet(),
+      );
+    }
+
+    return LanguageRegistry.instance.filterLanguages();
+  }
 
   @override
   void initState() {
@@ -76,9 +91,35 @@ class _InvitationLanguageScreenState extends State<InvitationLanguageScreen> {
     });
   }
 
+  void _applyCardTranslation(BuildContext context, String targetLanguage) {
+    final lang = context.read<LanguageProvider>();
+    final inv = context.read<InvitationProvider>();
+    if (inv.elements.isEmpty) return;
+    inv.applyLanguageInstant(lang, invitationLanguage: targetLanguage);
+  }
+
+  void _syncLocalSelections(List<LanguagePickerItem> languages) {
+    if (languages.isEmpty) return;
+    final names = languages.map((l) => l.name).toSet();
+    if (widget.isSingleSelect) {
+      if (!names.contains(_singleSelected)) {
+        _singleSelected = languages.first.name;
+      }
+    } else {
+      _multiSelected.removeWhere((name) => !names.contains(name));
+      if (_multiSelected.isEmpty) {
+        _multiSelected.add(languages.first.name);
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final lang = context.watch<LanguageProvider>();
+    final languages = _availableLanguages(context);
+    _syncLocalSelections(languages);
+    final isLoading =
+        context.watch<AppDataProvider>().isLoading && languages.isEmpty;
 
     return Scaffold(
       backgroundColor: const Color(0xFFFCF8F8),
@@ -211,9 +252,27 @@ class _InvitationLanguageScreenState extends State<InvitationLanguageScreen> {
 
             // Body Area: Dynamic rendering based on select mode
             Expanded(
-              child: widget.isSingleSelect
-                  ? _buildSingleSelectRadioList()
-                  : _buildMultiSelectGrid(),
+              child: isLoading
+                  ? const Center(
+                      child: CircularProgressIndicator(color: Color(0xFFF94C66)),
+                    )
+                  : languages.isEmpty
+                      ? Center(
+                          child: Padding(
+                            padding: const EdgeInsets.all(24),
+                            child: Text(
+                              'No invitation languages available.\nPlease try again later.',
+                              textAlign: TextAlign.center,
+                              style: TextStyle(
+                                color: Colors.black.withOpacity(0.5),
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                        )
+                      : widget.isSingleSelect
+                          ? _buildSingleSelectRadioList(languages)
+                          : _buildMultiSelectGrid(languages),
             ),
 
             // Fixed Premium Bottom Continue Button
@@ -231,6 +290,7 @@ class _InvitationLanguageScreenState extends State<InvitationLanguageScreen> {
                       lang.setInvitationLanguages(currentLangs);
                       
                       lang.setActiveInvitationLanguage(_singleSelected);
+                      _applyCardTranslation(context, _singleSelected);
                       InteractionService.logInteraction(
                         type: 'change_invitation_language',
                         description: 'Changed active invitation language to $_singleSelected',
@@ -238,15 +298,12 @@ class _InvitationLanguageScreenState extends State<InvitationLanguageScreen> {
                       );
 
                       // If a template is provided, open card editor screen
-                      if (widget.template != null) {
-                        final invProvider = context.read<InvitationProvider>();
-                        invProvider.setLanguageProvider(lang);
-                        invProvider.syncToElements(lang);
-
+                      final template = widget.template;
+                      if (template != null) {
                         final designsProvider = context.read<DesignsProvider>();
                         UserDesign? existingDraft;
                         for (var d in designsProvider.drafts) {
-                          if (d.template.id == widget.template.id) {
+                          if (d.template.id == template.id) {
                             existingDraft = d;
                             break;
                           }
@@ -256,9 +313,10 @@ class _InvitationLanguageScreenState extends State<InvitationLanguageScreen> {
                           context,
                           MaterialPageRoute(
                             builder: (_) => EditorScreen(
-                              template: widget.template,
+                              template: template,
                               designId: existingDraft?.id,
                               initialElements: existingDraft?.elements,
+                              initialLanguage: _singleSelected,
                             ),
                           ),
                         );
@@ -266,8 +324,13 @@ class _InvitationLanguageScreenState extends State<InvitationLanguageScreen> {
                         Navigator.pop(context, [_singleSelected]);
                       }
                     } else {
-                      // Return selected multiple languages to Profile screen
                       lang.setInvitationLanguages(_multiSelected.toSet());
+                      if (!lang.invitationLanguages
+                          .contains(lang.activeInvitationLanguage)) {
+                        lang.setActiveInvitationLanguage(_multiSelected.first);
+                      }
+                      _applyCardTranslation(
+                          context, lang.activeInvitationLanguage);
                       InteractionService.logInteraction(
                         type: 'change_invitation_languages',
                         description: 'Updated active invitation languages list to ${_multiSelected.join(', ')}',
@@ -303,15 +366,15 @@ class _InvitationLanguageScreenState extends State<InvitationLanguageScreen> {
   }
 
   // --- Radio Button Selection (Single Select Customize Flow) ---
-  Widget _buildSingleSelectRadioList() {
+  Widget _buildSingleSelectRadioList(List<LanguagePickerItem> languages) {
     return ListView.separated(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-      itemCount: _languages.length,
+      itemCount: languages.length,
       separatorBuilder: (context, index) => const SizedBox(height: 12),
       itemBuilder: (context, index) {
-        final langItem = _languages[index];
-        final langName = langItem['name']!;
-        final script = langItem['script']!;
+        final langItem = languages[index];
+        final langName = langItem.name;
+        final script = langItem.script;
         final isSelected = _singleSelected == langName;
 
         return GestureDetector(
@@ -319,6 +382,11 @@ class _InvitationLanguageScreenState extends State<InvitationLanguageScreen> {
             setState(() {
               _singleSelected = langName;
             });
+            if (widget.isSingleSelect) {
+              context
+                  .read<LanguageProvider>()
+                  .setActiveInvitationLanguage(langName);
+            }
           },
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 250),
@@ -400,7 +468,7 @@ class _InvitationLanguageScreenState extends State<InvitationLanguageScreen> {
   }
 
   // --- Grid Item Selection (Multi Select Settings Flow) ---
-  Widget _buildMultiSelectGrid() {
+  Widget _buildMultiSelectGrid(List<LanguagePickerItem> languages) {
     return GridView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
@@ -409,11 +477,11 @@ class _InvitationLanguageScreenState extends State<InvitationLanguageScreen> {
         mainAxisSpacing: 16,
         childAspectRatio: 1.25,
       ),
-      itemCount: _languages.length,
+      itemCount: languages.length,
       itemBuilder: (context, index) {
-        final l = _languages[index];
-        final langName = l['name']!;
-        final script = l['script']!;
+        final l = languages[index];
+        final langName = l.name;
+        final script = l.script;
         final isSelected = _multiSelected.contains(langName);
 
         return GestureDetector(

@@ -24,9 +24,7 @@ import '../../widgets/design_cards.dart';
 import '../../widgets/premium_badge.dart';
 import '../guests/guest_screen.dart';
 import '../../widgets/top_notification.dart';
-import 'package:share_plus/share_plus.dart';
-
-import 'package:share_plus/share_plus.dart';
+import '../../widgets/design_pdf_share_dialog.dart';
 import '../../providers/app_data_provider.dart';
 import '../../utils/image_resolver.dart';
 
@@ -40,10 +38,12 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
   String _searchQuery = '';
+  final TextEditingController _searchController = TextEditingController();
 
   @override
-  void initState() {
-    super.initState();
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
   }
 
   @override
@@ -101,7 +101,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   _buildNavItem(Icons.home_rounded, lang.home, 0),
                   _buildNavItem(Icons.description_outlined, lang.yourDesign, 1),
-                  _buildNavItem(Icons.favorite_border_rounded, lang.favorites, 2),
+                  _buildNavItem(Icons.favorite_border_rounded, lang.favorites, 2, badgeCount: favoritesProvider.count),
                   _buildNavItem(Icons.groups_outlined, lang.guests, 3),
                 ],
               ),
@@ -226,6 +226,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ],
                   ),
                   child: TextField(
+                    controller: _searchController,
                     onChanged: (value) {
                       setState(() {
                         _searchQuery = value;
@@ -238,6 +239,19 @@ class _HomeScreenState extends State<HomeScreen> {
                         padding: EdgeInsets.only(left: 12, right: 8),
                         child: Icon(Icons.search, color: Color(0xFFF94C66), size: 24),
                       ),
+                      suffixIcon: _searchQuery.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(
+                                Icons.close_rounded,
+                                color: Colors.black38,
+                                size: 20,
+                              ),
+                              onPressed: () {
+                                _searchController.clear();
+                                setState(() => _searchQuery = '');
+                              },
+                            )
+                          : null,
                       border: InputBorder.none,
                       contentPadding: const EdgeInsets.symmetric(vertical: 15),
                     ),
@@ -431,8 +445,9 @@ class _HomeScreenState extends State<HomeScreen> {
     return const SizedBox.shrink();
   }
 
-  Widget _buildNavItem(IconData icon, String label, int index) {
+  Widget _buildNavItem(IconData icon, String label, int index, {int badgeCount = 0}) {
     bool isSelected = _selectedIndex == index;
+    final color = isSelected ? const Color(0xFFF94C66) : Colors.black38;
     return GestureDetector(
       onTap: () {
         if (index == 3) {
@@ -445,12 +460,41 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(icon, color: isSelected ? const Color(0xFFF94C66) : Colors.black38, size: 26),
+          Stack(
+            clipBehavior: Clip.none,
+            children: [
+              Icon(icon, color: color, size: 26),
+              if (badgeCount > 0)
+                Positioned(
+                  right: -8,
+                  top: -5,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                    constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF94C66),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.white, width: 1.5),
+                    ),
+                    child: Text(
+                      badgeCount > 99 ? '99+' : '$badgeCount',
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.bold,
+                        height: 1.2,
+                      ),
+                    ),
+                  ),
+                ),
+            ],
+          ),
           const SizedBox(height: 4),
           Text(
             label,
             style: TextStyle(
-              color: isSelected ? const Color(0xFFF94C66) : Colors.black38,
+              color: color,
               fontSize: 11,
               fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
             ),
@@ -792,7 +836,11 @@ class _HomeScreenState extends State<HomeScreen> {
                 _showDeleteDesignConfirm(design);
               },
               onShare: () {
-                Share.share(lp.shareDesignText(design.template.name));
+                showDialog(
+                  context: context,
+                  barrierDismissible: false,
+                  builder: (_) => DesignPdfShareDialog(design: design),
+                );
               },
             );
           },

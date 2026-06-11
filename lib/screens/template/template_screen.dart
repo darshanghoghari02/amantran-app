@@ -241,7 +241,7 @@ class _TemplateScreenState extends State<TemplateScreen> {
                   }),
                   _buildNavItem(Icons.favorite_border, lang.favorites, false, () {
                     Navigator.pop(context, 2);
-                  }),
+                  }, badgeCount: favoritesProvider.count),
                 ],
               ),
             ),
@@ -381,7 +381,7 @@ class _TemplateScreenState extends State<TemplateScreen> {
     );
   }
 
-  Widget _buildNavItem(IconData icon, String label, bool isSelected, VoidCallback onTap) {
+  Widget _buildNavItem(IconData icon, String label, bool isSelected, VoidCallback onTap, {int badgeCount = 0}) {
     final color = isSelected ? const Color(0xFFF94C66) : Colors.black54;
 
     return GestureDetector(
@@ -393,10 +393,39 @@ class _TemplateScreenState extends State<TemplateScreen> {
           mainAxisSize: MainAxisSize.min,
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(
-              isSelected && icon == Icons.home_outlined ? Icons.home : icon,
-              color: color, 
-              size: 26,
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                Icon(
+                  isSelected && icon == Icons.home_outlined ? Icons.home : icon,
+                  color: color,
+                  size: 26,
+                ),
+                if (badgeCount > 0)
+                  Positioned(
+                    right: -8,
+                    top: -5,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                      constraints: const BoxConstraints(minWidth: 16, minHeight: 16),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF94C66),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.white, width: 1.5),
+                      ),
+                      child: Text(
+                        badgeCount > 99 ? '99+' : '$badgeCount',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                          height: 1.2,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
             const SizedBox(height: 4),
             Text(

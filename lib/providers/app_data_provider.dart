@@ -6,6 +6,7 @@ import '../models/template_model.dart';
 import '../models/page_model.dart';
 import '../repositories/template_repository.dart';
 import '../services/font_service.dart';
+import '../services/language_registry.dart';
 
 class AppDataProvider extends ChangeNotifier {
   final TemplateRepository _repository = TemplateRepository();
@@ -72,7 +73,8 @@ class AppDataProvider extends ChangeNotifier {
     });
 
     _languagesSub = _repository.watchLanguages().listen((data) {
-      _languages = data;
+      _languages = data..sort((a, b) => a.name.compareTo(b.name));
+      LanguageRegistry.instance.updateFromBackend(_languages);
       languagesLoaded = true;
       _errorMessage = null;
       updateLoadingState();
@@ -135,6 +137,10 @@ class AppDataProvider extends ChangeNotifier {
 
   Future<List<PageModel>> getTemplatePages(String templateId) {
     return _repository.getTemplatePages(templateId);
+  }
+
+  Future<List<PageModel>> getTemplatePagesCachedFirst(String templateId) {
+    return _repository.getTemplatePagesCachedFirst(templateId);
   }
 
   @override

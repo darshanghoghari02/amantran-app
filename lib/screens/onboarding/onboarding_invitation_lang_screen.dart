@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../providers/app_data_provider.dart';
 import '../../providers/language_provider.dart';
+import '../../services/language_registry.dart';
 import 'onboarding_steps_screen.dart';
 
 class OnboardingInvitationLangScreen extends StatefulWidget {
@@ -13,14 +15,6 @@ class OnboardingInvitationLangScreen extends StatefulWidget {
 class _OnboardingInvitationLangScreenState extends State<OnboardingInvitationLangScreen> {
   final List<String> _selected = ['English'];
 
-  final List<Map<String, String>> _languages = [
-    {'name': 'English', 'script': 'A B C'},
-    {'name': 'Gujarati', 'script': 'ક ખ ગ'},
-    {'name': 'Hindi', 'script': 'क ख ગ'},
-    {'name': 'Marathi', 'script': 'क ख ગ'},
-    {'name': 'Punjabi', 'script': 'ਕ խ ਗ'},
-    {'name': 'Urdu', 'script': 'ا ب પ'},
-  ];
 
   void _toggleLanguage(String langName) {
     setState(() {
@@ -44,6 +38,18 @@ class _OnboardingInvitationLangScreenState extends State<OnboardingInvitationLan
   @override
   Widget build(BuildContext context) {
     final lang = context.watch<LanguageProvider>();
+    final appData = context.watch<AppDataProvider>();
+    if (appData.languages.isNotEmpty) {
+      LanguageRegistry.instance.updateFromBackend(appData.languages);
+    }
+    final languages = LanguageRegistry.instance.activeLanguages;
+    if (languages.isNotEmpty) {
+      final names = languages.map((l) => l.name).toSet();
+      _selected.removeWhere((name) => !names.contains(name));
+      if (_selected.isEmpty) {
+        _selected.add(languages.first.name);
+      }
+    }
 
     return Scaffold(
       backgroundColor: const Color(0xFFFCF8F8),
@@ -170,7 +176,11 @@ class _OnboardingInvitationLangScreenState extends State<OnboardingInvitationLan
 
             // Selectable Grid
             Expanded(
-              child: GridView.builder(
+              child: appData.isLoading && languages.isEmpty
+                  ? const Center(
+                      child: CircularProgressIndicator(color: Color(0xFFF94C66)),
+                    )
+                  : GridView.builder(
                 padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 2,
@@ -178,11 +188,11 @@ class _OnboardingInvitationLangScreenState extends State<OnboardingInvitationLan
                   mainAxisSpacing: 16,
                   childAspectRatio: 1.25,
                 ),
-                itemCount: _languages.length,
+                itemCount: languages.length,
                 itemBuilder: (context, index) {
-                  final l = _languages[index];
-                  final langName = l['name']!;
-                  final script = l['script']!;
+                  final l = languages[index];
+                  final langName = l.name;
+                  final script = l.script;
                   final isSelected = _selected.contains(langName);
 
                   return GestureDetector(

@@ -5,6 +5,7 @@ import '../models/template_element.dart';
 import '../models/page_model.dart';
 import 'language_provider.dart';
 import '../services/transliteration_engine.dart';
+import '../services/language_registry.dart';
 
 enum LogoType { preset, customSvg, customFile }
 
@@ -42,6 +43,8 @@ class InvitationProvider extends ChangeNotifier {
   bool isGujarati = true;
   LanguageProvider? _lang;
   Timer? _debounce;
+  Timer? _refineTimer;
+  int _refineGeneration = 0;
   String templateCategory = 'Wedding';
 
   String _sanitizeCorruptedText(String text) {
@@ -63,40 +66,157 @@ class InvitationProvider extends ChangeNotifier {
 
   void setLanguageProvider(LanguageProvider lang) {
     _lang = lang;
-    _syncInternal();
   }
 
-  void _syncInternal() {
-    if (_lang != null) {
-      syncToElements(_lang!);
-      transliterateAllElements(_lang!.activeInvitationLanguage);
+  void _syncInternal({String? invitationLanguage}) {
+    if (_lang != null && elements.isNotEmpty) {
+      applyLanguageInstant(_lang!, invitationLanguage: invitationLanguage);
     }
   }
 
-  Future<void> transliterateAllElements(String targetLang) async {
+  /// Debounced background translation — never blocks the UI.
+  void scheduleLanguageRefine({
+    bool force = false,
+    Duration delay = const Duration(milliseconds: 900),
+    String? invitationLanguage,
+  }) {
+    _refineTimer?.cancel();
+    _refineTimer = Timer(delay, () {
+      if (_lang == null) return;
+      final generation = ++_refineGeneration;
+      applyLanguageAsync(_lang!,
+              force: force, invitationLanguage: invitationLanguage)
+          .then((_) {
+        if (generation == _refineGeneration) notifyListeners();
+      });
+    });
+  }
+
+  /// Shows Gujarati/English immediately, then Google-translates every other language.
+  void applyLanguageInstant(LanguageProvider lang, {String? invitationLanguage}) {
+    _lang = lang;
+    final target = invitationLanguage ?? lang.activeInvitationLanguage;
+    syncToElements(lang, invitationLanguage: target);
+    _applyOfflineConversion(target);
+    notifyListeners();
+    if (target != 'English') {
+      scheduleLanguageRefine(
+        force: true,
+        delay: const Duration(milliseconds: 150),
+        invitationLanguage: target,
+      );
+    }
+  }
+
+  /// Google Translate for the full template (all admin-added languages).
+  Future<void> applyLanguageAsync(LanguageProvider lang,
+      {bool force = false, String? invitationLanguage}) async {
+    _lang = lang;
+    final target = invitationLanguage ?? lang.activeInvitationLanguage;
+    syncToElements(lang, invitationLanguage: target);
+    await transliterateAllElements(target, force: force);
+    notifyListeners();
+  }
+
+  void _applyOfflineConversion(String targetLang) {
+    if (!LanguageRegistry.instance.hasOfflineConversion(targetLang)) return;
+
+    final langCode = TemplateElement.languageCodeFor(targetLang);
+    for (final el in elements) {
+      if (el.type != ElementType.text) continue;
+      if ((el.contentMap[langCode] ?? '').isNotEmpty) continue;
+
+      final gu = el.contentMap['gu'] ?? '';
+      final en = el.content;
+      final source = gu.isNotEmpty ? gu : en;
+      if (source.isEmpty) continue;
+
+      final converted = _instantScriptConvert(source, targetLang);
+      if (converted.isNotEmpty && converted != source) {
+        el.setLocalizedText(targetLang, converted);
+      }
+    }
+  }
+
+  String _instantScriptConvert(String source, String targetLang) {
+    if (!TemplateElement.hasGujaratiScript(source)) return '';
+    switch (targetLang) {
+      case 'Hindi':
+      case 'Marathi':
+        return translateGujaratiToHindi(source);
+      case 'Punjabi':
+        return translateGujaratiToPunjabi(source);
+      case 'Urdu':
+        return _instantUrduFromGujarati(source);
+      default:
+        return '';
+    }
+  }
+
+  /// Curated label if available; otherwise Gujarati bridge for Google Translate.
+  String _curatedLabel(
+      LanguageProvider lang, String invLang, String Function(String) getter) {
+    if (invLang == 'English') return getter('English');
+    if (invLang == 'Gujarati') return getter('Gujarati');
+    final localized = getter(invLang);
+    if (localized != getter('English')) return localized;
+    return getter('Gujarati');
+  }
+
+  String _instantUrduFromGujarati(String gujarati) {
+    const Map<String, String> phrases = {
+      '|| શ્રી ગણેશાય નમઃ ||': '|| سری گنیشای نمہ ||',
+      'શુભ વિવાહ': 'شادی مبارک',
+      'સંગ': 'سنگ',
+      'તા.': 'تاریخ',
+      'ચિ.': 'محترم',
+      'નિમંત્રક': 'نمنترک',
+      'સ્નેહી સ્વજન': 'محترم مہمان',
+    };
+    for (final entry in phrases.entries) {
+      if (gujarati.contains(entry.key)) {
+        return gujarati.replaceAll(entry.key, entry.value);
+      }
+    }
+    return translateGujaratiToHindi(gujarati);
+  }
+
+  Future<void> transliterateAllElements(String targetLang,
+      {bool force = false}) async {
     if (targetLang == 'English') return;
 
     final engine = TransliterationEngine();
+    final langCode = TemplateElement.languageCodeFor(targetLang);
 
-    // Filter out all text elements with non-empty contents, skipping those that already have a handcrafted Gujarati translation
-    final textElements = elements
-        .where((e) =>
-            e.type == ElementType.text &&
-            e.content.isNotEmpty &&
-            e.contentGujarati.isEmpty)
-        .toList();
+    final textElements =
+        elements.where((e) => e.type == ElementType.text).toList();
+    const batchSize = 6;
+    for (var i = 0; i < textElements.length; i += batchSize) {
+      final batch = textElements.skip(i).take(batchSize);
+      await Future.wait(batch.map((el) async {
+        final gu = el.contentMap['gu'] ?? el.contentGujarati;
+        final en = el.content;
+        final existing = el.contentMap[langCode] ?? '';
 
-    // Query the transliteration engine concurrently in parallel using Future.wait
-    final futures = textElements.map((el) async {
-      final translated =
-          await engine.transliterateAsync(el.content, lang: targetLang);
-      if (translated.isNotEmpty) {
-        el.contentGujarati = translated;
-      }
-    }).toList();
+        if (!force && existing.isNotEmpty) {
+          final isBridge = existing == gu ||
+              existing == en ||
+              (gu.isNotEmpty && existing == gu);
+          if (!isBridge) return;
+        }
 
-    await Future.wait(futures);
-    notifyListeners();
+        final String source = gu.isNotEmpty
+            ? gu
+            : (en.isNotEmpty ? en : existing);
+        if (source.isEmpty) return;
+
+        final translated = await engine.translateAsync(source, targetLang);
+        if (translated.isNotEmpty &&
+            TemplateElement.isTranslationValid(translated, targetLang, source)) {
+          el.setLocalizedText(targetLang, translated);
+        }
+      }));
+    }
   }
 
   void initElements(List<TemplateElement> initialElements) {
@@ -154,6 +274,7 @@ class InvitationProvider extends ChangeNotifier {
       _restoreLogoFromElements(elements);
       _populateFieldsFromElements();
       _syncInternal();
+      scheduleLanguageRefine();
     }
   }
 
@@ -215,6 +336,7 @@ class InvitationProvider extends ChangeNotifier {
     _restoreLogoFromElements(elements);
     _populateFieldsFromElements();
     _syncInternal();
+    scheduleLanguageRefine();
     notifyListeners();
   }
 
@@ -408,6 +530,13 @@ class InvitationProvider extends ChangeNotifier {
     });
   }
 
+  @override
+  void dispose() {
+    _debounce?.cancel();
+    _refineTimer?.cancel();
+    super.dispose();
+  }
+
   void updateEvent(int index, EventModel event, [LanguageProvider? lang]) {
     if (index < events.length) {
       events[index] = event;
@@ -423,8 +552,28 @@ class InvitationProvider extends ChangeNotifier {
   }
 
   // --- Sync to Canvas Elements ---
-  void syncToElements(LanguageProvider lang) {
-    final invLang = lang.activeInvitationLanguage;
+  void syncToElements(LanguageProvider lang, {String? invitationLanguage}) {
+    final invLang = invitationLanguage ?? lang.activeInvitationLanguage;
+    String lbl(String Function(String) getter) =>
+        _curatedLabel(lang, invLang, getter);
+
+    void setEl(String id, String english, String localized) =>
+        _updateElement(id, english, localized, targetLang: invLang);
+
+    String userLocalized(String english, String gujarati) {
+      if (invLang == 'English') return english;
+      if (invLang == 'Gujarati') {
+        return gujarati.isNotEmpty ? gujarati : english;
+      }
+      if (gujarati.isNotEmpty) {
+        if (LanguageRegistry.instance.hasOfflineConversion(invLang)) {
+          final converted = _instantScriptConvert(gujarati, invLang);
+          if (converted.isNotEmpty) return converted;
+        }
+        return gujarati;
+      }
+      return english;
+    }
 
     // Sync logo
     if (logo.type == LogoType.preset && logo.presetAsset != null) {
@@ -436,115 +585,127 @@ class InvitationProvider extends ChangeNotifier {
     }
 
     // Page 0 (Mangalik Prasango)
-    _updateElement('p0_shlok1', lang.ganeshayNamahLabelFor('English'),
-        lang.ganeshayNamahLabelFor(invLang));
-    _updateElement('p0_title', lang.mangalikPrasangoLabelFor('English'),
-        lang.mangalikPrasangoLabelFor(invLang));
+    setEl('p0_shlok1', lang.ganeshayNamahLabelFor('English'),
+        lbl(lang.ganeshayNamahLabelFor));
+    setEl('p0_title', lang.mangalikPrasangoLabelFor('English'),
+        lbl(lang.mangalikPrasangoLabelFor));
 
     // Page 1 Title (Wedding / Engagement / Baby Shower Specifics)
     if (templateCategory == 'Engagement') {
-      _updateElement('p1_title', 'Chandla Vidhi', 'ચાંદલા વિધિ');
+      setEl('p1_title', 'Chandla Vidhi', 'ચાંદલા વિધિ');
     } else if (templateCategory == 'Baby Shower') {
-      _updateElement('p1_title', 'Shrimant Sanskar', 'શ્રીમંત સંસ્કાર');
+      setEl('p1_title', 'Shrimant Sanskar', 'શ્રીમંત સંસ્કાર');
     } else {
-      _updateElement('p1_title', lang.shubhVivahLabelFor('English'),
-          lang.shubhVivahLabelFor(invLang));
+      setEl('p1_title', lang.shubhVivahLabelFor('English'),
+          lbl(lang.shubhVivahLabelFor));
     }
-    _updateElement(
-        'p1_sang', lang.sangLabelFor('English'), lang.sangLabelFor(invLang));
-    
+    setEl('p1_sang', lang.sangLabelFor('English'), lbl(lang.sangLabelFor));
+    setEl('p1_shlok', lang.ganeshayNamahLabelFor('English'),
+        lbl(lang.ganeshayNamahLabelFor));
+    setEl('p1_snehi', lang.dearGuestLabelFor('English'),
+        lbl(lang.dearGuestLabelFor));
+
     if (templateCategory == 'Engagement' || templateCategory == 'Baby Shower') {
-      _updateElement('p1_nimantrak_title', 'Inviter', 'નિમંત્રક');
+      setEl('p1_nimantrak_title', 'Inviter', 'નિમંત્રક');
     } else {
-      _updateElement('p1_nimantrak_title', lang.nimantrakLabelFor('English'),
-          lang.nimantrakLabelFor(invLang));
+      setEl('p1_nimantrak_title', lang.nimantrakLabelFor('English'),
+          lbl(lang.nimantrakLabelFor));
     }
 
     // Page 2 (Sangeet Sandhya)
-    _updateElement('p2_shlok', lang.ganeshayNamahLabelFor('English'),
-        lang.ganeshayNamahLabelFor(invLang));
-    _updateElement('p2_title', lang.sangeetSandhyaLabelFor('English'),
-        lang.sangeetSandhyaLabelFor(invLang));
-    _updateElement(
-        'p2_sang', lang.sangLabelFor('English'), lang.sangLabelFor(invLang));
+    setEl('p2_shlok', lang.ganeshayNamahLabelFor('English'),
+        lbl(lang.ganeshayNamahLabelFor));
+    setEl('p2_title', lang.sangeetSandhyaLabelFor('English'),
+        lbl(lang.sangeetSandhyaLabelFor));
+    setEl('p2_sang', lang.sangLabelFor('English'), lbl(lang.sangLabelFor));
 
     // Page 3 (Lagnotsav)
-    _updateElement('p3_title', lang.lagnotsavLabelFor('English'),
-        lang.lagnotsavLabelFor(invLang));
-    _updateElement(
-        'p3_sang', lang.sangLabelFor('English'), lang.sangLabelFor(invLang));
+    setEl('p3_title', lang.lagnotsavLabelFor('English'),
+        lbl(lang.lagnotsavLabelFor));
+    setEl('p3_sang', lang.sangLabelFor('English'), lbl(lang.sangLabelFor));
 
     // Page 4 (Parinay Utsav)
-    _updateElement('p4_title', lang.parinayUtsavLabelFor('English'),
-        lang.parinayUtsavLabelFor(invLang));
-    _updateElement(
-        'p4_sang', lang.sangLabelFor('English'), lang.sangLabelFor(invLang));
+    setEl('p4_title', lang.parinayUtsavLabelFor('English'),
+        lbl(lang.parinayUtsavLabelFor));
+    setEl('p4_sang', lang.sangLabelFor('English'), lbl(lang.sangLabelFor));
 
     // Page 0 & 4 (Events)
     if (events.isNotEmpty) {
-      _updateElement('p0_event1_title', '— ${events[0].title} —',
-          '— ${events[0].titleGu} —');
-      _updateElement(
+      setEl(
+          'p0_event1_title',
+          '— ${events[0].title} —',
+          userLocalized('— ${events[0].title} —', '— ${events[0].titleGu} —'));
+      setEl(
           'p0_event1_date',
           '${lang.dateLabelFor('English')} ${events[0].date}',
-          '${lang.taLabelFor(invLang)} ${events[0].dateGu.isNotEmpty ? events[0].dateGu : events[0].date}');
-      _updateElement(
+          '${lbl(lang.taLabelFor)} ${events[0].dateGu.isNotEmpty ? events[0].dateGu : events[0].date}');
+      setEl(
           'p0_event1_time',
           '${lang.timeLabelFor('English')} ${events[0].time}',
-          '${lang.samayLabelFor(invLang)} ${events[0].timeGu.isNotEmpty ? events[0].timeGu : events[0].time}');
+          '${lbl(lang.samayLabelFor)} ${events[0].timeGu.isNotEmpty ? events[0].timeGu : events[0].time}');
 
-      _updateElement('p4_event1_title', '— ${events[0].title} —',
-          '— ${events[0].titleGu} —');
-      _updateElement(
+      setEl(
+          'p4_event1_title',
+          '— ${events[0].title} —',
+          userLocalized('— ${events[0].title} —', '— ${events[0].titleGu} —'));
+      setEl(
           'p4_event1_datetime',
           '${events[0].date}\n${events[0].time}',
-          '${lang.taLabelFor(invLang)} ${events[0].dateGu.isNotEmpty ? events[0].dateGu : events[0].date}\n${events[0].timeGu.isNotEmpty ? events[0].timeGu : events[0].time}');
+          '${lbl(lang.taLabelFor)} ${events[0].dateGu.isNotEmpty ? events[0].dateGu : events[0].date}\n${events[0].timeGu.isNotEmpty ? events[0].timeGu : events[0].time}');
 
       if (events[0].place.isNotEmpty) {
-        _updateElement('p0_sthal_address', events[0].place, events[0].placeGu);
-        _updateElement('p2_sthal_address', events[0].place, events[0].placeGu);
-        _updateElement('p4_sthal_address', events[0].place, events[0].placeGu);
+        final placeLocalized =
+            userLocalized(events[0].place, events[0].placeGu);
+        setEl('p0_sthal_address', events[0].place, placeLocalized);
+        setEl('p2_sthal_address', events[0].place, placeLocalized);
+        setEl('p4_sthal_address', events[0].place, placeLocalized);
       }
     }
 
     if (events.length > 1) {
-      _updateElement('p0_event2_title', '— ${events[1].title} —',
-          '— ${events[1].titleGu} —');
-      _updateElement(
+      setEl(
+          'p0_event2_title',
+          '— ${events[1].title} —',
+          userLocalized('— ${events[1].title} —', '— ${events[1].titleGu} —'));
+      setEl(
           'p0_event2_date',
           '${lang.dateLabelFor('English')} ${events[1].date}',
-          '${lang.taLabelFor(invLang)} ${events[1].dateGu.isNotEmpty ? events[1].dateGu : events[1].date}');
-      _updateElement(
+          '${lbl(lang.taLabelFor)} ${events[1].dateGu.isNotEmpty ? events[1].dateGu : events[1].date}');
+      setEl(
           'p0_event2_time',
           '${lang.timeLabelFor('English')} ${events[1].time}',
-          '${lang.samayLabelFor(invLang)} ${events[1].timeGu.isNotEmpty ? events[1].timeGu : events[1].time}');
+          '${lbl(lang.samayLabelFor)} ${events[1].timeGu.isNotEmpty ? events[1].timeGu : events[1].time}');
 
-      _updateElement('p4_event2_title', '— ${events[1].title} —',
-          '— ${events[1].titleGu} —');
-      _updateElement(
+      setEl(
+          'p4_event2_title',
+          '— ${events[1].title} —',
+          userLocalized('— ${events[1].title} —', '— ${events[1].titleGu} —'));
+      setEl(
           'p4_event2_datetime',
           '${events[1].date}\n${events[1].time}',
-          '${lang.taLabelFor(invLang)} ${events[1].dateGu.isNotEmpty ? events[1].dateGu : events[1].date}\n${events[1].timeGu.isNotEmpty ? events[1].timeGu : events[1].time}');
+          '${lbl(lang.taLabelFor)} ${events[1].dateGu.isNotEmpty ? events[1].dateGu : events[1].date}\n${events[1].timeGu.isNotEmpty ? events[1].timeGu : events[1].time}');
     }
 
     if (events.length > 2) {
-      _updateElement('p0_event3_title', '— ${events[2].title} —',
-          '— ${events[2].titleGu} —');
-      _updateElement(
+      setEl(
+          'p0_event3_title',
+          '— ${events[2].title} —',
+          userLocalized('— ${events[2].title} —', '— ${events[2].titleGu} —'));
+      setEl(
           'p0_event3_date',
           '${lang.dateLabelFor('English')} ${events[2].date}',
-          '${lang.taLabelFor(invLang)} ${events[2].dateGu.isNotEmpty ? events[2].dateGu : events[2].date}');
-      _updateElement(
+          '${lbl(lang.taLabelFor)} ${events[2].dateGu.isNotEmpty ? events[2].dateGu : events[2].date}');
+      setEl(
           'p0_event3_time',
           '${lang.timeLabelFor('English')} ${events[2].time}',
-          '${lang.samayLabelFor(invLang)} ${events[2].timeGu.isNotEmpty ? events[2].timeGu : events[2].time}');
+          '${lbl(lang.samayLabelFor)} ${events[2].timeGu.isNotEmpty ? events[2].timeGu : events[2].time}');
     }
 
     // Bride & Groom / Couple Prefixes
     String bridePrefixEn = lang.chiLabelFor('English');
-    String bridePrefixGu = lang.chiLabelFor(invLang);
+    String bridePrefixGu = lbl(lang.chiLabelFor);
     String groomPrefixEn = lang.chiLabelFor('English');
-    String groomPrefixGu = lang.chiLabelFor(invLang);
+    String groomPrefixGu = lbl(lang.chiLabelFor);
 
     if (templateCategory == 'Engagement') {
       bridePrefixEn = 'Chi. ';
@@ -558,20 +719,24 @@ class InvitationProvider extends ChangeNotifier {
       groomPrefixGu = 'શ્રી ';
     }
 
-    _updateElement('p1_bride', '$bridePrefixEn$brideNameEn', '$bridePrefixGu$brideNameGu');
-    _updateElement('p2_bride', '$bridePrefixEn$brideNameEn', '$bridePrefixGu$brideNameGu');
-    _updateElement('p3_bride', '$bridePrefixEn$brideNameEn', '$bridePrefixGu$brideNameGu');
-    _updateElement('p4_bride', '$bridePrefixEn$brideNameEn', '$bridePrefixGu$brideNameGu');
+    final brideLocalized = userLocalized(
+        '$bridePrefixEn$brideNameEn', '$bridePrefixGu$brideNameGu');
+    final groomLocalized = userLocalized(
+        '$groomPrefixEn$groomNameEn', '$groomPrefixGu$groomNameGu');
+    setEl('p1_bride', '$bridePrefixEn$brideNameEn', brideLocalized);
+    setEl('p2_bride', '$bridePrefixEn$brideNameEn', brideLocalized);
+    setEl('p3_bride', '$bridePrefixEn$brideNameEn', brideLocalized);
+    setEl('p4_bride', '$bridePrefixEn$brideNameEn', brideLocalized);
 
-    _updateElement('p1_groom', '$groomPrefixEn$groomNameEn', '$groomPrefixGu$groomNameGu');
-    _updateElement('p2_groom', '$groomPrefixEn$groomNameEn', '$groomPrefixGu$groomNameGu');
-    _updateElement('p3_groom', '$groomPrefixEn$groomNameEn', '$groomPrefixGu$groomNameGu');
-    _updateElement('p4_groom', '$groomPrefixEn$groomNameEn', '$groomPrefixGu$groomNameGu');
+    setEl('p1_groom', '$groomPrefixEn$groomNameEn', groomLocalized);
+    setEl('p2_groom', '$groomPrefixEn$groomNameEn', groomLocalized);
+    setEl('p3_groom', '$groomPrefixEn$groomNameEn', groomLocalized);
+    setEl('p4_groom', '$groomPrefixEn$groomNameEn', groomLocalized);
 
     // Dates (CRITICAL GUARD: Only update Cover Page short date; do NOT overwrite separate Sangeet & Lagnotsav dates!)
     if (weddingDate.isNotEmpty) {
-      _updateElement('p1_date', '${lang.dateLabelFor('English')} $weddingDate',
-          '${lang.taLabelFor(invLang)} $weddingDate');
+      setEl('p1_date', '${lang.dateLabelFor('English')} $weddingDate',
+          '${lbl(lang.taLabelFor)} $weddingDate');
     }
 
     // Nimantrak (Page 1)
@@ -583,33 +748,47 @@ class InvitationProvider extends ChangeNotifier {
         .join('\n');
     if (nimEn.isEmpty) nimEn = nimantrakNameEn;
     if (nimGu.isEmpty) nimGu = nimantrakNameGu;
-    _updateElement('p1_nimantrak_name', nimEn, nimGu);
+    setEl('p1_nimantrak_name', nimEn, userLocalized(nimEn, nimGu));
 
     // Page 3
-    _updateElement('p3_invite_text1', invitationTextEn, invitationTextGu);
-    _updateElement('p3_parents', parentsNameFullEn, parentsNameFullGu);
+    setEl('p3_invite_text1', invitationTextEn,
+        userLocalized(invitationTextEn, invitationTextGu));
+    setEl('p3_parents', parentsNameFullEn,
+        userLocalized(parentsNameFullEn, parentsNameFullGu));
 
     // Page 5
-    _updateElement('p5_family_title', familyNameEn, familyNameGu);
-    _updateElement('p5_nimantrak_names', nimantrakListEn, nimantrakListGu);
-    _updateElement('p5_no_gifts', noGiftsTextEn, noGiftsTextGu);
+    setEl('p5_family_title', familyNameEn,
+        userLocalized(familyNameEn, familyNameGu));
+    setEl('p5_nimantrak_names', nimantrakListEn,
+        userLocalized(nimantrakListEn, nimantrakListGu));
+    setEl('p5_no_gifts', noGiftsTextEn,
+        userLocalized(noGiftsTextEn, noGiftsTextGu));
 
     // Page 6 Lists
-    _updateElement('p6_list1a', snehdhinEn, snehdhinGu);
-    _updateElement('p6_list2a', darshanabhilashiEn, darshanabhilashiGu);
-    _updateElement('p6_list3', mameruMosalEn, mameruMosalGu);
-    _updateElement('p6_list4', masiFoiLadlaEn, masiFoiLadlaGu);
-    _updateElement('p6_tahuko_text', tahukoEn, tahukoGu);
+    setEl('p6_list1a', snehdhinEn, userLocalized(snehdhinEn, snehdhinGu));
+    setEl('p6_list2a', darshanabhilashiEn,
+        userLocalized(darshanabhilashiEn, darshanabhilashiGu));
+    setEl('p6_list3', mameruMosalEn,
+        userLocalized(mameruMosalEn, mameruMosalGu));
+    setEl('p6_list4', masiFoiLadlaEn,
+        userLocalized(masiFoiLadlaEn, masiFoiLadlaGu));
+    setEl('p6_tahuko_text', tahukoEn, userLocalized(tahukoEn, tahukoGu));
 
     notifyListeners();
   }
 
-  void _updateElement(String id, String english, String gujarati) {
+  void _updateElement(String id, String english, String localized,
+      {required String targetLang}) {
     try {
-      final matches = elements.where((e) => e.id == id || e.id.startsWith('${id}_'));
+      final langCode = TemplateElement.languageCodeFor(targetLang);
+      final matches =
+          elements.where((e) => e.id == id || e.id.startsWith('${id}_'));
       for (final el in matches) {
         if (english.isNotEmpty) el.content = english;
-        if (gujarati.isNotEmpty) el.contentGujarati = gujarati;
+        if (localized.isNotEmpty) {
+          el.contentMap[langCode] = localized;
+          if (langCode == 'gu') el.contentGujarati = localized;
+        }
       }
     } catch (_) {}
   }

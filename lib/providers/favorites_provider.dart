@@ -14,6 +14,7 @@ class FavoritesProvider extends ChangeNotifier {
   StreamSubscription? _authSubscription;
 
   List<TemplateModel> get favorites => _favoriteTemplates;
+  int get count => _favoriteTemplates.length;
 
   FavoritesProvider() {
     _init();
@@ -55,15 +56,38 @@ class FavoritesProvider extends ChangeNotifier {
 
   void _updateFavorites() {
     _favoriteTemplates.clear();
-    if (_appData != null) {
-      for (var id in _favoriteIds) {
-        final template = _appData!.getTemplateById(id);
-        if (template != null) {
-          _favoriteTemplates.add(template);
-        }
+    if (_appData == null) {
+      notifyListeners();
+      return;
+    }
+
+    final validIds = <String>[];
+    for (final id in _favoriteIds) {
+      final template = _appData!.getTemplateById(id);
+      if (template != null) {
+        _favoriteTemplates.add(template);
+        validIds.add(id);
       }
     }
+
+    // Remove stale entries (e.g. draft docs saved under templates collection)
+    if (!_appData!.isLoading && validIds.length != _favoriteIds.length) {
+      final orphans = _favoriteIds.where((id) => !validIds.contains(id)).toList();
+      _favoriteIds = validIds;
+      _cleanupOrphanFavorites(orphans);
+    }
+
     notifyListeners();
+  }
+
+  Future<void> _cleanupOrphanFavorites(List<String> orphanIds) async {
+    for (final id in orphanIds) {
+      try {
+        await _templateRepository.toggleFavorite(id, false);
+      } catch (e) {
+        debugPrint('Failed to cleanup orphan favorite $id: $e');
+      }
+    }
   }
 
   void _unsubscribeFromStreams() {
@@ -80,8 +104,12 @@ class FavoritesProvider extends ChangeNotifier {
       // Optistically toggle locally to make the UI snappy
       if (currentlyFavorite) {
         _favoriteTemplates.removeWhere((t) => t.id == template.id);
+        _favoriteIds.remove(template.id);
       } else {
         _favoriteTemplates.add(template);
+        if (!_favoriteIds.contains(template.id)) {
+          _favoriteIds.add(template.id);
+        }
       }
       notifyListeners();
 
@@ -92,8 +120,12 @@ class FavoritesProvider extends ChangeNotifier {
       // Rollback if Firestore failed
       if (currentlyFavorite) {
         _favoriteTemplates.add(template);
+        if (!_favoriteIds.contains(template.id)) {
+          _favoriteIds.add(template.id);
+        }
       } else {
         _favoriteTemplates.removeWhere((t) => t.id == template.id);
+        _favoriteIds.remove(template.id);
       }
       notifyListeners();
     }

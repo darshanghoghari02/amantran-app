@@ -82,9 +82,10 @@ class StaticElement extends StatelessWidget {
           child: Text(
             element.getDisplayText(activeLanguage),
             textAlign: element.textAlign,
+            textDirection: TemplateElement.textDirectionFor(activeLanguage),
             softWrap: true,
             overflow: TextOverflow.visible,
-            style: element.getTextStyle(scale: scaleX),
+            style: element.getTextStyleForLanguage(activeLanguage, scale: scaleX),
           ),
         );
 
@@ -276,158 +277,24 @@ class StaticElement extends StatelessWidget {
 }
 
 class GoogleMapsIconWidget extends StatelessWidget {
+  static const String assetPath = 'assets/images/location_map_icon.png';
+
   final double size;
 
   const GoogleMapsIconWidget({super.key, required this.size});
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return SizedBox(
       width: size,
       height: size,
-      padding: EdgeInsets.all(size * 0.12),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(size * 0.22),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 8,
-            offset: const Offset(0, 3),
-          ),
-        ],
-      ),
-      child: CustomPaint(
-        size: Size(size, size),
-        painter: _AuthenticGoogleMapsPainter(),
+      child: Image.asset(
+        assetPath,
+        fit: BoxFit.contain,
+        filterQuality: FilterQuality.high,
       ),
     );
   }
-}
-
-class _AuthenticGoogleMapsPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final double w = size.width;
-    final double h = size.height;
-
-    final Paint paint = Paint()..style = PaintingStyle.fill;
-
-    // Clip to rounded bounds of the inner map canvas
-    final RRect clipRect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(0, 0, w, h),
-      Radius.circular(w * 0.15),
-    );
-    canvas.save();
-    canvas.clipRRect(clipRect);
-
-    // 1. Draw base/background: light grey fold (bottom-right)
-    paint.color = const Color(0xFFE8EAED); // Google Light Grey
-    canvas.drawRect(Rect.fromLTWH(0, 0, w, h), paint);
-
-    // 2. Draw Blue fold (bottom center/right area)
-    final Path bluePath = Path()
-      ..moveTo(w * 0.2, h)
-      ..lineTo(w * 0.9, h)
-      ..lineTo(w * 0.55, h * 0.55)
-      ..close();
-    paint.color = const Color(0xFF4285F4); // Google Blue
-    canvas.drawPath(bluePath, paint);
-
-    // 3. Draw Green fold (top left area)
-    final Path greenPath = Path()
-      ..moveTo(0, 0)
-      ..lineTo(w * 0.65, 0)
-      ..lineTo(w * 0.65, h * 0.6)
-      ..lineTo(0, h * 0.6)
-      ..close();
-    paint.color = const Color(0xFF34A853); // Google Green
-    canvas.drawPath(greenPath, paint);
-
-    // 4. Draw Yellow diagonal road/strip separating them
-    final Path yellowPath = Path()
-      ..moveTo(0, h * 0.6)
-      ..lineTo(w * 0.65, 0)
-      ..lineTo(w * 0.8, 0)
-      ..lineTo(0, h * 0.75)
-      ..close();
-    paint.color = const Color(0xFFFBBC05); // Google Yellow
-    canvas.drawPath(yellowPath, paint);
-
-    // 5. Draw the iconic white Google "G" in the green section
-    final double gCenterX = w * 0.26;
-    final double gCenterY = h * 0.28;
-    final double gRadius = w * 0.14;
-
-    // Draw the white circle background for G logo
-    paint.color = Colors.white.withOpacity(0.95);
-    canvas.drawCircle(Offset(gCenterX, gCenterY), gRadius, paint);
-
-    // Draw the Google "G" icon itself in green
-    final textPainter = TextPainter(
-      text: TextSpan(
-        text: 'G',
-        style: TextStyle(
-          color: const Color(0xFF34A853), // Green "G"
-          fontSize: gRadius * 1.45,
-          fontWeight: FontWeight.w900,
-          fontFamily: 'Poppins',
-        ),
-      ),
-      textDirection: TextDirection.ltr,
-    )..layout();
-    
-    textPainter.paint(
-      canvas,
-      Offset(gCenterX - textPainter.width / 2, gCenterY - textPainter.height / 2),
-    );
-
-    canvas.restore(); // Restore clipping to draw pin outside/overlapping
-
-    // 6. Draw the three-dimensional Google Maps Red Pin overlapping on the right!
-    final pinCenter = Offset(w * 0.68, h * 0.38);
-    final double pinRadius = w * 0.23;
-
-    // Soft realistic Pin Shadow cast to the bottom-left
-    final shadowPaint = Paint()
-      ..color = Colors.black.withOpacity(0.18)
-      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2.5);
-    canvas.drawOval(
-      Rect.fromCenter(
-        center: Offset(pinCenter.dx - pinRadius * 0.25, pinCenter.dy + pinRadius * 1.1),
-        width: pinRadius * 1.1,
-        height: pinRadius * 0.35,
-      ),
-      shadowPaint,
-    );
-
-    // Red pin base path (combining circle and sharp bottom pointer)
-    final Path pinPath = Path()
-      ..moveTo(pinCenter.dx, pinCenter.dy + pinRadius * 1.25)
-      ..lineTo(pinCenter.dx - pinRadius * 0.65, pinCenter.dy + pinRadius * 0.35)
-      ..arcToPoint(
-        Offset(pinCenter.dx + pinRadius * 0.65, pinCenter.dy + pinRadius * 0.35),
-        radius: Radius.circular(pinRadius),
-        clockwise: true,
-      )
-      ..lineTo(pinCenter.dx, pinCenter.dy + pinRadius * 1.25)
-      ..close();
-
-    paint.color = const Color(0xFFEA4335); // Google Red Pin
-    canvas.drawPath(pinPath, paint);
-    canvas.drawCircle(pinCenter, pinRadius, paint);
-
-    // White circle inside pin (outer ring)
-    paint.color = Colors.white;
-    canvas.drawCircle(pinCenter, pinRadius * 0.45, paint);
-
-    // Inner red dot representing the exact location point
-    paint.color = const Color(0xFFB71C1C);
-    canvas.drawCircle(pinCenter, pinRadius * 0.22, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
 
 /// Dynamic Max Width Helper for self-healing text layouts

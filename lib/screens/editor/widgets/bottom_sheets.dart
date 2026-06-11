@@ -22,12 +22,20 @@ class _SheetWrapper extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final lang = context.watch<LanguageProvider>();
+    // Ensure the sheet always sits above the system navigation bar
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom
+        + MediaQuery.of(context).padding.bottom;
     return Container(
       decoration: const BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      padding: const EdgeInsets.only(top: 12, bottom: 24, left: 20, right: 20),
+      padding: EdgeInsets.only(
+        top: 12,
+        bottom: bottomInset > 0 ? bottomInset : 24,
+        left: 20,
+        right: 20,
+      ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -62,6 +70,8 @@ class _SheetWrapper extends StatelessWidget {
           ),
           const SizedBox(height: 24),
           child,
+          // Extra breathing room above nav bar
+          const SizedBox(height: 8),
         ],
       ),
     );
@@ -74,9 +84,14 @@ class _SheetWrapper extends StatelessWidget {
 class FormatBottomSheet extends StatefulWidget {
   final String elementId;
   final VoidCallback onChanged;
+  final List<String>? supportedLanguages;
 
-  const FormatBottomSheet(
-      {super.key, required this.elementId, required this.onChanged});
+  const FormatBottomSheet({
+    super.key,
+    required this.elementId,
+    required this.onChanged,
+    this.supportedLanguages,
+  });
 
   @override
   State<FormatBottomSheet> createState() => _FormatBottomSheetState();
@@ -121,7 +136,8 @@ class _FormatBottomSheetState extends State<FormatBottomSheet> {
     final activeLanguage = langProvider.activeInvitationLanguage;
     final maxW = getMaxConstraintWidth(element.id);
     final String displayText = element.getDisplayText(activeLanguage);
-    final textStyle = element.getTextStyle(scale: 1.0);
+    final textStyle =
+        element.getTextStyleForLanguage(activeLanguage, scale: 1.0);
 
     final textPainter = TextPainter(
       text: TextSpan(
@@ -387,31 +403,48 @@ class _FormatBottomSheetState extends State<FormatBottomSheet> {
               Text(lang.invitationLanguageLabel,
                   style: const TextStyle(
                       fontWeight: FontWeight.w600, fontSize: 14)),
-              DropdownButton<String>(
-                value: lang.activeInvitationLanguage,
-                underline: const SizedBox(),
-                onChanged: (val) async {
-                  if (val != null) {
-                    lang.activeInvitationLanguage = val;
-                    // Trigger a re-sync of invitation content with new language labels
-                    final invProvider = context.read<InvitationProvider>();
-                    invProvider.syncToElements(lang);
+              Builder(
+                builder: (context) {
+                  final dropdownLanguages = widget.supportedLanguages != null &&
+                          widget.supportedLanguages!.isNotEmpty
+                      ? widget.supportedLanguages!
+                      : lang.invitationLanguages.toList();
 
-                    // Concurrently transliterate all elements to the selected language
-                    await invProvider.transliterateAllElements(val);
-
-                    setState(() {
-                      _updateDimensions();
-                    });
-                    widget.onChanged();
+                  String activeLang = lang.activeInvitationLanguage;
+                  if (!dropdownLanguages.contains(activeLang)) {
+                    if (dropdownLanguages.isNotEmpty) {
+                      activeLang = dropdownLanguages.first;
+                    }
                   }
-                },
-                items: lang.invitationLanguages
-                    .map((l) => DropdownMenuItem(
-                          value: l,
-                          child: Text(l, style: const TextStyle(fontSize: 14)),
-                        ))
-                    .toList(),
+
+                  return DropdownButton<String>(
+                    value: activeLang,
+                    underline: const SizedBox(),
+                    onChanged: (val) {
+                      if (val != null) {
+                        lang.activeInvitationLanguage = val;
+                        final invProvider = context.read<InvitationProvider>();
+                        invProvider.applyLanguageInstant(lang,
+                            invitationLanguage: val);
+                        setState(() {
+                          _updateDimensions();
+                        });
+                        widget.onChanged();
+                        invProvider.scheduleLanguageRefine(
+                          force: true,
+                          delay: const Duration(milliseconds: 400),
+                          invitationLanguage: val,
+                        );
+                      }
+                    },
+                    items: dropdownLanguages
+                        .map((l) => DropdownMenuItem(
+                              value: l,
+                              child: Text(l, style: const TextStyle(fontSize: 14)),
+                            ))
+                        .toList(),
+                  );
+                }
               ),
             ],
           ),

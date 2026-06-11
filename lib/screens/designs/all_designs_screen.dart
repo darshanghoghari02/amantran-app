@@ -6,7 +6,7 @@ import '../../providers/language_provider.dart';
 import '../editor/editor_screen.dart';
 import '../../widgets/design_cards.dart';
 import '../../widgets/top_notification.dart';
-import 'package:share_plus/share_plus.dart';
+import '../../widgets/design_pdf_share_dialog.dart';
 
 class AllDesignsScreen extends StatelessWidget {
   final String title;
@@ -115,7 +115,11 @@ class AllDesignsScreen extends StatelessWidget {
                               _showDeleteConfirm(context, design);
                             },
                             onShare: () {
-                              Share.share('Check out my design: ${design.template.name}');
+                              showDialog(
+                                context: context,
+                                barrierDismissible: false,
+                                builder: (_) => DesignPdfShareDialog(design: design),
+                              );
                             },
                           );
                         }

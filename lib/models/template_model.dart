@@ -38,8 +38,8 @@ class TemplateModel {
   });
 
   factory TemplateModel.fromJson(Map<String, dynamic> json, String documentId) {
-    var languages = json['supportedLanguages'] as List? ?? [];
-    var fonts = json['supportedFonts'] as List? ?? [];
+    var languages = (json['languages'] as List? ?? json['supportedLanguages'] as List?) ?? [];
+    var fonts = (json['fonts'] as List? ?? json['supportedFonts'] as List?) ?? [];
 
     return TemplateModel(
       id: documentId,

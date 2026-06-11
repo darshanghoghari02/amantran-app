@@ -8,6 +8,7 @@ import '../../providers/app_data_provider.dart';
 import '../../services/transliteration_engine.dart';
 import 'package:http/http.dart' as http;
 import '../preview/preview_screen.dart';
+import '../preview/widgets/static_element.dart';
 import '../form/form_screen.dart';
 import '../../models/user_design.dart';
 import '../../providers/designs_provider.dart';
@@ -33,9 +34,15 @@ class EditorScreen extends StatefulWidget {
   final TemplateModel template;
   final String? designId;
   final List<TemplateElement>? initialElements;
+  final String? initialLanguage;
 
-  const EditorScreen(
-      {super.key, required this.template, this.designId, this.initialElements});
+  const EditorScreen({
+    super.key,
+    required this.template,
+    this.designId,
+    this.initialElements,
+    this.initialLanguage,
+  });
 
   @override
   State<EditorScreen> createState() => _EditorScreenState();
@@ -60,20 +67,27 @@ class _EditorScreenState extends State<EditorScreen> {
   List<PageModel> _pages = [];
   bool _isDiscarding = false;
   bool _allowPop = false;
+  late String _cardLanguage;
 
   @override
   void initState() {
     super.initState();
     _currentDesignId =
         widget.designId ?? DateTime.now().millisecondsSinceEpoch.toString();
-        
+    _cardLanguage = widget.initialLanguage ??
+        context.read<LanguageProvider>().activeInvitationLanguage;
     _initEditor();
+  }
+
+  String get _activeCardLanguage {
+    final lang = context.read<LanguageProvider>();
+    return lang.activeInvitationLanguage;
   }
 
   Future<void> _initEditor() async {
     try {
       final appData = context.read<AppDataProvider>();
-      _pages = await appData.getTemplatePages(widget.template.id);
+      _pages = await appData.getTemplatePagesCachedFirst(widget.template.id);
       
       List<TemplateElement> elementsToLoad = [];
       
@@ -89,22 +103,39 @@ class _EditorScreenState extends State<EditorScreen> {
       }
 
       if (mounted) {
-        await context.read<InvitationProvider>().loadNewTemplate(
-              elementsToLoad,
-              isNew: widget.initialElements == null,
-            );
-        _autoSaveDraft();
-        InteractionService.logInteraction(
-          type: 'customize_template',
-          description: 'Started customizing template: ${widget.template.title}',
-          details: {
-            'designId': _currentDesignId,
-            'templateId': widget.template.id,
-            'templateName': widget.template.title,
-          },
+        final lang = context.read<LanguageProvider>();
+        lang.setActiveInvitationLanguage(_cardLanguage);
+        final invProvider = context.read<InvitationProvider>();
+        invProvider.setLanguageProvider(lang);
+        await invProvider.loadNewTemplate(
+          elementsToLoad,
+          isNew: widget.initialElements == null,
         );
-        setState(() {
-          _isLoading = false;
+        invProvider.applyLanguageInstant(lang, invitationLanguage: _cardLanguage);
+        if (_cardLanguage != 'English' && _cardLanguage != 'Gujarati') {
+          invProvider.scheduleLanguageRefine(
+            force: true,
+            delay: const Duration(milliseconds: 300),
+            invitationLanguage: _cardLanguage,
+          );
+        }
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+          });
+        }
+        Future.microtask(() {
+          if (!mounted) return;
+          _autoSaveDraft();
+          InteractionService.logInteraction(
+            type: 'customize_template',
+            description: 'Started customizing template: ${widget.template.title}',
+            details: {
+              'designId': _currentDesignId,
+              'templateId': widget.template.id,
+              'templateName': widget.template.title,
+            },
+          );
         });
       }
     } catch (e) {
@@ -138,6 +169,20 @@ class _EditorScreenState extends State<EditorScreen> {
     }
   }
 
+  bool _isGaneshElement(TemplateElement element) {
+    final idLower = element.id.toLowerCase();
+    final pathLower = (element.assetPath ?? '').toLowerCase();
+    return idLower.contains('ganesh') || pathLower.contains('ganesh');
+  }
+
+  bool _isLocationIconElement(TemplateElement element) {
+    final idLower = element.id.toLowerCase();
+    return idLower.contains('_map_icon') || idLower.contains('map_icon');
+  }
+
+  bool _shouldLimitToolbar(TemplateElement element) =>
+      _isGaneshElement(element) || _isLocationIconElement(element);
+
   void _addNewTextField() {
     _beginAction();
 
@@ -153,14 +198,37 @@ class _EditorScreenState extends State<EditorScreen> {
     final height = pageH * 0.06; // 6% of canvas height
     final x = (pageW - width) / 2; // Center horizontally
     final y = pageH * 0.6; // 60% down the page
-    final fontSize = pageH * 0.025; // Proportional font size (approx 48 for 1920 height, which is 16 * 3)
+    final fontSize = pageH * 0.025; // Proportional font size (approx 48 for 1920 height)
+
+    final String activeLang = context.read<LanguageProvider>().activeInvitationLanguage;
+    final String activeCode = TemplateElement.languageCodeFor(activeLang);
+
+    // Initial content map based on active language
+    final Map<String, String> initialContentMap = {
+      'en': 'New Text',
+      'gu': 'નવો ટેક્સ્ટ',
+    };
+
+    // Pre-populate some common translations to avoid async lag
+    const Map<String, String> commonTranslations = {
+      'hi': 'नया टेक्स्ट',
+      'mr': 'नवीन मजकूर',
+      'ur': 'نیا متن',
+      'pa': 'ਨਵਾਂ ਟੈਕਸਟ',
+      'ta': 'புதிய உரை',
+      'sa': 'नवीनलेखः',
+      'ks': 'نیا متن',
+    };
+
+    if (commonTranslations.containsKey(activeCode)) {
+      initialContentMap[activeCode] = commonTranslations[activeCode]!;
+    }
 
     final newElement = TemplateElement(
       id: newId,
       pageIndex: currentPage,
       type: ElementType.text,
-      content: 'New Text',
-      contentGujarati: 'નવો ટેક્સ્ટ',
+      contentMap: initialContentMap,
       x: x,
       y: y,
       width: width,
@@ -182,6 +250,21 @@ class _EditorScreenState extends State<EditorScreen> {
       provider.elements = updated;
       selectedElementId = newId;
     });
+
+    if (activeLang != 'English') {
+      _engine.translateAsync('New Text', activeLang).then((result) {
+        if (result.isNotEmpty && mounted) {
+          setState(() {
+            try {
+              final el = provider.elements.firstWhere((e) => e.id == newId);
+              el.setLocalizedText(activeLang, result);
+              if (activeCode == 'gu') el.contentGujarati = result;
+            } catch (_) {}
+          });
+          provider.notifyListeners();
+        }
+      });
+    }
 
     provider.notifyListeners();
     InteractionService.logInteraction(
@@ -372,179 +455,196 @@ class _EditorScreenState extends State<EditorScreen> {
             : SafeArea(
           child: Column(
             children: [
-              // 🔥 CUSTOM TOP BAR
+              // 🔥 CUSTOM TOP BAR — Responsive (no overflow)
               Padding(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 12),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Container(
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.05),
-                            blurRadius: 10,
-                            offset: const Offset(0, 4),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
+                child: LayoutBuilder(
+                  builder: (context, constraints) {
+                    // Use compact icon size on narrower screens
+                    final bool isCompact = constraints.maxWidth < 400;
+                    final double iconPad = isCompact ? 3.0 : 4.0;
+                    final double iconSize = isCompact ? 20.0 : 24.0;
+                    return Row(
+                      children: [
+                        // ── Home button ──
+                        Container(
+                          decoration: BoxDecoration(
+                            color: Colors.white,
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.05),
+                                blurRadius: 10,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
                           ),
-                        ],
-                      ),
-                      child: IconButton(
-                        icon: const Icon(Icons.home_outlined,
-                            color: Colors.black87),
-                        onPressed: () async {
-                          final shouldExit = await _showExitDialog(context);
-                          if (shouldExit && mounted) {
-                            Navigator.popUntil(context, (r) => r.isFirst);
-                          }
-                        },
-                      ),
-                    ),
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                          horizontal: 4, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(30),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.04),
-                            blurRadius: 10,
-                            offset: const Offset(0, 3),
-                          ),
-                        ],
-                        border:
-                            Border.all(color: Colors.grey.shade100, width: 1.0),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          IconButton(
-                            icon: Icon(Icons.undo,
-                                color: _undoStack.isNotEmpty
-                                    ? Colors.black87
-                                    : Colors.black26),
-                            onPressed: _undoStack.isNotEmpty ? _undo : null,
-                            constraints: const BoxConstraints(),
-                            padding: const EdgeInsets.all(4),
-                          ),
-                          IconButton(
-                            icon: Icon(Icons.redo,
-                                color: _redoStack.isNotEmpty
-                                    ? Colors.black87
-                                    : Colors.black26),
-                            onPressed: _redoStack.isNotEmpty ? _redo : null,
-                            constraints: const BoxConstraints(),
-                            padding: const EdgeInsets.all(4),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.visibility_rounded,
+                          child: IconButton(
+                            iconSize: iconSize,
+                            icon: const Icon(Icons.home_outlined,
                                 color: Colors.black87),
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => PreviewScreen(
-                                    data: provider.data,
-                                    template: widget.template,
-                                    designId: _currentDesignId,
-                                    pages: _pages,
+                            onPressed: () async {
+                              final shouldExit = await _showExitDialog(context);
+                              if (shouldExit && mounted) {
+                                Navigator.popUntil(context, (r) => r.isFirst);
+                              }
+                            },
+                            constraints: const BoxConstraints(),
+                            padding: EdgeInsets.all(iconPad + 4),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        // ── Center pill (undo/redo/preview/map/align) — fills available space ──
+                        Expanded(
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 4, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(30),
+                              boxShadow: [
+                                BoxShadow(
+                                  color: Colors.black.withValues(alpha: 0.04),
+                                  blurRadius: 10,
+                                  offset: const Offset(0, 3),
+                                ),
+                              ],
+                              border: Border.all(
+                                  color: Colors.grey.shade100, width: 1.0),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                              children: [
+                                IconButton(
+                                  icon: Icon(Icons.undo,
+                                      size: iconSize,
+                                      color: _undoStack.isNotEmpty
+                                          ? Colors.black87
+                                          : Colors.black26),
+                                  onPressed:
+                                      _undoStack.isNotEmpty ? _undo : null,
+                                  constraints: const BoxConstraints(),
+                                  padding: EdgeInsets.all(iconPad),
+                                ),
+                                IconButton(
+                                  icon: Icon(Icons.redo,
+                                      size: iconSize,
+                                      color: _redoStack.isNotEmpty
+                                          ? Colors.black87
+                                          : Colors.black26),
+                                  onPressed:
+                                      _redoStack.isNotEmpty ? _redo : null,
+                                  constraints: const BoxConstraints(),
+                                  padding: EdgeInsets.all(iconPad),
+                                ),
+                                IconButton(
+                                  icon: Icon(Icons.visibility_rounded,
+                                      size: iconSize, color: Colors.black87),
+                                  onPressed: () {
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (_) => PreviewScreen(
+                                          data: provider.data,
+                                          template: widget.template,
+                                          designId: _currentDesignId,
+                                          pages: _pages,
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                  tooltip: "Preview",
+                                  constraints: const BoxConstraints(),
+                                  padding: EdgeInsets.all(iconPad),
+                                ),
+                                IconButton(
+                                  icon: GoogleMapsIconWidget(size: iconSize),
+                                  onPressed: _showMapLocationDialog,
+                                  tooltip: "Set Live Location",
+                                  constraints: const BoxConstraints(),
+                                  padding: EdgeInsets.all(iconPad),
+                                ),
+                                Tooltip(
+                                  message: "Auto-Align & Center All Elements",
+                                  child: InkWell(
+                                    onTap: () {
+                                      _beginAction();
+                                      provider.alignAndCenterAllElements(
+                                          pages: _pages, force: false);
+                                      _endAction();
+                                      InteractionService.logInteraction(
+                                        type: 'auto_align_elements',
+                                        description:
+                                            'Auto-aligned and centered elements',
+                                        details: {'designId': _currentDesignId},
+                                      );
+                                      TopNotification.show(
+                                        context,
+                                        message:
+                                            "Page layout optimized and auto-centered successfully!",
+                                      );
+                                    },
+                                    borderRadius: BorderRadius.circular(100),
+                                    child: Container(
+                                      padding: EdgeInsets.all(iconPad + 3),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFFFB200)
+                                            .withValues(alpha: 0.18),
+                                        shape: BoxShape.circle,
+                                        border: Border.all(
+                                          color: const Color(0xFFFFB200)
+                                              .withValues(alpha: 0.5),
+                                          width: 1,
+                                        ),
+                                      ),
+                                      child: Icon(
+                                        Icons.format_align_center_rounded,
+                                        color: const Color(0xFFFF9100),
+                                        size: iconSize - 4,
+                                      ),
+                                    ),
                                   ),
                                 ),
-                              );
-                            },
-                            tooltip: "Preview",
-                            constraints: const BoxConstraints(),
-                            padding: const EdgeInsets.all(4),
+                              ],
+                            ),
                           ),
-                          IconButton(
-                            icon: const Icon(Icons.location_on_rounded,
-                                color: Color(0xFFF94C66)),
-                            onPressed: _showMapLocationDialog,
-                            tooltip: "Set Live Location",
-                            constraints: const BoxConstraints(),
-                            padding: const EdgeInsets.all(4),
-                          ),
-                           Padding(
-                             padding: const EdgeInsets.symmetric(horizontal: 4.0),
-                             child: Tooltip(
-                              message: "Auto-Align & Center All Elements",
-                              child: InkWell(
-                                onTap: () {
-                                  _beginAction();
-                                  provider.alignAndCenterAllElements(pages: _pages, force: false);
-                                  _endAction();
-                                  InteractionService.logInteraction(
-                                    type: 'auto_align_elements',
-                                    description: 'Auto-aligned and centered elements',
-                                    details: {'designId': _currentDesignId},
-                                  );
-                                  TopNotification.show(
-                                    context,
-                                    message: "Page layout optimized and auto-centered successfully!",
-                                  );
-                                },
-                                borderRadius: BorderRadius.circular(100),
-                                child: Container(
-                                  padding: const EdgeInsets.all(7.5),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFFFB200).withValues(alpha: 0.18),
-                                    shape: BoxShape.circle,
-                                    border: Border.all(
-                                      color: const Color(0xFFFFB200).withValues(alpha: 0.5),
-                                      width: 1,
-                                    ),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: const Color(0xFFFFB200).withValues(alpha: 0.05),
-                                        blurRadius: 4,
-                                        offset: const Offset(0, 1),
-                                      ),
-                                    ],
-                                  ),
-                                  child: const Icon(
-                                    Icons.format_align_center_rounded,
-                                    color: Color(0xFFFF9100),
-                                    size: 19,
-                                  ),
+                        ),
+                        const SizedBox(width: 6),
+                        // ── Save button ──
+                        ElevatedButton(
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => PreviewScreen(
+                                  data:
+                                      context.read<InvitationProvider>().data,
+                                  template: widget.template,
+                                  designId: _currentDesignId,
+                                  pages: _pages,
                                 ),
                               ),
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFFF94C66),
+                            foregroundColor: Colors.white,
+                            elevation: 0,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(20),
                             ),
+                            padding: EdgeInsets.symmetric(
+                                horizontal: isCompact ? 10 : 14,
+                                vertical: 10),
                           ),
-                        ],
-                      ),
-                    ),
-                    ElevatedButton(
-                      onPressed: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => PreviewScreen(
-                              data: context.read<InvitationProvider>().data,
-                              template: widget.template,
-                              designId: _currentDesignId,
-                              pages: _pages,
-                            ),
-                          ),
-                        );
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFFF94C66),
-                        foregroundColor: Colors.white,
-                        elevation: 0,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(20),
+                          child: Text(lang.save,
+                              style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: isCompact ? 12 : 14)),
                         ),
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 14, vertical: 10),
-                      ),
-                      child: Text(lang.save,
-                          style: const TextStyle(
-                              fontWeight: FontWeight.bold, fontSize: 14)),
-                    ),
-                  ],
+                      ],
+                    );
+                  },
                 ),
               ),
 
@@ -639,8 +739,7 @@ class _EditorScreenState extends State<EditorScreen> {
                                           element: element,
                                           isSelected:
                                               element.id == selectedElementId,
-                                          activeLanguage:
-                                              lang.activeInvitationLanguage,
+                                          activeLanguage: _activeCardLanguage,
                                           onTap: () => setState(() =>
                                               selectedElementId = element.id),
                                           onDelete: () =>
@@ -680,62 +779,51 @@ class _EditorScreenState extends State<EditorScreen> {
                                             }
                                           }),
                                           onTextEdit: (en, gu) {
-                                             final String activeLang = lang.activeInvitationLanguage;
-                                             final bool isLocalized = activeLang != 'English';
-                                             final String activeCode = () {
-                                               switch (activeLang.toLowerCase()) {
-                                                 case 'english': return 'en';
-                                                 case 'gujarati': return 'gu';
-                                                 case 'hindi': return 'hi';
-                                                 case 'marathi': return 'mr';
-                                                 case 'punjabi': return 'pa';
-                                                 case 'urdu': return 'ur';
-                                                 case 'tamil': return 'ta';
-                                                 default: return 'en';
-                                               }
-                                             }();
+                                              final String activeLang = lang.activeInvitationLanguage;
+                                              final bool isLocalized = activeLang != 'English';
+                                              final String activeCode = TemplateElement.languageCodeFor(activeLang);
 
-                                             setState(() {
-                                               element.contentMap['en'] = sanitizeCorruptedText(en);
-                                               if (isLocalized) {
-                                                 element.contentMap[activeCode] = sanitizeCorruptedText(gu);
-                                                 if (activeCode == 'gu') {
-                                                   element.contentGujarati = gu;
-                                                 }
-                                               } else {
-                                                 final translited = sanitizeCorruptedText(_engine.transliterate(en, lang: 'Gujarati'));
-                                                 element.contentMap['gu'] = translited;
-                                                 element.contentGujarati = translited;
-                                               }
-                                               _updateTextElementDimensions(element);
-                                             });
+                                              setState(() {
+                                                element.contentMap['en'] = sanitizeCorruptedText(en);
+                                                if (isLocalized) {
+                                                  element.setLocalizedText(activeLang, gu);
+                                                  element.contentGujarati = gu;
+                                                } else {
+                                                  final translited = sanitizeCorruptedText(_engine.transliterate(en, lang: 'Gujarati'));
+                                                  element.contentMap['gu'] = translited;
+                                                  element.contentGujarati = translited;
+                                                  element.setLocalizedText('Gujarati', translited);
+                                                }
+                                                _updateTextElementDimensions(element);
+                                              });
 
-                                             context
-                                                 .read<InvitationProvider>()
-                                                 .syncElementBackToProvider(
-                                                     element);
-                                             _autoSaveDraft();
+                                              context
+                                                  .read<InvitationProvider>()
+                                                  .syncElementBackToProvider(
+                                                      element);
+                                              _autoSaveDraft();
 
-                                             if (!isLocalized && en.isNotEmpty) {
-                                               _engine
-                                                   .transliterateAsync(en, lang: 'Gujarati')
-                                                   .then((result) {
-                                                 if (mounted && result.isNotEmpty) {
-                                                   setState(() {
-                                                     final cleanResult = sanitizeCorruptedText(result);
-                                                     element.contentMap['gu'] = cleanResult;
-                                                     element.contentGujarati = cleanResult;
-                                                     _updateTextElementDimensions(element);
-                                                   });
-                                                   context
-                                                       .read<InvitationProvider>()
-                                                       .syncElementBackToProvider(
-                                                           element);
-                                                   _autoSaveDraft();
-                                                 }
-                                               });
-                                             }
-                                           },
+                                              if (!isLocalized && en.isNotEmpty) {
+                                                _engine
+                                                    .translateAsync(en, 'Gujarati')
+                                                    .then((result) {
+                                                  if (mounted && result.isNotEmpty) {
+                                                    setState(() {
+                                                      final cleanResult = sanitizeCorruptedText(result);
+                                                      element.contentMap['gu'] = cleanResult;
+                                                      element.contentGujarati = cleanResult;
+                                                      element.setLocalizedText('Gujarati', cleanResult);
+                                                      _updateTextElementDimensions(element);
+                                                    });
+                                                    context
+                                                        .read<InvitationProvider>()
+                                                        .syncElementBackToProvider(
+                                                            element);
+                                                    _autoSaveDraft();
+                                                  }
+                                                });
+                                              }
+                                            },
                                           onActionStart: _beginAction,
                                           onActionEnd: _endAction,
                                           scaleX: scaleX,
@@ -917,20 +1005,32 @@ class _EditorScreenState extends State<EditorScreen> {
                   ],
                   border: Border.all(color: Colors.black.withOpacity(0.03)),
                 ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    _bottomToolIcon(Icons.edit_note_rounded, "Edit",
-                        () => _showEditBottomSheet()),
-                    _bottomToolIcon(Icons.text_format_rounded, "Format",
-                        () => _showFormatBottomSheet()),
-                    _bottomToolIcon(Icons.sync_rounded, "Rotate",
-                        () => _showRotationBottomSheet()),
-                    _bottomToolIcon(Icons.palette_outlined, "Color",
-                        () => _showColorBottomSheet()),
-                    _bottomToolIcon(Icons.opacity_rounded, "Opacity",
-                        () => _showOpacityBottomSheet()),
-                  ],
+                child: Builder(
+                  builder: (context) {
+                    final selected = selectedElement(provider);
+                    final limitToolbar = selected != null &&
+                        _shouldLimitToolbar(selected);
+                    return Row(
+                      mainAxisAlignment: limitToolbar
+                          ? MainAxisAlignment.spaceEvenly
+                          : MainAxisAlignment.spaceBetween,
+                      children: [
+                        if (!limitToolbar) ...[
+                          _bottomToolIcon(Icons.edit_note_rounded, "Edit",
+                              () => _showEditBottomSheet()),
+                          _bottomToolIcon(Icons.text_format_rounded, "Format",
+                              () => _showFormatBottomSheet()),
+                        ],
+                        _bottomToolIcon(Icons.sync_rounded, "Rotate",
+                            () => _showRotationBottomSheet()),
+                        if (!limitToolbar)
+                          _bottomToolIcon(Icons.palette_outlined, "Color",
+                              () => _showColorBottomSheet()),
+                        _bottomToolIcon(Icons.opacity_rounded, "Opacity",
+                            () => _showOpacityBottomSheet()),
+                      ],
+                    );
+                  },
                 ),
               ),
             ],
@@ -1044,6 +1144,8 @@ class _EditorScreenState extends State<EditorScreen> {
   void _showEditBottomSheet() {
     if (selectedElementId == null) return;
     final provider = context.read<InvitationProvider>();
+    final selected = selectedElement(provider);
+    if (selected != null && _shouldLimitToolbar(selected)) return;
     final lang = context.read<LanguageProvider>();
     final el = provider.elements.firstWhere((e) => e.id == selectedElementId,
         orElse: () => provider.elements.first);
@@ -1064,12 +1166,9 @@ class _EditorScreenState extends State<EditorScreen> {
           content: SizedBox(
             width: 400,
             child: TransliterationField(
-              initialText: lang.activeInvitationLanguage != 'English'
-                  ? (el.contentGujarati.isNotEmpty
-                      ? el.contentGujarati
-                      : el.content)
-                  : el.content,
+              initialText: el.getDisplayText(lang.activeInvitationLanguage),
               isTransliterationOn: lang.activeInvitationLanguage != 'English',
+              language: lang.activeInvitationLanguage,
               label: "Edit Content",
               maxLines: 4,
               onChanged: (en, gu) {
@@ -1085,9 +1184,12 @@ class _EditorScreenState extends State<EditorScreen> {
             ),
             ElevatedButton(
               onPressed: () {
-                final isLocalized = lang.activeInvitationLanguage != 'English';
+                final activeLang = lang.activeInvitationLanguage;
+                final isLocalized = activeLang != 'English';
                 setState(() {
                   if (isLocalized) {
+                    el.setLocalizedText(activeLang, currentGu);
+                    // Legacy fallback
                     el.contentGujarati = currentGu;
                     if (el.content.isEmpty ||
                         el.content == el.contentGujarati) {
@@ -1095,19 +1197,21 @@ class _EditorScreenState extends State<EditorScreen> {
                     }
                   } else {
                     el.content = currentEn;
-                    el.contentGujarati = _engine.transliterate(currentEn,
-                        lang: lang.activeInvitationLanguage);
+                    // Legacy fallback
+                    final translited = _engine.transliterate(currentEn, lang: 'Gujarati');
+                    el.contentGujarati = translited;
+                    el.setLocalizedText('Gujarati', translited);
                   }
                 });
                 Navigator.pop(ctx);
 
                 if (!isLocalized && currentEn.isNotEmpty) {
-                  _engine
-                      .transliterateAsync(currentEn,
-                          lang: lang.activeInvitationLanguage)
-                      .then((result) {
-                    if (mounted && result != el.contentGujarati) {
-                      setState(() => el.contentGujarati = result);
+                  _engine.translateAsync(currentEn, activeLang).then((result) {
+                    if (mounted && result.isNotEmpty) {
+                      setState(() {
+                        el.setLocalizedText(activeLang, result);
+                        el.contentGujarati = result;
+                      });
                     }
                   });
                 }
@@ -1434,7 +1538,7 @@ class _EditorScreenState extends State<EditorScreen> {
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(28)),
             title: Row(
               children: [
-                const Icon(Icons.location_on, color: Color(0xFFF94C66), size: 28),
+                const GoogleMapsIconWidget(size: 36),
                 const SizedBox(width: 10),
                 const Text(
                   "Set Live Location",
@@ -1620,6 +1724,9 @@ class _EditorScreenState extends State<EditorScreen> {
 
   void _showFormatBottomSheet() {
     if (selectedElementId == null) return;
+    final provider = context.read<InvitationProvider>();
+    final selected = selectedElement(provider);
+    if (selected != null && _shouldLimitToolbar(selected)) return;
     _beginAction();
     showModalBottomSheet(
       context: context,
@@ -1628,6 +1735,7 @@ class _EditorScreenState extends State<EditorScreen> {
       builder: (context) => FormatBottomSheet(
         elementId: selectedElementId!,
         onChanged: () => setState(() {}),
+        supportedLanguages: widget.template.supportedLanguages,
       ),
     ).then((_) => _endAction());
   }
@@ -1638,6 +1746,7 @@ class _EditorScreenState extends State<EditorScreen> {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
+      isScrollControlled: true,
       builder: (context) => RotationBottomSheet(
         elementId: selectedElementId!,
         onChanged: () => setState(() {}),
@@ -1647,6 +1756,9 @@ class _EditorScreenState extends State<EditorScreen> {
 
   void _showColorBottomSheet() {
     if (selectedElementId == null) return;
+    final provider = context.read<InvitationProvider>();
+    final selected = selectedElement(provider);
+    if (selected != null && _shouldLimitToolbar(selected)) return;
     _beginAction();
     showModalBottomSheet(
       context: context,
@@ -1665,6 +1777,7 @@ class _EditorScreenState extends State<EditorScreen> {
     showModalBottomSheet(
       context: context,
       backgroundColor: Colors.transparent,
+      isScrollControlled: true,
       builder: (context) => OpacityBottomSheet(
         elementId: selectedElementId!,
         onChanged: () => setState(() {}),
@@ -1709,36 +1822,10 @@ class _EditorScreenState extends State<EditorScreen> {
     final lang = context.read<LanguageProvider>();
     if (lang.activeInvitationLanguage == 'English') return;
 
-    // First pass: instant sync from dictionary/cache
-    final modifiedElements = <TemplateElement>[];
-    setState(() {
-      for (final el in context.read<InvitationProvider>().elements) {
-        if (el.type != ElementType.text) continue;
-        if (!el.isEditable) continue;
-        if (el.content.isEmpty) continue;
-
-        final defaultEl = _findDefaultElement(el.id);
-
-        if (defaultEl == null || el.content != defaultEl.content) {
-          el.contentGujarati = _engine.transliterate(el.content);
-          _updateTextElementDimensions(el);
-          modifiedElements.add(el);
-        }
-      }
-    });
-
-    // Second pass: async API for better accuracy
-    for (final el in modifiedElements) {
-      _engine.transliterateAsync(el.content).then((result) {
-        if (mounted && result != el.contentGujarati) {
-          setState(() {
-            el.contentGujarati = result;
-            _updateTextElementDimensions(el);
-          });
-          context.read<InvitationProvider>().syncElementBackToProvider(el);
-        }
-      });
-    }
+    final invProvider = context.read<InvitationProvider>();
+    invProvider.applyLanguageInstant(lang);
+    if (mounted) setState(() {});
+    invProvider.scheduleLanguageRefine(force: true);
   }
 
   /// Helper to measure visual text size and update the element's dimensions
@@ -1747,7 +1834,7 @@ class _EditorScreenState extends State<EditorScreen> {
     final provider = context.read<InvitationProvider>();
     final maxW = provider.getMaxConstraintWidthForElement(el);
     final String displayText = el.getDisplayText(lang);
-    final textStyle = el.getTextStyle(scale: 1.0);
+    final textStyle = el.getTextStyleForLanguage(lang, scale: 1.0);
 
     final textPainter = TextPainter(
       text: TextSpan(

@@ -279,7 +279,14 @@ class UserProvider extends ChangeNotifier {
               _email = data['email'] ?? '';
               _profileImagePath = data['profilePhoto'];
               _role = data['role'] ?? 'user';
-              _accountStatus = data['accountStatus'] ?? 'active';
+              final rawStatus = data['accountStatus'] ?? data['status'];
+              if (rawStatus != null) {
+                _accountStatus = rawStatus.toString().toLowerCase() == 'suspended' ? 'suspended' : 'active';
+              } else if (data['isBlocked'] == true) {
+                _accountStatus = 'suspended';
+              } else {
+                _accountStatus = 'active';
+              }
               _phone = data['phone'] ?? user.phoneNumber ?? '';
 
               if (_name.isNotEmpty) {
@@ -337,7 +344,14 @@ class UserProvider extends ChangeNotifier {
       _email = userDoc['email'] ?? '';
       _profileImagePath = userDoc['profilePhoto'];
       _role = userDoc['role'] ?? 'user';
-      _accountStatus = userDoc['accountStatus'] ?? 'active';
+      final rawStatus = userDoc['accountStatus'] ?? userDoc['status'];
+      if (rawStatus != null) {
+        _accountStatus = rawStatus.toString().toLowerCase() == 'suspended' ? 'suspended' : 'active';
+      } else if (userDoc['isBlocked'] == true) {
+        _accountStatus = 'suspended';
+      } else {
+        _accountStatus = 'active';
+      }
       _phone = userDoc['phone'] ?? user.phoneNumber ?? '';
 
       if (_name.isNotEmpty) {

@@ -1,12 +1,12 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../models/template_element.dart';
+import 'language_registry.dart';
 
-/// Hybrid English → Gujarati transliteration engine.
+/// Invitation card translation engine.
 ///
-/// 🔥 PRIMARY: Uses Google Input Tools API for accurate transliteration.
-/// 🔄 FALLBACK 1: In-memory dictionary for common names/terms.
-/// 🔄 FALLBACK 2: Robust offline phonetic engine.
-/// 📦 CACHE: Results are cached to avoid repeated API calls.
+/// PRIMARY: Google Translate (any admin-added language via ISO code).
+/// FALLBACK: Offline transliteration for Gujarati typing in the editor.
 class TransliterationEngine {
   // 🔴 SINGLETON
   static final TransliterationEngine _instance = TransliterationEngine._();
@@ -17,15 +17,70 @@ class TransliterationEngine {
 
   Future<String> translateAsync(String text, String targetLang) async {
     if (text.isEmpty) return '';
-    
+
     final String targetCode = _getIsoCode(targetLang);
     final cacheKey = 'trans_${targetCode}_$text';
     if (_cache.containsKey(cacheKey)) return _cache[cacheKey]!;
 
+    final sourceCode = _detectSourceCode(text, targetLang);
+    final direct = await _googleTranslate(text, sourceCode, targetCode);
+    if (_isValidResult(direct, targetLang, text)) {
+      _cache[cacheKey] = direct!;
+      return direct;
+    }
+
+    // Gujarati → target (works for Sanskrit, Tamil, Bengali, etc.)
+    if (TemplateElement.hasGujaratiScript(text) && sourceCode != targetCode) {
+      final guResult = await _googleTranslate(text, 'gu', targetCode);
+      if (_isValidResult(guResult, targetLang, text)) {
+        _cache[cacheKey] = guResult!;
+        return guResult;
+      }
+
+      final hindi = translateGujaratiToHindi(text);
+      final hiResult = await _googleTranslate(hindi, 'hi', targetCode);
+      if (_isValidResult(hiResult, targetLang, text)) {
+        _cache[cacheKey] = hiResult!;
+        return hiResult;
+      }
+    }
+
+    // English → target for label strings
+    if (sourceCode == 'en' && targetCode != 'en') {
+      final enResult = await _googleTranslate(text, 'en', targetCode);
+      if (_isValidResult(enResult, targetLang, text)) {
+        _cache[cacheKey] = enResult!;
+        return enResult;
+      }
+    }
+
+    final transliterated = await transliterateAsync(text, lang: targetLang);
+    if (_isValidResult(transliterated, targetLang, text)) {
+      _cache[cacheKey] = transliterated;
+      return transliterated;
+    }
+    return '';
+  }
+
+  bool _isValidResult(String? result, String targetLang, String source) =>
+      result != null &&
+      result.isNotEmpty &&
+      result.trim() != source.trim() &&
+      TemplateElement.isTranslationValid(result, targetLang, source);
+
+  String _detectSourceCode(String text, String targetLang) {
+    if (TemplateElement.hasGujaratiScript(text)) return 'gu';
+    if (TemplateElement.hasDevanagariScript(text)) return 'hi';
+    if (TemplateElement.hasArabicScript(text)) return 'ur';
+    return 'en';
+  }
+
+  Future<String?> _googleTranslate(
+      String text, String sourceCode, String targetCode) async {
     try {
       final url = Uri.parse(
-          'https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=$targetCode&dt=t&q=${Uri.encodeComponent(text)}');
-      final res = await http.get(url).timeout(const Duration(seconds: 3));
+          'https://translate.googleapis.com/translate_a/single?client=gtx&sl=$sourceCode&tl=$targetCode&dt=t&q=${Uri.encodeComponent(text)}');
+      final res = await http.get(url).timeout(const Duration(seconds: 8));
       if (res.statusCode == 200) {
         final List<dynamic> data = json.decode(res.body);
         if (data.isNotEmpty && data[0] is List) {
@@ -35,33 +90,18 @@ class TransliterationEngine {
               sb.write(part[0]);
             }
           }
-          final result = sb.toString();
-          if (result.isNotEmpty) {
-            _cache[cacheKey] = result;
-            return result;
-          }
+          final result = sb.toString().trim();
+          if (result.isNotEmpty) return result;
         }
       }
     } catch (e) {
       print("Translation error: $e");
     }
-    
-    // Fallback to phonetic transliteration if translation fails
-    return transliterateAsync(text, lang: targetLang);
+    return null;
   }
 
-  String _getIsoCode(String lang) {
-    switch (lang.toLowerCase()) {
-      case 'english': return 'en';
-      case 'gujarati': return 'gu';
-      case 'hindi': return 'hi';
-      case 'marathi': return 'mr';
-      case 'punjabi': return 'pa';
-      case 'urdu': return 'ur';
-      case 'tamil': return 'ta';
-      default: return 'gu';
-    }
-  }
+  String _getIsoCode(String lang) =>
+      LanguageRegistry.instance.isoCodeFor(lang);
 
   static const Map<String, String> _dictionary = {
     // Surnames
@@ -247,7 +287,7 @@ class TransliterationEngine {
       final itc = _getItcCode(lang);
       final url = Uri.parse(
           'https://inputtools.google.com/request?text=${Uri.encodeComponent(word)}&itc=$itc&num=1');
-      final res = await http.get(url).timeout(const Duration(seconds: 2));
+      final res = await http.get(url).timeout(const Duration(seconds: 8));
       if (res.statusCode == 200) {
         final data = json.decode(res.body);
         if (data[0] == 'SUCCESS') return data[1][0][1][0] as String;

@@ -25,6 +25,9 @@ class _OnboardingAppLangScreenState extends State<OnboardingAppLangScreen> {
   @override
   Widget build(BuildContext context) {
     final langProvider = context.watch<LanguageProvider>();
+    final size = MediaQuery.of(context).size;
+    final bool isSmallScreen = size.height < 700;
+
     return Scaffold(
       backgroundColor: const Color(0xFFFCF9F9),
       appBar: AppBar(
@@ -38,35 +41,35 @@ class _OnboardingAppLangScreenState extends State<OnboardingAppLangScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            const SizedBox(height: 10),
+            SizedBox(height: isSmallScreen ? 6 : 10),
             Center(
               child: Container(
-                width: 60,
-                height: 60,
+                width: isSmallScreen ? 50 : 60,
+                height: isSmallScreen ? 50 : 60,
                 decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(isSmallScreen ? 14 : 16),
                   boxShadow: [
                     BoxShadow(color: const Color(0xFFF94C66).withOpacity(0.1), blurRadius: 10, offset: const Offset(0, 4)),
                   ],
                 ),
                 child: ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
+                  borderRadius: BorderRadius.circular(isSmallScreen ? 14 : 16),
                   child: Image.asset('assets/images/invitation_logo.jpg', fit: BoxFit.cover),
                 ),
               ),
             ),
-            const SizedBox(height: 24),
+            SizedBox(height: isSmallScreen ? 16 : 24),
             Text(
               langProvider.chooseAppLanguage,
-              style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black87),
+              style: TextStyle(fontSize: isSmallScreen ? 18 : 20, fontWeight: FontWeight.bold, color: Colors.black87),
             ),
             const SizedBox(height: 8),
             Text(
               langProvider.selectPreferredLanguage,
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 14, color: Colors.black54),
+              style: TextStyle(fontSize: isSmallScreen ? 13 : 14, color: Colors.black54),
             ),
-            const SizedBox(height: 40),
+            SizedBox(height: isSmallScreen ? 20 : 40),
             
             Expanded(
               child: ListView.separated(

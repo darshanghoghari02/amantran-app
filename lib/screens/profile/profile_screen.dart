@@ -15,6 +15,10 @@ import '../../widgets/top_notification.dart';
 import '../../widgets/subscription_bottom_sheet.dart';
 import '../auth/login_screen.dart';
 import 'user_management_screen.dart';
+import 'package:flutter/services.dart';
+import 'package:path_provider/path_provider.dart';
+import '../../models/subscription_plan.dart';
+import '../subscription/subscription_management_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -32,8 +36,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
     return Scaffold(
       backgroundColor: Colors.white,
       body: SafeArea(
-        child: SingleChildScrollView(
-          child: Column(
+        child: Column(
             children: [
               // ── Back Arrow (top-left) ──
               Padding(
@@ -126,9 +129,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
               _buildSubscriptionCard(context),
               const SizedBox(height: 24),
 
-              // ── Menu Items ──
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 24),
+              // ── Menu Items — fills remaining space, scrolls if needed ──
+              Expanded(
+                child: SingleChildScrollView(
+                  physics: const BouncingScrollPhysics(),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 24),
                 child: Column(
                   children: [
                     if (userProvider.isAdmin) ...[
@@ -287,8 +293,31 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     _buildMenuItem(
                       icon: Icons.share_outlined,
                       title: lang.shareApp,
-                      onTap: () {
-                        Share.share(lang.shareAppText);
+                      onTap: () async {
+                        if (Platform.isAndroid) {
+                          try {
+                            const channel = MethodChannel('com.olivepatel.nimantran/apk_share');
+                            final String? apkPath = await channel.invokeMethod<String>('getApkPath');
+                            if (apkPath != null && apkPath.isNotEmpty) {
+                              final file = File(apkPath);
+                              if (await file.exists()) {
+                                final tempDir = await getTemporaryDirectory();
+                                final tempApk = File('${tempDir.path}/Nimantran.apk');
+                                if (!await tempApk.exists()) {
+                                  await file.copy(tempApk.path);
+                                }
+                                await Share.shareXFiles(
+                                  [XFile(tempApk.path)],
+                                  text: lang.shareAppText,
+                                );
+                                return;
+                              }
+                            }
+                          } catch (e) {
+                            debugPrint("Error sharing APK: $e");
+                          }
+                        }
+                        await Share.share(lang.shareAppText);
                       },
                     ),
                     _divider(),
@@ -418,14 +447,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     ),
                   ],
                 ),
-              ),
+              ),       // Padding
+                ),     // SingleChildScrollView
+              ),       // Expanded
 
-              const SizedBox(height: 40),
             ],
-          ),
-        ),
-      ),
-    );
+          ),           // Column (outer)
+        ),             // SafeArea
+      );               // Scaffold
+
+
   }
 
   Widget _buildSubscriptionCard(BuildContext context) {
@@ -443,199 +474,232 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
     if (isSubscribed) {
       final isYearly = sub.planType == 'yearly';
-      return Container(
-        margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: const Color(0xFF161616),
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: const Color(0xFFFFD700).withOpacity(0.3),
-            width: 1.5,
+      return GestureDetector(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const SubscriptionManagementScreen()),
+          );
+        },
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: const Color(0xFF161616),
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: const Color(0xFFFFD700).withOpacity(0.3),
+              width: 1.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.15),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.15),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(8),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFD700).withOpacity(0.15),
-                    shape: BoxShape.circle,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFD700).withOpacity(0.15),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.stars_rounded,
+                      color: Color(0xFFFFD700),
+                      size: 24,
+                    ),
                   ),
-                  child: const Icon(
-                    Icons.stars_rounded,
-                    color: Color(0xFFFFD700),
-                    size: 24,
-                  ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        isYearly ? "Premium Yearly Plan" : "Premium Monthly Plan",
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          sub.planType == 'trial'
+                              ? "Premium Free Trial"
+                              : subProvider.plans
+                                  .firstWhere(
+                                    (p) => p.id == sub.planType,
+                                    orElse: () => SubscriptionPlanModel(
+                                      id: sub.planType,
+                                      name: sub.planType == 'yearly'
+                                          ? "Premium Yearly Plan"
+                                          : sub.planType == 'monthly'
+                                              ? "Premium Monthly Plan"
+                                              : "${sub.planType.toUpperCase()} Plan",
+                                      price: 0.0,
+                                      description: '',
+                                      isActive: true,
+                                      includedCategories: [],
+                                      includedTemplateIds: [],
+                                    ),
+                                  )
+                                  .name,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 2),
-                      Row(
-                        children: [
-                          Container(
-                            width: 6,
-                            height: 6,
-                            decoration: const BoxDecoration(
-                              color: Colors.green,
-                              shape: BoxShape.circle,
+                        const SizedBox(height: 2),
+                        Row(
+                          children: [
+                            Container(
+                              width: 6,
+                              height: 6,
+                              decoration: const BoxDecoration(
+                                color: Colors.green,
+                                shape: BoxShape.circle,
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 6),
-                          const Text(
-                            "Active",
-                            style: TextStyle(
-                              color: Colors.green,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
+                            const SizedBox(width: 6),
+                            const Text(
+                              "Active",
+                              style: TextStyle(
+                                color: Colors.green,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
-                          ),
-                        ],
-                      ),
-                    ],
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            const Divider(color: Colors.white10, height: 1, thickness: 1),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Text(
-                  "Valid Until",
-                  style: TextStyle(
-                    color: Colors.white.withOpacity(0.5),
-                    fontSize: 12,
+                ],
+              ),
+              const SizedBox(height: 16),
+              const Divider(color: Colors.white10, height: 1, thickness: 1),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    "Valid Until",
+                    style: TextStyle(
+                      color: Colors.white.withOpacity(0.5),
+                      fontSize: 12,
+                    ),
                   ),
-                ),
-                Text(
-                  formatDate(sub.expiryDate),
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w600,
+                  Text(
+                    formatDate(sub.expiryDate),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
-                ),
-              ],
-            ),
-          ],
+                ],
+              ),
+            ],
+          ),
         ),
       );
     } else {
-      return Container(
-        margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-        padding: const EdgeInsets.all(20),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: const Color(0xFFF94C66).withOpacity(0.12),
-            width: 1,
+      return GestureDetector(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const SubscriptionManagementScreen()),
+          );
+        },
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(20),
+            border: Border.all(
+              color: const Color(0xFFF94C66).withOpacity(0.12),
+              width: 1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.02),
+                blurRadius: 8,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.02),
-              blurRadius: 8,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF94C66).withOpacity(0.08),
-                    shape: BoxShape.circle,
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF94C66).withOpacity(0.08),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.workspace_premium_outlined,
+                      color: Color(0xFFF94C66),
+                      size: 24,
+                    ),
                   ),
-                  child: const Icon(
-                    Icons.workspace_premium_outlined,
-                    color: Color(0xFFF94C66),
-                    size: 24,
-                  ),
-                ),
-                const SizedBox(width: 14),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        "Upgrade to Premium",
-                        style: TextStyle(
-                          color: Colors.black87,
-                          fontSize: 15,
-                          fontWeight: FontWeight.bold,
+                  const SizedBox(width: 14),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          "Upgrade to Premium",
+                          style: TextStyle(
+                            color: Colors.black87,
+                            fontSize: 15,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        "Unlock all templates & high-quality downloads",
-                        style: TextStyle(
-                          color: Colors.black45,
-                          fontSize: 11.5,
+                        const SizedBox(height: 2),
+                        Text(
+                          "Unlock all templates & high-quality downloads",
+                          style: TextStyle(
+                            color: Colors.black45,
+                            fontSize: 11.5,
+                          ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              height: 40,
-              child: ElevatedButton(
-                onPressed: () {
-                  showModalBottomSheet(
-                    context: context,
-                    isScrollControlled: true,
-                    backgroundColor: Colors.transparent,
-                    builder: (_) => const SubscriptionBottomSheet(),
-                  );
-                },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: const Color(0xFFF94C66),
-                  foregroundColor: Colors.white,
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                ],
+              ),
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                height: 40,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const SubscriptionManagementScreen()),
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFFF94C66),
+                    foregroundColor: Colors.white,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
-                ),
-                child: const Text(
-                  "Subscribe Now",
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.bold,
+                  child: const Text(
+                    "Subscribe Now",
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                    ),
                   ),
                 ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       );
     }

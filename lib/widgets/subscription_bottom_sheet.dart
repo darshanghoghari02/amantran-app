@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../providers/subscription_provider.dart';
 import '../models/template_model.dart';
 import '../models/subscription_plan.dart';
+import '../screens/subscription/mock_payment_screen.dart';
 
 class SubscriptionBottomSheet extends StatefulWidget {
   final TemplateModel? template;
@@ -192,46 +193,54 @@ class _SubscriptionBottomSheetState extends State<SubscriptionBottomSheet> {
 
             // Action Button
             ElevatedButton(
-              onPressed: subProvider.isLoading
-                  ? null
-                  : () async {
-                      if (_selectedPlan == null) return;
+              onPressed: () async {
+                if (_selectedPlan == null) return;
 
-                      final messenger = ScaffoldMessenger.of(context);
-                      final navigator = Navigator.of(context);
+                final navigator = Navigator.of(context);
+                final provider = context.read<SubscriptionProvider>();
 
-                      bool success;
-                      if (_selectedPlan == 'lifetime') {
-                        success = await context
-                            .read<SubscriptionProvider>()
-                            .purchaseTemplate(widget.template!.id);
-                      } else {
-                        success = await context
-                            .read<SubscriptionProvider>()
-                            .purchaseSubscription(_selectedPlan!);
-                      }
-                      
-                      if (!mounted) return;
+                String planName = "Premium Plan";
+                double price = 99.0;
+                bool isTrial = false;
 
-                      if (success) {
-                        messenger.showSnackBar(
-                          SnackBar(
-                            content: Text(_selectedPlan == 'lifetime'
-                                ? "Template unlocked successfully! Enjoy full editing and downloading."
-                                : "Subscription activated successfully! Enjoy Premium features."),
-                            backgroundColor: Colors.green,
-                          ),
-                        );
-                        navigator.pop(true);
-                      } else {
-                        messenger.showSnackBar(
-                          const SnackBar(
-                            content: Text("Purchase failed. Please try again."),
-                            backgroundColor: Colors.red,
-                          ),
-                        );
-                      }
-                    },
+                if (_selectedPlan == 'lifetime') {
+                  if (widget.template == null) return;
+                  planName = widget.template!.title;
+                  price = widget.template!.singlePurchasePrice ?? 49.0;
+                  isTrial = false;
+                } else {
+                  final chosenPlan = provider.plans.firstWhere(
+                    (p) => p.id == _selectedPlan,
+                    orElse: () => SubscriptionPlanModel(
+                      id: _selectedPlan!,
+                      name: _selectedPlan == 'yearly' ? 'Yearly Premium' : 'Monthly Premium',
+                      price: _selectedPlan == 'yearly' ? 499.0 : 99.0,
+                      description: '',
+                      isActive: true,
+                      includedCategories: [],
+                      includedTemplateIds: [],
+                    ),
+                  );
+                  planName = chosenPlan.name;
+                  price = chosenPlan.price;
+                  isTrial = await provider.checkTrialEligibility();
+                }
+
+                // Dismiss bottom sheet
+                navigator.pop();
+
+                // Navigate to sandbox payment screen
+                navigator.push(
+                  MaterialPageRoute(
+                    builder: (_) => MockPaymentScreen(
+                      planId: _selectedPlan!,
+                      planName: planName,
+                      price: price,
+                      isTrial: isTrial,
+                    ),
+                  ),
+                );
+              },
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFFF94C66),
                 foregroundColor: Colors.white,
@@ -241,22 +250,13 @@ class _SubscriptionBottomSheetState extends State<SubscriptionBottomSheet> {
                 ),
                 elevation: 0,
               ),
-              child: subProvider.isLoading
-                  ? const SizedBox(
-                      height: 20,
-                      width: 20,
-                      child: CircularProgressIndicator(
-                        strokeWidth: 2,
-                        valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                      ),
-                    )
-                  : Text(
-                      _selectedPlan == 'lifetime' ? "Unlock Template Now" : "Subscribe Now",
-                      style: const TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
+              child: Text(
+                _selectedPlan == 'lifetime' ? "Unlock Template Now" : "Subscribe Now",
+                style: const TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
             ),
             const SizedBox(height: 12),
             

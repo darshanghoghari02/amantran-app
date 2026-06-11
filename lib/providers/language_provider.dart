@@ -2,9 +2,11 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:hive/hive.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import '../models/language_model.dart';
 import '../repositories/user_repository.dart';
 import '../services/interaction_service.dart';
 import '../services/firestore_service.dart';
+import '../services/language_registry.dart';
 
 /// Holds all translated UI strings for the app.
 /// When the language changes, all widgets listening to this provider rebuild instantly.
@@ -49,6 +51,7 @@ class LanguageProvider extends ChangeNotifier {
 
   String _activeInvitationLanguage = 'Gujarati';
   String get activeInvitationLanguage => _activeInvitationLanguage;
+  bool _invitationLangUserSet = false;
 
   LanguageProvider() {
     _loadFromHive();
@@ -73,7 +76,10 @@ class LanguageProvider extends ChangeNotifier {
       final settings = await _userRepository.fetchSettings();
       if (settings != null) {
         _currentLanguage = settings[_keyAppLang] ?? _currentLanguage;
-        _activeInvitationLanguage = settings[_keyInvLang] ?? _activeInvitationLanguage;
+        if (!_invitationLangUserSet) {
+          _activeInvitationLanguage =
+              settings[_keyInvLang] ?? _activeInvitationLanguage;
+        }
         final List<dynamic>? savedLangs = settings[_keyInvLangsList];
         if (savedLangs != null && savedLangs.isNotEmpty) {
           _invitationLanguages = Set<String>.from(savedLangs.cast<String>());
@@ -102,7 +108,10 @@ class LanguageProvider extends ChangeNotifier {
   Future<void> _loadFromHive() async {
     final box = await Hive.openBox(_boxName);
     _currentLanguage = box.get(_keyAppLang, defaultValue: 'English');
-    _activeInvitationLanguage = box.get(_keyInvLang, defaultValue: 'Gujarati');
+    if (!_invitationLangUserSet) {
+      _activeInvitationLanguage =
+          box.get(_keyInvLang, defaultValue: 'Gujarati');
+    }
     final List<dynamic>? savedLangs = box.get(_keyInvLangsList);
     if (savedLangs != null && savedLangs.isNotEmpty) {
       _invitationLanguages = Set<String>.from(savedLangs.cast<String>());
@@ -127,14 +136,41 @@ class LanguageProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void reconcileWithBackend(List<LanguageModel> backendLanguages) {
+    LanguageRegistry.instance.updateFromBackend(backendLanguages);
+    final available = LanguageRegistry.instance.languageNames;
+    if (available.isEmpty) return;
+
+    final filtered =
+        _invitationLanguages.where((l) => available.contains(l)).toSet();
+    _invitationLanguages = filtered.isNotEmpty ? filtered : available;
+
+    if (!_invitationLanguages.contains(_activeInvitationLanguage)) {
+      _activeInvitationLanguage = _invitationLanguages.contains('Gujarati')
+          ? 'Gujarati'
+          : _invitationLanguages.first;
+      _saveToHive(_keyInvLang, _activeInvitationLanguage);
+    }
+    _saveToHive(_keyInvLangsList, _invitationLanguages.toList());
+    _saveSettingsToCloud();
+    notifyListeners();
+  }
+
   void setInvitationLanguages(Set<String> langs) {
-    _invitationLanguages = langs;
-    _saveToHive(_keyInvLangsList, langs.toList());
+    final available = LanguageRegistry.instance.languageNames;
+    _invitationLanguages = available.isEmpty
+        ? langs
+        : langs.where((l) => available.contains(l)).toSet();
+    if (_invitationLanguages.isEmpty && available.isNotEmpty) {
+      _invitationLanguages = available;
+    }
+    _saveToHive(_keyInvLangsList, _invitationLanguages.toList());
     _saveSettingsToCloud();
     notifyListeners();
   }
 
   void setActiveInvitationLanguage(String lang) {
+    _invitationLangUserSet = true;
     _activeInvitationLanguage = lang;
     _saveToHive(_keyInvLang, lang);
     _saveSettingsToCloud();
@@ -168,7 +204,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Invitation Card Maker',
         'Gujarati': 'આમંત્રણ કાર્ડ મેકર',
         'Hindi': 'निमंत्रण कार्ड मेकर',
-        'Marathi': 'निमंत्रण કાર્ડ મેકર',
+        'Marathi': 'निमंत्रण कार्ड मेकर',
         'Punjabi': 'ਸੱਦਾ ਕਾਰਡ ਮੇਕਰ',
         'Urdu': 'دعوت نامہ کارڈ میکر',
       });
@@ -186,7 +222,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Get your perfect template.',
         'Gujarati': 'તમારું પરફેક્ટ ટેમ્પ્લેટ મેળવો.',
         'Hindi': 'अपना परफेक्ट टेम्पलेट पाएं.',
-        'Marathi': 'तुमचा परिपूर्ण टेम्पलेट मेळવા.',
+        'Marathi': 'तुमचा परिपूर्ण टेम्पलेट मिळवा.',
         'Punjabi': 'ਆਪਣਾ ਸੰਪੂਰਨ ਟੈਂਪਲੇਟ ਪ੍ਰਾਪਤ ਕਰੋ.',
         'Urdu': '.اپنا بہترین ٹیمپلیٹ حاصل کریں',
       });
@@ -195,7 +231,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Search templates....',
         'Gujarati': 'ટેમ્પ્લેટ શોધો....',
         'Hindi': 'टेम्पलेट खोजें....',
-        'Marathi': 'ટેમ્પ્લેટ શોધા....',
+        'Marathi': 'टेम्पलेट शोधा....',
         'Punjabi': 'ਟੈਂਪਲੇਟ ਲੱਭੋ....',
         'Urdu': '....ٹیمپلیٹ تلاش کریں',
       });
@@ -213,7 +249,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Engagement Invitation',
         'Gujarati': 'સગાઈ આમંત્રણ',
         'Hindi': 'सगाई का निमंत्रण',
-        'Marathi': 'સાખરપુડા નિમંત્રણ',
+        'Marathi': 'साखरपुडा निमंत्रण',
         'Punjabi': 'ਮੰਗਣੀ ਦਾ ਸੱਦਾ',
         'Urdu': 'منگنی کا دعوت نامہ',
       });
@@ -222,7 +258,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Baby Shower',
         'Gujarati': 'બેબી શાવર',
         'Hindi': 'बेबी शावर',
-        'Marathi': 'બેબી શોવર',
+        'Marathi': 'बेबी शॉवर',
         'Punjabi': 'ਬੇਬੀ ਸ਼ਾਵਰ',
         'Urdu': 'بیبی شاور',
       });
@@ -231,7 +267,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'See All',
         'Gujarati': 'બધા જુઓ',
         'Hindi': 'सभी देखें',
-        'Marathi': 'સર્વ પહા',
+        'Marathi': 'सर्व पहा',
         'Punjabi': 'ਸਭ ਵੇਖੋ',
         'Urdu': 'سب دیکھیں',
       });
@@ -240,7 +276,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Home',
         'Gujarati': 'હોમ',
         'Hindi': 'होम',
-        'Marathi': 'હોમ',
+        'Marathi': 'होम',
         'Punjabi': 'ਹੋਮ',
         'Urdu': 'Û ÙˆÙ…',
       });
@@ -249,7 +285,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Your Design',
         'Gujarati': 'તમારી ડિઝાઇન',
         'Hindi': 'आपकी डिझाइन',
-        'Marathi': 'તુમચી ડિઝાઇન',
+        'Marathi': 'तुमची डिझाइन',
         'Punjabi': 'ਤੁਹਾਡੀ ਡਿਜ਼ਾਈਨ',
         'Urdu': 'آپ کا ڈیزائن',
       });
@@ -258,7 +294,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Favorites',
         'Gujarati': 'પસંદગીનું',
         'Hindi': 'पसंदीदा',
-        'Marathi': 'આવડતે',
+        'Marathi': 'आवडते',
         'Punjabi': 'ਮਨਪਸੰਦ',
         'Urdu': 'پسندیدہ',
       });
@@ -267,7 +303,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Guests',
         'Gujarati': 'મહેમાનો',
         'Hindi': 'अतिथि',
-        'Marathi': 'પાહુણે',
+        'Marathi': 'पाहुणे',
         'Punjabi': 'ਮਹਿਮਾਨ',
         'Urdu': 'مہمان',
       });
@@ -276,7 +312,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Drafts',
         'Gujarati': 'ડ્રાફ્ટ',
         'Hindi': 'ड्राफ्ट',
-        'Marathi': 'મસુદા',
+        'Marathi': 'मसुदा',
         'Punjabi': 'ਡਰਾਫਟ',
         'Urdu': 'ڈرافٹ',
       });
@@ -285,7 +321,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Your Designs',
         'Gujarati': 'તમારી ડિઝાઇન',
         'Hindi': 'आपकी डिझाइन',
-        'Marathi': 'તુમચી ડિઝાઇન',
+        'Marathi': 'तुमची डिझाइन',
         'Punjabi': 'ਤੁਹਾਡੀ ਡਿਜ਼ਾਈਨ',
         'Urdu': 'آپ کے ڈیزائن',
       });
@@ -294,7 +330,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'App Language',
         'Gujarati': 'એપ ભાષા',
         'Hindi': 'ऐप भाषा',
-        'Marathi': 'અપ્ ભાષા',
+        'Marathi': 'ऐप भाषा',
         'Punjabi': 'ਐਪ ਭਾਸ਼ਾ',
         'Urdu': 'ایپ زبان',
       });
@@ -303,7 +339,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Invitation Language',
         'Gujarati': 'આમંત્રણ ભાષા',
         'Hindi': 'निमंत्रण भाषा',
-        'Marathi': 'નિમંત્રણ ભાષા',
+        'Marathi': 'निमंत्रण भाषा',
         'Punjabi': 'ਸੱਦਾ ਭਾਸ਼ਾ',
         'Urdu': 'دعوت نامہ زبان',
       });
@@ -312,7 +348,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Rate Us',
         'Gujarati': 'અમને રેટ કરો',
         'Hindi': 'हमें रेट करें',
-        'Marathi': 'આમ્હાલા રેટ કરા',
+        'Marathi': 'आम्हाला रेट करा',
         'Punjabi': 'ਸਾਨੂੰ ਰੇਟ ਕਰੋ',
         'Urdu': 'ہمیں ریٹ کریں',
       });
@@ -321,7 +357,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Share App',
         'Gujarati': 'એપ શેર કરો',
         'Hindi': 'ऐप शेयर करें',
-        'Marathi': 'અપ્ શેર કરા',
+        'Marathi': 'ऐप शेयर करा',
         'Punjabi': 'ਐਪ ਸਾਂਝੀ ਕਰੋ',
         'Urdu': 'ایپ شیئر کریں',
       });
@@ -330,7 +366,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Terms Conditions',
         'Gujarati': 'નિયમો અને શરતો',
         'Hindi': 'नियम और शर्तें',
-        'Marathi': 'અટી વ શર્તી',
+        'Marathi': 'अटी व शर्ती',
         'Punjabi': 'ਨਿਯਮ ਅਤੇ ਸ਼ਰਤਾਂ',
         'Urdu': 'شرائط و ضوابط',
       });
@@ -339,7 +375,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Privacy Policy',
         'Gujarati': 'ગોપનીયતા નીતિ',
         'Hindi': 'गोपनीयता नीति',
-        'Marathi': 'ગોપનીયતા ધોરણ',
+        'Marathi': 'गोपनीयता धोरण',
         'Punjabi': 'ਗੋਪਨੀਯਤਾ ਨੀਤੀ',
         'Urdu': 'رازداری की پالیسی',
       });
@@ -348,7 +384,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Sign Out',
         'Gujarati': 'સાઇન આઉટ',
         'Hindi': 'साइन आउट',
-        'Marathi': 'સાઇન આઉટ',
+        'Marathi': 'साइन आउट',
         'Punjabi': 'ਸਾਈਨ ਆਊਟ',
         'Urdu': 'سائن آؤٹ',
       });
@@ -357,7 +393,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Apply',
         'Gujarati': 'લાગુ કરો',
         'Hindi': 'लागू करें',
-        'Marathi': 'લાગુ કરા',
+        'Marathi': 'लागू करा',
         'Punjabi': 'ਲਾਗੂ ਕਰੋ',
         'Urdu': 'لاگو کریں',
       });
@@ -366,7 +402,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'No favorites yet',
         'Gujarati': 'હજુ સુધી કોઈ પસંદગી નથી',
         'Hindi': 'अभी तक कोई पसंदीदा नहीं',
-        'Marathi': 'અજૂન કોણતેહી આવડતે નાહી',
+        'Marathi': 'अजून कोणतेही आवडते नाही',
         'Punjabi': 'ਅਜੇ ਕੋਈ ਮਨਪਸੰਦ ਨਹੀਂ',
         'Urdu': 'ابھی तक कोई पसंदीदा नहीं',
       });
@@ -375,7 +411,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'No drafts yet. Start designing!',
         'Gujarati': 'હજુ સુધી કોઈ ડ્રાફ્ટ નથી. ડિઝાઇન શરૂ કરો!',
         'Hindi': 'अभी तक कोई ड्राफ्ट नहीं. डिझाइन शरू करें!',
-        'Marathi': 'અજૂન કોણતાહી મસુદા નાહી. ડિઝાઇન સૂરુ કરા!',
+        'Marathi': 'अजून कोणताही मसुदा नाही. डिझाइन सुरू करा!',
         'Punjabi': 'ਅਜੇ ਕੋਈ ਡਰਾਫਟ ਨਹੀਂ। ਡਿਜ਼ਾਈਨ ਸ਼ੁਰੂ ਕਰੋ!',
         'Urdu': '!ابھی تک کوئی ڈرافٹ نہیں۔ ڈیزائن شروع کریں',
       });
@@ -384,7 +420,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Selected',
         'Gujarati': 'પસંદ કરેલ',
         'Hindi': 'चयनित',
-        'Marathi': 'નિવડલે',
+        'Marathi': 'निवडले',
         'Punjabi': 'ਚੁਣਿਆ',
         'Urdu': 'منتخب',
       });
@@ -393,7 +429,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Change App Language',
         'Gujarati': 'એપ ભાષા બદલો',
         'Hindi': 'ऐप भाषा बदलें',
-        'Marathi': 'અપ્ ભાષા બદલા',
+        'Marathi': 'ऐप भाषा बदला',
         'Punjabi': 'ਐਪ ਭਾਸ਼ਾ ਬਦલો',
         'Urdu': 'ایپ زبان تبدیل کریں',
       });
@@ -402,7 +438,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Select Invitation Languages',
         'Gujarati': 'આમંત્રણ ભાષાઓ પસંદ કરો',
         'Hindi': 'निमंत्रण भाषाएं चुनें',
-        'Marathi': 'નિમંત્રણ ભાષા નિવડા',
+        'Marathi': 'निमंत्रण भाषा निवडा',
         'Punjabi': 'ਸੱਦਾ ਭਾਸ਼ਾਵਾਂ ਚੁਣੋ',
         'Urdu': 'دعوت نامہ زبانیں منتخب کریں',
       });
@@ -411,7 +447,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Your Profile',
         'Gujarati': 'તમારી પ્રોફાઇલ',
         'Hindi': 'आपकी प्रोफाइल',
-        'Marathi': 'તુમચી પ્રોફાઇલ',
+        'Marathi': 'तुमची प्रोफाइल',
         'Punjabi': 'ਤੁਹਾਡੀ ਪ੍ਰੋਫਾਈਲ',
         'Urdu': 'آپ کی پروفائل',
       });
@@ -420,7 +456,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Personal Information',
         'Gujarati': 'વ્યક્તિગત માહિતી',
         'Hindi': 'व्यक्तिगत जाणકારી',
-        'Marathi': 'વૈયક્તિક માહિતી',
+        'Marathi': 'वैयक्तिक माहिती',
         'Punjabi': 'ਨਿੱજી ਜਾਣਕਾਰੀ',
         'Urdu': 'ذاتی معلومات',
       });
@@ -429,7 +465,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Full Name',
         'Gujarati': 'આખું નામ',
         'Hindi': 'पूरा नाम',
-        'Marathi': 'પૂર્ણ નાવ',
+        'Marathi': 'पूर्ण नाव',
         'Punjabi': 'ਪੂਰਾ ਨਾਮ',
         'Urdu': 'پورا نام',
       });
@@ -438,7 +474,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Phone Number',
         'Gujarati': 'ફોન નંબર',
         'Hindi': 'फ़ोन नंबर',
-        'Marathi': 'ફોન નંબર',
+        'Marathi': 'फोन नंबर',
         'Punjabi': 'ਫ਼ੋਨ ਨੰਬਰ',
         'Urdu': 'فون نمبر',
       });
@@ -447,7 +483,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Update Profile',
         'Gujarati': 'પ્રોફાઇલ અપડેટ કરો',
         'Hindi': 'प्रोफाइल अपडेट करें',
-        'Marathi': 'પ્રોફાઇલ અપડેટ કરા',
+        'Marathi': 'प्रोफाइल अपडेट करा',
         'Punjabi': 'ਪ੍ਰੋਫਾਈਲ ਅਪਡੇਟ ਕਰੋ',
         'Urdu': 'پروفائل اپ ڈیٹ کریں',
       });
@@ -456,7 +492,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'change',
         'Gujarati': 'બદલો',
         'Hindi': 'बदलें',
-        'Marathi': 'બદલા',
+        'Marathi': 'बदला',
         'Punjabi': 'ਬਦਲੋ',
         'Urdu': 'تبدیل کریں',
       });
@@ -465,7 +501,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Email',
         'Gujarati': 'ઈમેલ',
         'Hindi': 'ईमेल',
-        'Marathi': 'ઈમેલ',
+        'Marathi': 'ईमेल',
         'Punjabi': 'ਈਮੇਲ',
         'Urdu': 'ای میل',
       });
@@ -474,7 +510,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Profile updated successfully!',
         'Gujarati': 'પ્રોફાઇલ સફળતાપૂર્વક અપડેટ થઈ!',
         'Hindi': 'प्रोफ़ाइल सफलतापूर्वक अपडेट की गई!',
-        'Marathi': 'પ્રોફાઇલ યશસ્વીપણે અપડેટ ઝાલી!',
+        'Marathi': 'प्रोफाइल यशस्वीरित्या अपडेट झाली!',
         'Punjabi': 'ਪ੍ਰੋਫਾਈਲ ਸਫਲਤਾਪੂਰਵਕ ਅਪਡੇਟ ਕੀਤੀ ਗਈ!',
         'Urdu': '!پروفائل کامیابی کے साथ अप अपडेट ہوگئی',
       });
@@ -487,7 +523,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Customize This Template',
         'Gujarati': 'આ ટેમ્પ્લેટ કસ્ટમાઇઝ કરો',
         'Hindi': 'इस टेम्पलेट को कस्टमाइझ करें',
-        'Marathi': 'હે ટેમ્પ્લેટ સાનુકૂલિત કરા',
+        'Marathi': 'हे टेम्पलेट सानुकूलित करा',
         'Punjabi': 'ਇਸ ਟੈਂਪਲੇਟ ਨੂੰ ਅਨੁਕੂਲਿਤ ਕਰੋ',
         'Urdu': 'اس ٹیمپلیٹ کو اپنی مرضی کے مطابق بنائیں',
       });
@@ -496,7 +532,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Features:',
         'Gujarati': 'વિશેષતાઓ:',
         'Hindi': 'विशेषताएं:',
-        'Marathi': 'વૈશિષ્ટ્યે:',
+        'Marathi': 'वैशिष्ट्ये:',
         'Punjabi': 'ਵਿਸ਼ੇਸ਼ਤਾਵਾਂ:',
         'Urdu': ':خصوصیات',
       });
@@ -505,7 +541,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Edit text in seconds',
         'Gujarati': 'સેકન્ડોમાં ટેક્સ્ટ સંપાદિત કરો',
         'Hindi': 'सेकंडों में टेक्स्ट एडिट करें',
-        'Marathi': 'કાહી સેકંદાન મજકૂર સંપાદિત કરા',
+        'Marathi': 'काही सेकंदात मजकूर संपादित करा',
         'Punjabi': 'ਸਕਿੰਟਾਂ ਵਿੱਚ ਟੈਕਸਟ ਨੂੰ ਸੰਪਾਦਿਤ ਕਰੋ',
         'Urdu': 'سیکنڈوں میں متن میں ترمیم کریں',
       });
@@ -514,7 +550,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Download high-quality invitation',
         'Gujarati': 'ઉચ્ચ-ગુણવત્તાનું આમંત્રણ ડાઉનલોડ કરો',
         'Hindi': 'उच्च गुणवत्ता वाला निमंत्रण डाउनलोड करें',
-        'Marathi': 'ઉચ્ચ-ગુણવત્તેચે નિમંત્રણ ડાઉનલોડ કરા',
+        'Marathi': 'उच्च-गुणवत्तेचे निमंत्रण डाउनलोड करा',
         'Punjabi': 'ਉੱਚ-ਗੁਣਵੱਤਾ ਵਾਲਾ ਸੱਦਾ ਪੱਤਰ ਡਾਊਨਲੋਡ ਕਰੋ',
         'Urdu': 'اعلی معیار کا دعوت نامہ ڈاؤن لوڈ کریں',
       });
@@ -523,7 +559,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Perfect for WhatsApp sharing',
         'Gujarati': 'વોટ્સએપ શેરિંગ માટે યોગ્ય',
         'Hindi': 'व्हाट्सएप शेरिंग के लिए बिलकुल सही',
-        'Marathi': 'વ્હૉટ્સઍપ શેરિંગસાઠી યોગ્ય',
+        'Marathi': 'व्हॉट्सऐप शेयरिंगसाठी योग्य',
         'Punjabi': 'ਵਟਸਐਪ ਸ਼ੇਅਰਿੰਗ ਲਈ ਸੰਪੂਰਨ',
         'Urdu': 'واٹس ایپ شیئرنگ کے لیے بہترین',
       });
@@ -532,7 +568,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Celebrate your special day with a touch of tradition!',
         'Gujarati': 'પરંપરાના સ્પર્શ સાથે તમારા ખાસ દિવસની ઉજવણી કરો!',
         'Hindi': 'પરંપરાના સ્પર્શ સાથે પોતાના વિશેષ દિવસની ઉજવણી કરો!',
-        'Marathi': 'પરંપરાના સ્પર્શ સાથે પોતાના વિશેષ દિવસની ઉજવણી કરો!',
+        'Marathi': 'परंपरेच्या स्पर्शासह तुमच्या विशेष दिवसाचा उत्सव साजरा करा!',
         'Punjabi': 'ਪਰੰਪਰਾ ਦੇ ਅਹਿਸਾਸ ਨਾਲ ਆਪਣੇ ਖਾਸ ਦਿਨ ਦਾ ਜਸ਼ਨ ਮਨਾਓ!',
         'Urdu': '!روایت کے لمس کے ساتھ اپنے خاص دن کا جشن منائیں',
       });
@@ -541,7 +577,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Next',
         'Gujarati': 'આગળ',
         'Hindi': 'अगला',
-        'Marathi': 'પુઢીલ',
+        'Marathi': 'पुढील',
         'Punjabi': 'ਅਗਲਾ',
         'Urdu': 'اگلا',
       });
@@ -550,7 +586,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Previous',
         'Gujarati': 'પાછળ',
         'Hindi': 'पिछલા',
-        'Marathi': 'માગીલ',
+        'Marathi': 'मागील',
         'Punjabi': 'ਪਿਛਲਾ',
         'Urdu': 'اگلا',
       });
@@ -559,7 +595,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Save',
         'Gujarati': 'સાચવો',
         'Hindi': 'सहेजें',
-        'Marathi': 'જતન કરા',
+        'Marathi': 'जतन करा',
         'Punjabi': 'ਸੁਰੱਖਿਅਤ ਕਰੋ',
         'Urdu': 'محفوظ کریں',
       });
@@ -568,7 +604,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Saving...',
         'Gujarati': 'સાચવી રહ્યા છીએ...',
         'Hindi': 'सहेज रहे हैं...',
-        'Marathi': 'જતન કરત આહે...',
+        'Marathi': 'जतन करत आहे...',
         'Punjabi': 'ਸੁਰੱਖਿਅਤ ਕੀਤਾ ਜਾ ਰਿਹਾ ਹੈ...',
         'Urdu': 'محفوظ ہو رہا ہے...',
       });
@@ -577,7 +613,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Download Complete',
         'Gujarati': 'ડાઉનલોડ પૂર્ણ થયું',
         'Hindi': 'डाउनलोड पूर्ण हुआ',
-        'Marathi': 'ડાઉનલોડ પૂર્ણ ઝાલે',
+        'Marathi': 'डाउनलोड पूर्ण झाले',
         'Punjabi': 'ਡਾਊਨਲੋਡ ਪੂਰਾ ਹੋਇਆ',
         'Urdu': 'ڈاؤن لوڈ مکمل ہوا',
       });
@@ -586,7 +622,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Done',
         'Gujarati': 'પૂર્ણ',
         'Hindi': 'पूर्ण',
-        'Marathi': 'પૂર્ણ',
+        'Marathi': 'पूर्ण',
         'Punjabi': 'ਹੋ ਗਿਆ',
         'Urdu': 'ہو گیا'
       });
@@ -594,7 +630,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Cancel',
         'Gujarati': 'રદ કરો',
         'Hindi': 'રદ કરા',
-        'Marathi': 'રદ કરા',
+        'Marathi': 'रद्द करा',
         'Punjabi': 'ਰੱਦ ਕਰੋ',
         'Urdu': 'منسوخ کریں'
       });
@@ -616,7 +652,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Mangalik Prasango',
         'Gujarati': 'માંગલિક પ્રસંગો',
         'Hindi': 'मांगलिक प्रसंग',
-        'Marathi': 'માંગલિક પ્રસંગ',
+        'Marathi': 'मांगलिक प्रसंग',
         'Punjabi': 'ਮੰਗਲਿਕ ਪ੍ਰਸੰਗ',
         'Urdu': 'مانگلک پرسنگو'
       }, lang);
@@ -625,16 +661,30 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Shubh Vivah',
         'Gujarati': 'શુભ વિવાહ',
         'Hindi': 'शुभ विवाह',
-        'Marathi': 'શુભ વિવાહ',
+        'Marathi': 'शुभ विवाह',
         'Punjabi': 'ਸ਼ੁਭ ਵਿਆਹ',
-        'Urdu': 'شبھ وواہ'
+        'Urdu': 'شادی مبارک'
+      }, lang);
+
+  String dearGuestLabelFor(String lang) => _tFor({
+        'English': 'Dear Guest, ...........................................',
+        'Gujarati':
+            'સ્નેહી સ્વજન...........................................................................',
+        'Hindi':
+            'प्रिय अतिथि, ...........................................',
+        'Marathi':
+            'प्रिय पाहुणे, ...........................................',
+        'Punjabi':
+            'ਪਿਆਰੇ ਮਹਿਮਾਨ, ...........................................',
+        'Urdu':
+            'محترم مہمان، ...........................................'
       }, lang);
 
   String sangeetSandhyaLabelFor(String lang) => _tFor({
         'English': 'Sangeet Sandhya',
         'Gujarati': 'સંગીત સંધ્યા',
         'Hindi': 'संगीत संध्या',
-        'Marathi': 'સંગીત સંધ્યા',
+        'Marathi': 'संगीत संध्या',
         'Punjabi': 'ਸੰਗੀਤ ਸੰਧਿਆ',
         'Urdu': 'سنگیت سندھیا'
       }, lang);
@@ -643,7 +693,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Lagnotsav',
         'Gujarati': 'લગ્નોત્સવ',
         'Hindi': 'लग्नोत्सव',
-        'Marathi': 'લગ્નોત્સવ',
+        'Marathi': 'लग्नोत्सव',
         'Punjabi': 'ਲਗਨੋਤਸਵ',
         'Urdu': 'لگنوتسو'
       }, lang);
@@ -652,7 +702,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Parinay Utsav',
         'Gujarati': 'પરિણય ઉત્સવ',
         'Hindi': 'परिणय उत्सव',
-        'Marathi': 'પરિણય ઉત્સવ',
+        'Marathi': 'परिणय उत्सव',
         'Punjabi': 'ਪਰਿਣਯ ਉਤਸਵ',
         'Urdu': 'پرینائے اتسو'
       }, lang);
@@ -661,7 +711,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'with',
         'Gujarati': 'સંગ',
         'Hindi': 'संग',
-        'Marathi': 'સંગ',
+        'Marathi': 'सोबत',
         'Punjabi': 'ਸੰਗ',
         'Urdu': 'سنگ'
       }, lang);
@@ -670,7 +720,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Inviter',
         'Gujarati': 'નિમંત્રક',
         'Hindi': 'निमंत्रक',
-        'Marathi': 'નિમંત્રક',
+        'Marathi': 'निमंत्रक',
         'Punjabi': 'ਨਿਮੰਤਰਕ',
         'Urdu': 'نمنترک'
       }, lang);
@@ -678,8 +728,8 @@ class LanguageProvider extends ChangeNotifier {
   String taLabelFor(String lang) => _tFor({
         'English': 'Date',
         'Gujarati': 'તા.',
-        'Hindi': 'ता.',
-        'Marathi': 'તા.',
+        'Hindi': 'दि.',
+        'Marathi': 'दि.',
         'Punjabi': 'ਮਿਤੀ',
         'Urdu': 'تاریخ'
       }, lang);
@@ -688,7 +738,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Time',
         'Gujarati': 'સમય',
         'Hindi': 'समय',
-        'Marathi': 'વેળ',
+        'Marathi': 'वेळ',
         'Punjabi': 'ਸਮਾਂ',
         'Urdu': 'وقت'
       }, lang);
@@ -697,7 +747,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Chi.',
         'Gujarati': 'ચિ.',
         'Hindi': 'चि.',
-        'Marathi': 'ચિ.',
+        'Marathi': 'श्री.',
         'Punjabi': 'ਚਿ.',
         'Urdu': 'عزیز'
       }, lang);
@@ -706,7 +756,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Venue',
         'Gujarati': 'સ્થળ',
         'Hindi': 'स्थान',
-        'Marathi': 'સ્થળ',
+        'Marathi': 'ठिकाण',
         'Punjabi': 'ਸਥਾਨ',
         'Urdu': 'مقام'
       }, lang);
@@ -715,7 +765,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Wedding Ceremony',
         'Gujarati': 'લગ્ન વિધિ',
         'Hindi': 'विवाह समारोह',
-        'Marathi': 'વિવાહ સોહળા',
+        'Marathi': 'विवाह समारोह',
         'Punjabi': 'ਵਿਅਾਹ ਸਮਾਗਮ',
         'Urdu': 'شادی کی تقریب'
       }, lang);
@@ -728,7 +778,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Add Event',
         'Gujarati': 'પ્રસંગ ઉમેરો',
         'Hindi': 'कार्यक्रम जोड़ें',
-        'Marathi': 'પ્રસંગ ઉમેરો',
+        'Marathi': 'प्रसंग जोडा',
         'Punjabi': 'ਪ੍ਰੋਗਰਾਮ ਜੋੜੋ',
         'Urdu': 'تقریب شامل کریں'
       });
@@ -736,7 +786,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Generate Content',
         'Gujarati': 'કન્ટેન્ટ બનાવો',
         'Hindi': 'सामग्री बनाएं',
-        'Marathi': 'કન્ટેન્ટ બનાવો',
+        'Marathi': 'मजकूर तयार करा',
         'Punjabi': 'ਸਮੱਗરી ਤਿਆਰ ਕਰੋ',
         'Urdu': 'مواد تیار کریں'
       });
@@ -744,7 +794,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Preview',
         'Gujarati': 'પૂર્વાવલોકન',
         'Hindi': 'पूर्वावलोकन',
-        'Marathi': 'પૂર્વાવલોકન',
+        'Marathi': 'पूर्वावलोकन',
         'Punjabi': 'ਪੂਰਵ દરਸ਼ਨ',
         'Urdu': 'پیش نظارہ'
       });
@@ -752,7 +802,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Next',
         'Gujarati': 'આગળ',
         'Hindi': 'आगे',
-        'Marathi': 'આગળ',
+        'Marathi': 'पुढे',
         'Punjabi': 'ਅੱਗੇ',
         'Urdu': 'اگلا'
       });
@@ -760,7 +810,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Back',
         'Gujarati': 'પાછળ',
         'Hindi': 'પીછે',
-        'Marathi': 'માગે',
+        'Marathi': 'मागे',
         'Punjabi': 'ਪਿੱਛੇ',
         'Urdu': 'پیچھے'
       });
@@ -768,7 +818,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Wedding Date',
         'Gujarati': 'લગ્ન તારીખ',
         'Hindi': 'शादी की तारीख',
-        'Marathi': 'લગ્નાચી તારીખ',
+        'Marathi': 'लग्नाची तारीख',
         'Punjabi': 'ਵਿਆਹ ਦੀ ਤਾਰੀਖ',
         'Urdu': 'شادی کی تاریخ'
       });
@@ -776,7 +826,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Event Name',
         'Gujarati': 'પ્રસંગનું નામ',
         'Hindi': 'कार्यक्रम का नाम',
-        'Marathi': 'પ્રસંગાચે નાવ',
+        'Marathi': 'प्रसंगाचे नाव',
         'Punjabi': 'ਪ੍ਰੋਗਰਾਮ ਦਾ ਨਾਮ',
         'Urdu': 'تقریب کا نام'
       });
@@ -784,7 +834,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': "We'd love to hear your feedback.",
         'Gujarati': 'અમે તમારો પ્રતિસાદ સાંભળવા માંગીએ છીએ.',
         'Hindi': 'हम आपकी प्रतिक्रिया सुनना चाहेंगे.',
-        'Marathi': 'અમ્હાલા તુમચા પ્રતિસાદ આયકાયલા આવડેલ.',
+        'Marathi': 'आम्हाला तुमचा अभिप्राय आवडेल.',
         'Punjabi': 'ਅਸੀਂ ਤੁਹਾਡੀ ਫੀਡਬੈਕ ਸੁਣਨਾ ਚਾਹੁੰਦੇ ਹਾਂ।',
         'Urdu': 'ہم آپ کی رائے جاننا چاہیں گے۔'
       });
@@ -800,7 +850,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Date',
         'Gujarati': 'તારીખ',
         'Hindi': 'તારીખ',
-        'Marathi': 'તારીખ',
+        'Marathi': 'तारीख',
         'Punjabi': 'ਤਾਰੀਖ',
         'Urdu': 'تاریخ'
       });
@@ -808,7 +858,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Time',
         'Gujarati': 'સમય',
         'Hindi': 'સમય',
-        'Marathi': 'વેળ',
+        'Marathi': 'वेळ',
         'Punjabi': 'ਸਮਾਂ',
         'Urdu': 'وقت'
       });
@@ -816,7 +866,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Venue / Place',
         'Gujarati': 'સ્થળ / જગ્યા',
         'Hindi': 'સ્થાન / જગહ',
-        'Marathi': 'સ્થળ',
+        'Marathi': 'स्थळ',
         'Punjabi': 'ਸਥਾਨ',
         'Urdu': 'مقام'
       });
@@ -824,7 +874,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Wedding Details',
         'Gujarati': 'લગ્નની વિગત',
         'Hindi': 'शादी का विवरण',
-        'Marathi': 'લગ્નાચા તપશીલ',
+        'Marathi': 'लग्नाचे तपशील',
         'Punjabi': 'ਵਿਆਹ ਦੇ ਵੇਰਵੇ',
         'Urdu': 'شادی کی تفصیلات'
       });
@@ -832,7 +882,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': "Bride's Name",
         'Gujarati': "કન્યાનું નામ",
         'Hindi': "दुल्हन का नाम",
-        'Marathi': "નવરીચે નાવ",
+        'Marathi': "वधूचे नाव",
         'Punjabi': "ਵਹੁਟੀ ਦਾ ਨਾਮ",
         'Urdu': 'دلہن کا نام'
       });
@@ -840,7 +890,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': "Groom's Name",
         'Gujarati': "વરનું નામ",
         'Hindi': "दूल्हे का नाम",
-        'Marathi': "નવરદેવાચે નાવ",
+        'Marathi': "वराचे नाव",
         'Punjabi': "ਲਾੜੇ ਦਾ ਨਾਮ",
         'Urdu': 'دولہے کا نام'
       });
@@ -848,7 +898,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Get Started',
         'Gujarati': 'શરૂ કરો',
         'Hindi': 'शुरू करें',
-        'Marathi': 'સુરૂ કરા',
+        'Marathi': 'सुरू करा',
         'Punjabi': 'ਸ਼ੁਰੂ ਕਰੋ',
         'Urdu': 'شروع کریں'
       });
@@ -865,7 +915,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Download & Share',
         'Gujarati': 'ડાઉનલોડ અને શેર કરો',
         'Hindi': 'डाउनलोड और साझा करें',
-        'Marathi': 'ડાઉનલોડ આણિ શેર કરા',
+        'Marathi': 'डाउनलोड आणि शेयर करा',
         'Punjabi': 'ਡਾਊਨਲੋਡ ਅਤੇ ਸਾਂਝਾ ਕਰੋ',
         'Urdu': 'ڈاؤن لوڈ اور شیئر کریں'
       });
@@ -874,7 +924,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Invitation Language',
         'Gujarati': 'આમંત્રણ ભાષા',
         'Hindi': 'निमंत्रण भाषा',
-        'Marathi': 'નિમંત્રણ ભાષા',
+        'Marathi': 'निमंत्रण भाषा',
         'Punjabi': 'ਸੱਦਾ ਭਾਸ਼ਾ',
         'Urdu': 'دعوت نامہ کی زبان'
       });
@@ -882,7 +932,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Rotation',
         'Gujarati': 'પરિભ્રમણ',
         'Hindi': 'રોટેશન',
-        'Marathi': 'રોટેશન',
+        'Marathi': 'रोटेशन',
         'Punjabi': 'ਰੋਟੇਸ਼ਨ',
         'Urdu': 'گھماؤ'
       });
@@ -890,7 +940,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Opacity',
         'Gujarati': 'પારદર્શિતા',
         'Hindi': 'અપારદર્શિતા',
-        'Marathi': 'અપારદર્શકતા',
+        'Marathi': 'अपारदर्शकता',
         'Punjabi': 'ਪਾਰਦਰਸ਼ਤਾ',
         'Urdu': 'دھندلاپن'
       });
@@ -898,7 +948,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Choose Color',
         'Gujarati': 'રંગ પસંદ કરો',
         'Hindi': 'રંગ ચુને',
-        'Marathi': 'રંગ પસંદ કરા',
+        'Marathi': 'रंग निवडा',
         'Punjabi': 'ਰੰਗ ਚੁਣੋ',
         'Urdu': 'رنگ منتخب کریں'
       });
@@ -908,7 +958,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Edit Guest',
         'Gujarati': 'મહેમાન સંપાદિત કરો',
         'Hindi': 'अतिथि संपादित करें',
-        'Marathi': 'પાહુણે સંપાદિત કરા',
+        'Marathi': 'पाहुणे संपादित करा',
         'Punjabi': 'ਮਹਿਮਾਨ ਨੂੰ ਸੋਧੋ',
         'Urdu': 'مہمان کی ترمیم کریں'
       });
@@ -916,7 +966,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Delete Guest',
         'Gujarati': 'મહેમાન કાઢી નાખો',
         'Hindi': 'अतिथि हटाएं',
-        'Marathi': 'પાહુણે કાઢૂન ટાકા',
+        'Marathi': 'पाहुणे काढून टाका',
         'Punjabi': 'ਮਹਿਮਾਨ ਨੂੰ ਹਟਾਓ',
         'Urdu': 'مہمان کو حذف کریں'
       });
@@ -924,7 +974,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Save Changes',
         'Gujarati': 'ફેરફારો સાચવો',
         'Hindi': 'बदलाव सहेजें',
-        'Marathi': 'બદલ જતન કરા',
+        'Marathi': 'बदल जतन करा',
         'Punjabi': 'ਤਬਦੀਲੀਆਂ ਸੁਰੱਖਿਅਤ ਕਰੋ',
         'Urdu': 'تبدیلیاں محفوظ کریں'
       });
@@ -932,7 +982,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Guest updated successfully!',
         'Gujarati': 'મહેમાન સફળતાપૂર્વક અપડેટ થયા!',
         'Hindi': 'अतिथि सफलतापूर्वक अपडेट किया गया!',
-        'Marathi': 'પાહુણે યશસ્વીપણે અપડેટ ઝાલે!',
+        'Marathi': 'पाहुणे यशस्वीरित्या अपडेट झाले!',
         'Punjabi': 'ਮਹਿਮਾਨ ਸਫਲਤਾਪੂਰਵਕ ਅਪਡੇਟ ਕੀਤਾ ਗਿਆ!',
         'Urdu': '!مہمان کامیابی کے ساتھ اپ ڈیٹ ہو گیا'
       });
@@ -940,7 +990,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Delete',
         'Gujarati': 'કાઢી નાખો',
         'Hindi': 'हटाएं',
-        'Marathi': 'કાઢા',
+        'Marathi': 'काढा',
         'Punjabi': 'ਹਟਾਓ',
         'Urdu': 'حذف کریں'
       });
@@ -948,7 +998,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Guest removed.',
         'Gujarati': 'મહેમાન દૂર કર્યા.',
         'Hindi': 'अतिथि हटा दिया गया.',
-        'Marathi': 'પાહુણે કાઢલે.',
+        'Marathi': 'पाहुणे काढले.',
         'Punjabi': 'ਮਹਿਮਾਨ ਹਟਾ ਦਿੱਤਾ ਗਿਆ।',
         'Urdu': '.مہمان کو ہٹا دیا گیا'
       });
@@ -956,7 +1006,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'No guests to export.',
         'Gujarati': 'નિકાસ કરવા માટે કોઈ મહેમાન નથી.',
         'Hindi': 'निर्यात करने के लिए कोई अतिथि नहीं हैं.',
-        'Marathi': 'નિર્ષાત કરણ્યાસાઠી પાહુણે નાહીત.',
+        'Marathi': 'निर्यात करण्यासाठी पाहुणे नाहीत.',
         'Punjabi': 'ਨਿਰਯਾਤ ਕਰਨ ਲਈ ਕੋਈ ਮਹਿਮਾਨ ਨਹੀਂ ਹੈ।',
         'Urdu': '.برآمد کرنے کے لیے کوئی مہمان نہیں ہے'
       });
@@ -964,7 +1014,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Export Guest List',
         'Gujarati': 'મહેમાન યાદી નિકાસ કરો',
         'Hindi': 'अतिथि सूची निर्यात करें',
-        'Marathi': 'પાહુણે યાદી નિર્ષાત કરા',
+        'Marathi': 'पाहुण्यांची यादी निर्यात करा',
         'Punjabi': 'ਮਹਿਮਾਨ ਸੂਚੀ ਨਿਰਯਾਤ ਕਰੋ',
         'Urdu': 'مہمانوں کی فہرست برآمد کریں'
       });
@@ -972,7 +1022,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Choose export format',
         'Gujarati': 'નિકાસ ફોર્મેટ પસંદ કરો',
         'Hindi': 'निर्यात प्रारूप चुनें',
-        'Marathi': 'નિર્ષાત પ્રારૂપ નિવડા',
+        'Marathi': 'निर्यात स्वरूप निवडा',
         'Punjabi': 'ਨਿਰਯਾਤ ਫਾਰਮੈਟ ਚੁਣੋ',
         'Urdu': 'ایکسپورٹ فارمیٹ منتخب کریں'
       });
@@ -980,7 +1030,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'CSV File',
         'Gujarati': 'CSV ફાઇલ',
         'Hindi': 'CSV फ़ाइल',
-        'Marathi': 'CSV ફાઇલ',
+        'Marathi': 'CSV फाइल',
         'Punjabi': 'CSV ਫਾਈਲ',
         'Urdu': 'سی ایس وی فائل'
       });
@@ -988,7 +1038,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'For Excel / Google Sheets',
         'Gujarati': 'એક્સેલ / ગૂગલ શીટ્સ માટે',
         'Hindi': 'एक्सेल / गूगल शीट्स के लिए',
-        'Marathi': 'એક્સેલ / ગૂગલ શીટ્સસાઠી',
+        'Marathi': 'एक्सेल / गूगल शीट्ससाठी',
         'Punjabi': 'ਐਕਸਲ / ਗੂਗਲ ਸ਼ੀਟਸ ਲਈ',
         'Urdu': 'ایکسل / گوگل شیٹس کے لیے'
       });
@@ -996,7 +1046,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'VCF Contacts',
         'Gujarati': 'VCF સંપર્કો',
         'Hindi': 'VCF संपर्क',
-        'Marathi': 'VCF સંપર્ક',
+        'Marathi': 'VCF संपर्क',
         'Punjabi': 'VCF ਸੰਪਰਕ',
         'Urdu': 'وی سی ایف روابط'
       });
@@ -1004,7 +1054,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Import to Phone Contacts',
         'Gujarati': 'ફોન સંપર્કોમાં આયાત કરો',
         'Hindi': 'फ़ोन संपर्कों में आयात करें',
-        'Marathi': 'ફોન સંપર્કાત આયાત કરા',
+        'Marathi': 'फोन संपर्कातून आयात करा',
         'Punjabi': 'ਫੋਨ ਸੰਪਰਕਾਂ ਵਿੱਚ ਆਯਾਤ ਕਰੋ',
         'Urdu': 'فون روابط میں درآمد کریں'
       });
@@ -1012,7 +1062,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'PDF Document',
         'Gujarati': 'PDF દસ્તાવેજ',
         'Hindi': 'PDF दस्तावेज़',
-        'Marathi': 'PDF દસ્તાવેજ',
+        'Marathi': 'PDF दस्तऐवज',
         'Punjabi': 'PDF ਦਸਤਾਵੇਜ਼',
         'Urdu': 'پی ڈی ایف دستاویز'
       });
@@ -1020,7 +1070,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'For Printing / Sharing',
         'Gujarati': 'પ્રિન્ટિંગ / શેરિંગ માટે',
         'Hindi': 'प्रिंटिंग / शेयरિંગ के लिए',
-        'Marathi': 'પ્રિન્ટિંગ / શેરિંગસાઠી',
+        'Marathi': 'प्रिंटिंग / शेयरिंगसाठी',
         'Punjabi': 'ਪ੍ਰਿੰਟਿੰਗ / ਸ਼ੇਅਰਿੰਗ ਲਈ',
         'Urdu': 'پرنٹنگ / شیئرنگ کے لیے'
       });
@@ -1029,7 +1079,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Are you sure you want to delete $name?',
         'Gujarati': 'શું તમે ખરેખર $name ને કાઢી નાખવા માંગો છો?',
         'Hindi': 'क्या आप वाकई $name को हटाना चाहते हैं?',
-        'Marathi': 'કા તુમ્હાલા ખરોખર $name કાઢૂન ટાકાયચે આહે?',
+        'Marathi': 'तुम्हाला खरोखर $name काढून टाकायचे आहे?',
         'Punjabi': 'ਕੀ ਤੁਸੀਂ ਯਕੀਨੀ ਤੌਰ ਤੇ $name ਨੂੰ ਹਟਾਉਣਾ ਚਾਹੁੰਦੇ ਹੋ?',
         'Urdu': 'کیا آپ واقعی $name کو حذف کرنا چاہتے ہیں؟',
       });
@@ -1039,7 +1089,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Thanks!',
         'Gujarati': 'આભાર!',
         'Hindi': 'धन्यवाद!',
-        'Marathi': 'આભાર!',
+        'Marathi': 'धन्यवाद!',
         'Punjabi': 'ਧੰਨਵਾਦ!',
         'Urdu': 'شکریہ!'
       });
@@ -1048,7 +1098,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Submit',
         'Gujarati': 'સબમિટ કરો',
         'Hindi': 'सबमिट करें',
-        'Marathi': 'સબમિટ કરા',
+        'Marathi': 'सबमिट करा',
         'Punjabi': 'ਸਬਮਿਟ ਕਰੋ',
         'Urdu': 'جمع کروائیں'
       });
@@ -1056,7 +1106,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'No, Thanks',
         'Gujarati': 'ના, આભાર',
         'Hindi': 'नहीं, धन्यवाद',
-        'Marathi': 'નાહી, આભાર',
+        'Marathi': 'नाही, धन्यवाद',
         'Punjabi': 'ਨਹੀਂ, ਧੰਨਵਾਦ',
         'Urdu': 'نہیں، شکریہ'
       });
@@ -1066,7 +1116,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Please wait, finalizing your design...',
         'Gujarati': 'તમારી ડિઝાઇનને આખરી ઓપ આપી રહ્યા છીએ...',
         'Hindi': 'आपकी डिझाइन को अंतिम रूप दे रहे हैं...',
-        'Marathi': 'તુમચી ડિઝાઇન અંતિમ કરત આહોત...',
+        'Marathi': 'तुमची डिझाइन अंतिम करत आहोत...',
         'Punjabi': 'ਤੁਹਾਡੇ ਡਿਜ਼ਾਈਨ ਨੂੰ ਅੰਤਿਮ ਰੂਪ ਦਿੱਤਾ ਜਾ ਰਿਹਾ ਹੈ...',
         'Urdu': 'آپ کے ڈیزائن کو حتمی شکل دی جا رہی ہے...'
       });
@@ -1074,7 +1124,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'It will be saved to your Downloads folder',
         'Gujarati': 'ડાઉનલોડ્સમાં સાચવ્યું',
         'Hindi': 'डाउनलोड में सहेजा गया',
-        'Marathi': 'ડાઉનલોડ્સમધ્યે જતન કેલે',
+        'Marathi': 'डाउनलोड्समध्ये जतन केले',
         'Punjabi': 'ਡਾਊਨਲੋਡਾਂ ਵਿੱਚ ਸੁਰੱਖਿਅਤ ਕੀਤਾ ਗਿਆ',
         'Urdu': 'ڈاؤن لوڈز میں محفوظ کر لیا گیا'
       });
@@ -1082,15 +1132,63 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Open PDF',
         'Gujarati': 'PDF ખોલો',
         'Hindi': 'PDF खोलें',
-        'Marathi': 'PDF ઉઘડા',
+        'Marathi': 'PDF उघडा',
         'Punjabi': 'PDF ਖੋਲ੍ਹੋ',
         'Urdu': 'پی ڈی ایف کھولیں'
+      });
+  String get renamePdf => _t({
+        'English': 'Rename PDF',
+        'Gujarati': 'PDF નામ બદલો',
+        'Hindi': 'PDF का नाम बदलें',
+        'Marathi': 'PDF चे नाव बदला',
+        'Punjabi': 'PDF ਦਾ ਨਾਮ ਬਦਲੋ',
+        'Urdu': 'پی ڈی ایف کا نام تبدیل کریں'
+      });
+  String get fileName => _t({
+        'English': 'File Name',
+        'Gujarati': 'ફાઇલનું નામ',
+        'Hindi': 'फ़ाइल का नाम',
+        'Marathi': 'फाइलचे नाव',
+        'Punjabi': 'ਫਾਈਲ ਦਾ ਨਾਮ',
+        'Urdu': 'فائل کا نام'
+      });
+  String get rename => _t({
+        'English': 'Rename',
+        'Gujarati': 'નામ બદલો',
+        'Hindi': 'नाम बदलें',
+        'Marathi': 'नाव बदला',
+        'Punjabi': 'ਨਾਮ ਬਦਲੋ',
+        'Urdu': 'نام تبدیل کریں'
+      });
+  String get saveFailed => _t({
+        'English': 'Failed to save PDF. Please try again.',
+        'Gujarati': 'PDF સાચવવામાં નિષ્ફળ. ફરી પ્રયાસ કરો.',
+        'Hindi': 'PDF सहेजने में विफल। कृपया पुनः प्रयास करें।',
+        'Marathi': 'PDF जतन अयशस्वी. पुन्हा प्रयत्न करा.',
+        'Punjabi': 'PDF ਸੁਰੱਖਿਅਤ ਕਰਨ ਵਿੱਚ ਅਸਫਲ। ਦੁਬਾਰਾ ਕੋਸ਼ਿਸ਼ ਕਰੋ।',
+        'Urdu': 'پی ڈی ایف محفوظ نہیں ہوئی۔ دوبارہ کوشش کریں۔'
+      });
+  String get retry => _t({
+        'English': 'Try Again',
+        'Gujarati': 'ફરી પ્રયાસ કરો',
+        'Hindi': 'पुनः प्रयास करें',
+        'Marathi': 'पुन्हा प्रयत्न करा',
+        'Punjabi': 'ਦੁਬਾਰਾ ਕੋਸ਼ਿਸ਼ ਕਰੋ',
+        'Urdu': 'دوبارہ کوشش کریں'
+      });
+  String savingPage(int current, int total) => _t({
+        'English': 'Saving page $current of $total...',
+        'Gujarati': 'પૃષ્ઠ $current / $total સાચવી રહ્યા છીએ...',
+        'Hindi': 'पृष्ठ $current / $total सहेज रहे हैं...',
+        'Marathi': 'पान $current / $total जतन करत आहे...',
+        'Punjabi': 'ਸਫ਼ਾ $current / $total ਸੁਰੱਖਿਅਤ ਕੀਤਾ ਜਾ ਰਿਹਾ ਹੈ...',
+        'Urdu': 'صفحہ $current / $total محفوظ ہو رہا ہے...'
       });
   String get edit => _t({
         'English': 'Edit',
         'Gujarati': 'સંપાદિત કરો',
         'Hindi': 'एडिट करें',
-        'Marathi': 'સંપાદિત કરા',
+        'Marathi': 'संपादित करा',
         'Punjabi': 'ਸੋਧੋ',
         'Urdu': 'ترمیم کریں'
       });
@@ -1098,7 +1196,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Share with',
         'Gujarati': 'શેર કરો',
         'Hindi': 'इसके साथ साझा करें',
-        'Marathi': 'યાંચ્યાસોબત શેર કરા',
+        'Marathi': 'यांच्यासोबत शेयर करा',
         'Punjabi': 'ਨਾਲ સਾਂਝਾ કરો',
         'Urdu': 'کے ساتھ شیئر کریں'
       });
@@ -1108,7 +1206,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Coming Soon',
         'Gujarati': 'ટૂંક સમયમાં આવી રહ્યું છે',
         'Hindi': 'जल्द आ रहा है',
-        'Marathi': 'લવકરચ યેત આહે',
+        'Marathi': 'लवकरच येत आहे',
         'Punjabi': 'ਜਲਦੀ ਆ ਰਿਹਾ ਹੈ',
         'Urdu': 'جلد آرہا ہے'
       });
@@ -1116,7 +1214,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Logout Confirmation',
         'Gujarati': 'લોગઆઉટ કન્ફર્મેશન',
         'Hindi': 'लॉगआउट पुष्टिकरण',
-        'Marathi': 'લૉગઆઉટ પુષ્ટીકરણ',
+        'Marathi': 'लॉगआउट पुष्टीकरण',
         'Punjabi': 'ਲੌਗਆਊਟ ਪੁਸ਼ਟੀਕਰਨ',
         'Urdu': 'لاگ آؤٹ کی تصدیق'
       });
@@ -1124,7 +1222,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Are you sure you want to logout?',
         'Gujarati': 'શું તમે ખરેખર લોગઆઉટ કરવા માંગો છો?',
         'Hindi': 'क्या आप वाकई लॉगआउट करना चाहते हैं?',
-        'Marathi': 'કા તુમ્હાલા ખરોખર લૉગઆઉટ કરાયચે આહે?',
+        'Marathi': 'तुम्हाला खरोखर लॉगआउट करायचे आहे?',
         'Punjabi': 'ਕੀ ਤੁਸੀਂ ਯਕੀਨੀ ਤੌਰ ਤੇ ਲੌਗਆਊਟ ਕਰਨਾ ਚਾਹੁੰਦੇ ਹੋ?',
         'Urdu': 'کیا آپ واقعی لاگ آؤٹ کرنا چاہتے ہیں؟'
       });
@@ -1132,7 +1230,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Confirm',
         'Gujarati': 'પુષ્ટિ કરો',
         'Hindi': 'पुष्टि करें',
-        'Marathi': 'પુષ્ટી કરા',
+        'Marathi': 'पुष्टी करा',
         'Punjabi': 'ਪੁਸ਼ટી ਕਰੋ',
         'Urdu': 'تصدیق کریں'
       });
@@ -1142,7 +1240,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'No guests yet',
         'Gujarati': 'હજુ કોઈ મહેમાન નથી',
         'Hindi': 'अभी तक कोई अतिथि नहीं',
-        'Marathi': 'અજૂન પાહુણે નાહીત',
+        'Marathi': 'अजून पाहुणे नाहीत',
         'Punjabi': 'ਅਜੇ ਕੋਈ ਮਹਿਮਾਨ ਨਹੀਂ',
         'Urdu': 'ابھی تک کوئی مہمان نہیں'
       });
@@ -1154,7 +1252,7 @@ class LanguageProvider extends ChangeNotifier {
         'Hindi':
             'अपने शादी के निमंत्रणों को कुशलतापूर्वक प्रबंधित करने के लिए मेहमानों को जोड़ना शुरू करें.',
         'Marathi':
-            'તુમચા લગ્ન નિમંત્રણાનચે કાર્યક્ષમપણે વ્યવસ્થાપન કરણ્યાસાઠી પાહુણે જોડણ્યાસ સુરુવાત કરા.',
+            'तुमच्या लग्न निमंत्रणांचे कार्यक्षम व्यवस्थापन करण्यासाठी पाहुणे जोडण्यास सुरुवात करा.',
         'Punjabi':
             'ਆਪਣੇ ਵਿਆਹ ਦੇ ਸੱਦੇ ਨੂੰ ਕੁਸ਼ਲਤਾ ਨਾਲ ਪ੍ਰਬੰਧਿਤ ਕਰਨ ਲਈ ਮਹਿਮਾਨਾਂ ਨੂੰ ਜੋੜਨਾ ਸ਼ੁਰੂ ਕਰੋ।',
         'Urdu':
@@ -1164,7 +1262,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Add Guest',
         'Gujarati': 'મહેમાન ઉમેરો',
         'Hindi': 'अतिथि जोड़ें',
-        'Marathi': 'પાહુણે જોડા',
+        'Marathi': 'पाहुणे जोडा',
         'Punjabi': 'ਮਹਿਮਾਨ ਜੋੜੋ',
         'Urdu': 'مہمان شامل کریں'
       });
@@ -1172,7 +1270,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Search Guests...',
         'Gujarati': 'મહેમાનો શોધો...',
         'Hindi': 'अतिथि खोजें...',
-        'Marathi': 'પાહુણે શોધા...',
+        'Marathi': 'पाहुणे शोधा...',
         'Punjabi': 'ਮਹਿਮਾਨ ਲੱਭੋ...',
         'Urdu': 'مہمان تلاش کریں...'
       });
@@ -1180,7 +1278,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'All',
         'Gujarati': 'બધા',
         'Hindi': 'सभी',
-        'Marathi': 'સર્વ',
+        'Marathi': 'सर्व',
         'Punjabi': 'ਸਾਰੇ',
         'Urdu': 'تمام'
       });
@@ -1188,7 +1286,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Sent',
         'Gujarati': 'મોકલેલ',
         'Hindi': 'भेजा गया',
-        'Marathi': 'પાઠવલેલે',
+        'Marathi': 'पाठवलेले',
         'Punjabi': 'ਭੇਜਿਆ ਗਿਆ',
         'Urdu': 'بھیجا گیا'
       });
@@ -1196,7 +1294,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Pending',
         'Gujarati': 'બાકી',
         'Hindi': 'लंबित',
-        'Marathi': 'બાકી',
+        'Marathi': 'बाकी',
         'Punjabi': 'ਬਾਕી',
         'Urdu': 'زیر التواء'
       });
@@ -1204,7 +1302,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Viewed',
         'Gujarati': 'જોયેલ',
         'Hindi': 'देखा गया',
-        'Marathi': 'પહિલેલે',
+        'Marathi': 'पाहिलेले',
         'Punjabi': 'ਵੇખ્યા ગયા',
         'Urdu': 'دیکھا گیا'
       });
@@ -1212,7 +1310,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'No guests match your search',
         'Gujarati': 'તમારી શોધ સાથે કોઈ મહેમાન મળતા નથી',
         'Hindi': 'आपकी खोज से कोई अतिथि मेल नहीं खाता',
-        'Marathi': 'તુમચા શોધાશી કોણતેહી પાહુણે મિળત નાહીત',
+        'Marathi': 'तुमच्या शोधाशी कोणतेही पाहुणे जुळत नाहीत',
         'Punjabi': 'ਤੁਹਾਡੀ ਖੋਜ ਨਾਲ કોઈ ਮਹਿਮਾਨ ਨਹੀਂ ਮਿਲਦਾ',
         'Urdu': 'آپ کی تلاش سے کوئی مہمان مطابقت نہیں رکھتا'
       });
@@ -1220,7 +1318,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Add Manually',
         'Gujarati': 'જાતે ઉમેરો',
         'Hindi': 'स्वयं जोड़ें',
-        'Marathi': 'વૈયક્તિક રિત્યા જોડા',
+        'Marathi': 'वैयक्तिकरित्या जोडा',
         'Punjabi': 'ਖੁਦ ਜੋੜੋ',
         'Urdu': 'دستی طور પર शामिल करें'
       });
@@ -1228,7 +1326,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Enter guest details manually',
         'Gujarati': 'મહેમાનની વિગતો જાતે દાખલ કરો',
         'Hindi': 'अतिथि विवरण स्वयं दर्ज करें',
-        'Marathi': 'પાહુણ્યાંચા તપશીલ વૈયક્તિક રિત્યા ભરા',
+        'Marathi': 'पाहुण्यांचे तपशील वैयक्तिकरित्या भरा',
         'Punjabi': 'ਮਹਿਮਾਨ ਦੇ ਵੇਰવે ਖੁਦ ਦਰਜ ਕਰੋ',
         'Urdu': 'مہمان کی تفصیلات دستی طور پر درج کریں'
       });
@@ -1236,7 +1334,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Import Contacts',
         'Gujarati': 'સંપર્કો આયાત કરો',
         'Hindi': 'संपर्क आयात करें',
-        'Marathi': 'સંપર્ક આયાત કરા',
+        'Marathi': 'संपर्क आयात करा',
         'Punjabi': 'ਸੰਪਰਕ ਆਯਾਤ ਕਰੋ',
         'Urdu': 'روابط درآمد کریں'
       });
@@ -1244,7 +1342,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Import from phone contacts',
         'Gujarati': 'ફોન સંપર્કોમાંથી આયાત કરો',
         'Hindi': 'फ़ोन संपर्कों से आयात करें',
-        'Marathi': 'ફોન સંપર્કાંતૂન આયાત કરા',
+        'Marathi': 'फोन संपर्कांतून आयात करा',
         'Punjabi': 'ਫੋਨ ਸੰਪਰਕਾਂ ਤੋਂ ਆਯਾਤ ਕਰੋ',
         'Urdu': 'فون روابط سے درآمد کریں'
       });
@@ -1252,7 +1350,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Import CSV/VCF',
         'Gujarati': 'CSV/VCF આયાત કરો',
         'Hindi': 'CSV/VCF आयात करें',
-        'Marathi': 'CSV/VCF આયાત કરા',
+        'Marathi': 'CSV/VCF आयात करा',
         'Punjabi': 'CSV/VCF ਆਯਾਤ ਕਰੋ',
         'Urdu': 'سی ایس وی / وی سی ایف درآمد کریں'
       });
@@ -1260,7 +1358,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Import from CSV or VCF file',
         'Gujarati': 'CSV અથવા VCF ફાઇલમાંથી આયાત કરો',
         'Hindi': 'CSV या VCF फ़ाइल से आयात करें',
-        'Marathi': 'CSV કિવા VCF ફાઇલમધૂન આયાત કરા',
+        'Marathi': 'CSV किंवा VCF फाइलमधून आयात करा',
         'Punjabi': 'CSV ਜਾਂ VCF ਫਾਈਲ ਤੋਂ ਆਯਾਤ ਕਰੋ',
         'Urdu': 'سی ایس وی یا وی سی ایف فائل سے درآمد کریں'
       });
@@ -1269,7 +1367,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': '$count Guests',
         'Gujarati': '$count મહેમાનો',
         'Hindi': '$count अतिथि',
-        'Marathi': '$count પાહુણે',
+        'Marathi': '$count पाहुणे',
         'Punjabi': '$count ਮਹਿਮਾਨ',
         'Urdu': '$count مہمان',
       });
@@ -1281,7 +1379,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': '500+ Templates',
         'Gujarati': '૫૦૦+ ટેમ્પ્લેટ્સ',
         'Hindi': '500+ टेम्पलेट्स',
-        'Marathi': '૫૦૦+ ટેમ્પ્લેટ્સ',
+        'Marathi': '500+ टेम्पलेट्स',
         'Punjabi': '500+ ਟੈਂਪਲੇਟਸ',
         'Urdu': '500+ ٹیمپلیٹس'
       });
@@ -1289,7 +1387,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Easy to Customize',
         'Gujarati': 'કસ્ટમાઇઝ કરવું સરળ',
         'Hindi': 'कस्टमाइज़ करना आसान',
-        'Marathi': 'સાનુકૂલિત કરણ્યાસ સોપે',
+        'Marathi': 'सानुकूलित करणे सोपे',
         'Punjabi': 'ਅਨੁਕੂਲਿਤ ਕਰਨਾ ਆਸਾਨ',
         'Urdu': 'اپنی مرضی کے مطابق بنانا آسان ہے'
       });
@@ -1297,7 +1395,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Share Instantly',
         'Gujarati': 'તરત જ શેર કરો',
         'Hindi': 'तुरंत साझा करें',
-        'Marathi': 'તરત શેર કરા',
+        'Marathi': 'त्वरित शेयर करा',
         'Punjabi': 'ਤੁਰੰਤ ਸਾਂਝਾ ਕਰੋ',
         'Urdu': 'فوری شیئر کریں'
       });
@@ -1305,7 +1403,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Choose App Language',
         'Gujarati': 'એપ ભાષા પસંદ કરો',
         'Hindi': 'ऐप भाषा चुनें',
-        'Marathi': 'અપ્ ભાષા નિવડા',
+        'Marathi': 'ऐप भाषा निवडा',
         'Punjabi': 'ਐਪ ਭਾਸ਼ਾ ਚੁਣੋ',
         'Urdu': 'ایپ کی زبان منتخب کریں'
       });
@@ -1313,7 +1411,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Select your preferred language to use the app.',
         'Gujarati': 'એપનો ઉપયોગ કરવા માટે તમારી પસંદગીની ભાષા પસંદ કરો.',
         'Hindi': 'ऐप का उपयोग करने के लिए अपनी पसंदीदा भाषा चुनें.',
-        'Marathi': 'અપ્ વાપરણ્યાસાઠી તુમચી આવડતી ભાષા નિવડા.',
+        'Marathi': 'ऐप वापरण्यासाठी तुमची आवडती भाषा निवडा.',
         'Punjabi': 'ਐਪ ਦੀ ਵਰਤੋਂ ਕਰਨ ਲਈ ਆਪਣੀ ਪਸੰਦੀਦਾ ਭਾਸ਼ਾ ਚੁਣੋ।',
         'Urdu': 'ایپ استعمال کرنے کے لیے اپنی پسندیدہ زبان منتخب کریں۔'
       });
@@ -1321,7 +1419,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Customize Invitation Languages',
         'Gujarati': 'આમંત્રણ ભાષાઓ કસ્ટમાઇઝ કરો',
         'Hindi': 'निमंत्रण भाषाएं कस्टमाइज़ करें',
-        'Marathi': 'નિમંત્રણ ભાષા સાનુકૂલિત કરા',
+        'Marathi': 'निमंत्रण भाषा सानुकूलित करा',
         'Punjabi': 'ਸੱਦਾ ਭਾਸ਼ਾਵਾਂ ਨੂੰ ਅਨੁਕੂਲਿਤ ਕਰੋ',
         'Urdu': 'دعوت نامہ کی زبانیں اپنی مرضی کے مطابق بنائیں'
       });
@@ -1331,7 +1429,7 @@ class LanguageProvider extends ChangeNotifier {
             'તમારા આમંત્રણો માટે તમે જે ભાષાઓ વાપરવા માંગો છો તે પસંદ કરો.',
         'Hindi':
             'उन भाषाओं को चुनें जिन्हें आप अपने निमंत्रणों के लिए उपयोग करना चाहते हैं.',
-        'Marathi': 'તુમચા નિમંત્રણાસાઠી તુમ્હાલા વાપરચલેલ્યા ભાષા નિવડા.',
+        'Marathi': 'तुमच्या निमंत्रणासाठी तुम्हाला वापरायच्या भाषा निवडा.',
         'Punjabi': 'ਉਹ ਭਾਸ਼ਾਵਾਂ ਚੁਣੋ ਜੋ ਤੁਸੀਂ ਆਪਣੇ ਸੱਦੇ ਲਈ ਵਰਤਣਾ ਚਾਹੁੰਦੇ ਹੋ।',
         'Urdu':
             'وہ زبانیں منتخب کریں جو آپ اپنے دعوت ناموں کے لیے استعمال کرنا چاہتے ہیں۔'
@@ -1340,7 +1438,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Create Invitation in 3 Steps',
         'Gujarati': '૩ સ્ટેપમાં આમંત્રણ બનાવો',
         'Hindi': '3 स्टेप में निमंत्रण बनाएं',
-        'Marathi': '૩ પાયર્યાંત નિમંત્રણ બનાવા',
+        'Marathi': '३ पायऱ्यांत निमंत्रण बनवा',
         'Punjabi': '3 ਕਦਮਾਂ ਵਿੱਚ ਸੱਦਾ ਬਣਾਓ',
         'Urdu': '3 مراحل میں دعوت نامہ بنائیں'
       });
@@ -1348,7 +1446,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Explore various categories of invitations.',
         'Gujarati': 'આમંત્રણોની વિવિધ શ્રેણીઓ શોધો.',
         'Hindi': 'निमंत्रण की विभिन्न श्रेणियों का पता लगाएं.',
-        'Marathi': 'નિમંત્રણાંચ્યા વિવિધ શ્રેણી પહા.',
+        'Marathi': 'निमंत्रणांच्या विविध श्रेणी पहा.',
         'Punjabi': 'ਸੱਦੇ ਦੀਆਂ ਵੱਖ-ਵੱਖ ਸ਼੍ਰੇਣੀਆਂ ਦੀ ਪੜਚੋਲ ਕਰੋ।',
         'Urdu': 'دعوت ناموں کے مختلف زمروں کو دریافت کریں۔'
       });
@@ -1356,7 +1454,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Choose Template',
         'Gujarati': 'ટેમ્પ્લેટ પસંદ કરો',
         'Hindi': 'टेम्पलेट चुनें',
-        'Marathi': 'ટેમ્પ્લેટ નિવડા',
+        'Marathi': 'टेम्पलेट निवडा',
         'Punjabi': 'ਟੈਂਪਲੇਟ ਚੁਣੋ',
         'Urdu': 'ٹیمپلیٹ منتخب کریں'
       });
@@ -1364,7 +1462,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Pick your favorite design from hundreds of templates.',
         'Gujarati': 'સેંકડો ટેમ્પ્લેટ્સમાંથી તમારી મનપસંદ ડિઝાઇન પસંદ કરો.',
         'Hindi': 'सैकड़ों टेम्पलेट्स में से अपना पसंदीदा डिझाइन चुनें.',
-        'Marathi': 'શંકડો ટેમ્પ્લેટ્સમધૂન તુમચી આવડતી ડિઝાઇન નિવડા.',
+        'Marathi': 'शंभर टेम्पलेट्समधून तुमची आवडती डिझाइन निवडा.',
         'Punjabi': 'ਸੈਂਕੜੇ ਟੈਂਪਲੇਟਾਂ ਵਿੱਚੋਂ ਆਪਣਾ ਮਨਪਸੰਦ ਡਿਜ਼ਾਈਨ ਚੁਣੋ।',
         'Urdu': 'سینکڑوں ٹیمپلیٹس میں سے اپنا پسندیدہ ڈیزائن منتخب کریں۔'
       });
@@ -1372,7 +1470,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Customize Card',
         'Gujarati': 'કાર્ડ કસ્ટમાઇઝ કરો',
         'Hindi': 'कार्ड कस्टमाइज़ करें',
-        'Marathi': 'કાર્ડ સાનુકૂલિત કરા',
+        'Marathi': 'कार्ड सानुकूलित करा',
         'Punjabi': 'ਕਾਰਡ ਨੂੰ ਅਨੁਕੂਲਿਤ ਕਰੋ',
         'Urdu': 'کارڈ کو اپنی مرضی کے مطابق بنائیں'
       });
@@ -1381,7 +1479,7 @@ class LanguageProvider extends ChangeNotifier {
         'Gujarati': 'તમારી વિગતો ઉમેરો અને રંગો, ફોન્ટ્સ અને વધુ સંપાદિત કરો.',
         'Hindi': 'अपना विवरण जोड़ें और रंग, फ़ॉन्ट और बहुत कुछ संपादित करें.',
         'Marathi':
-            'તુમચા તપશીલ જોડા આણિ રંગ, ફોન્ટ્સ આણિ ઘણું કાહી સંપાદિત કરા.',
+            'तुमचे तपशील जोडा आणि रंग, फॉन्ट आणि बरेच काही संपादित करा.',
         'Punjabi':
             'ਆਪਣੇ ਵੇਰਵੇ ਸ਼ਾਮਲ ਕਰੋ ਅਤੇ ਰੰਗ, ਫੋਂਟ ਅਤੇ ਹੋਰ ਬਹੁਤ ਕੁਝ ਸੰਪਾਦਿਤ ਕਰੋ।',
         'Urdu':
@@ -1391,7 +1489,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Download and share with your friends and family.',
         'Gujarati': 'ડાઉનલોડ કરો અને તમારા મિત્રો અને પરિવાર સાથે શેર કરો.',
         'Hindi': 'डाउनलोड करें और अपने दोस्तों और परिवार के साथ साझा करें.',
-        'Marathi': 'ડાઉનલોડ કરા આણિ તુમચા મિત્ર આણિ કુટુંબા સોબત શેર કરા.',
+        'Marathi': 'डाउनलोड करा आणि तुमच्या मित्र आणि कुटुंबासोबत शेयर करा.',
         'Punjabi': 'ਡਾਊਨਲੋਡ ਕਰੋ ਅਤੇ ਆਪਣੇ ਦੋਸਤਾਂ ਅਤੇ ਪਰਿਵਾਰ ਨਾਲ ਸਾਂਝਾ ਕਰੋ।',
         'Urdu': 'ڈاؤن لوڈ کریں اور اپنے دوستوں اور اہل خانہ کے ساتھ شیئر کریں۔'
       });
@@ -1403,7 +1501,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'No templates found',
         'Gujarati': 'કોઈ ટેમ્પ્લેટ મળ્યા નથી',
         'Hindi': 'कोई टेम्पलेट नहीं मिला',
-        'Marathi': 'કોણતેહી ટેમ્પ્લેટ સાપડલે નાહી',
+        'Marathi': 'कोणतेही टेम्पलेट सापडले नाही',
         'Punjabi': 'ਕੋਈ ਟੈਂਪਲੇਟ ਨਹੀਂ ਮਿਲਿਆ',
         'Urdu': 'کوئی ٹیمپلیٹ نہیں ملا'
       });
@@ -1411,7 +1509,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Search Results',
         'Gujarati': 'શોધ પરિણામો',
         'Hindi': 'खोज परिणाम',
-        'Marathi': 'શોધ નિકાલ',
+        'Marathi': 'शोध निकाल',
         'Punjabi': 'ਖੋਜ ਦੇ ਨਤੀਜੇ',
         'Urdu': 'تلاش کے نتائج'
       });
@@ -1419,7 +1517,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Delete Design',
         'Gujarati': 'ડિઝાઇન કાઢી નાખો',
         'Hindi': 'डिझाइन हटाएं',
-        'Marathi': 'ડિઝાઇન કાઢા',
+        'Marathi': 'डिझाइन काढा',
         'Punjabi': 'ਡਿਜ਼ਾਈਨ ਹਟਾਓ',
         'Urdu': 'ڈیزائن حذف کریں'
       });
@@ -1427,7 +1525,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Are you sure you want to delete this design?',
         'Gujarati': 'શું તમે ખરેખર આ ડિઝાઇન કાઢી નાખવા માંગો છો?',
         'Hindi': 'क्या आप वाकई इस डिझाइन को हटाना चाहते हैं?',
-        'Marathi': 'કા તુમ્હાલા ખરોખર હી ડિઝાઇન કાઢાયચી આહે?',
+        'Marathi': 'तुम्हाला खरोखर ही डिझाइन काढायची आहे?',
         'Punjabi': 'ਕੀ ਤੁਸੀਂ ਯਕੀਨੀ ਤੌਰ ਤੇ ਇਸ ਡਿਜ਼ਾਈਨ ਨੂੰ ਹਟਾਉਣਾ ਚਾਹੁੰਦੇ ਹੋ?',
         'Urdu': 'کیا آپ واقعی اس ڈیزائن کو حذف کرنا چاہتے ہیں؟'
       });
@@ -1435,7 +1533,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Design deleted successfully',
         'Gujarati': 'ડિઝાઇન સફળતાપૂર્વક કાઢી નાખવામાં આવી',
         'Hindi': 'डिझाइन सफलतापूर्वक हटा दी गई',
-        'Marathi': 'ડિઝાઇન યશસ્વીપણે કાઢલી',
+        'Marathi': 'डिझाइन यशस्वीरित्या काढली',
         'Punjabi': 'ਡਿਜ਼ਾਈਨ ਸਫਲਤਾਪੂਰਵਕ ਹਟਾ ਦਿੱਤਾ ਗਿਆ',
         'Urdu': 'ڈیزائن کامیابی کے ساتھ حذف ہو گیا'
       });
@@ -1447,7 +1545,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Save Draft',
         'Gujarati': 'ડ્રાફ્ટ સાચવો',
         'Hindi': 'ड्राफ्ट सहेजें',
-        'Marathi': 'મસુદા જતન કરા',
+        'Marathi': 'मसुदा जतन करा',
         'Punjabi': 'ਡਰਾਫਟ ਸੁਰੱਖਿਅਤ ਕਰੋ',
         'Urdu': 'ڈرافٹ محفوظ کریں'
       });
@@ -1463,7 +1561,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Discard',
         'Gujarati': 'રદ કરો',
         'Hindi': 'त्यागें',
-        'Marathi': 'કાઢૂન ટાકા',
+        'Marathi': 'काढून टाका',
         'Punjabi': 'ਰੱਦ ਕਰੋ',
         'Urdu': 'خارج کریں'
       });
@@ -1471,7 +1569,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Draft saved successfully',
         'Gujarati': 'ડ્રાફ્ટ સફળતાપૂર્વક સાચવવામાં આવ્યો',
         'Hindi': 'ड्राफ्ट सफलतापूर्वक सहेजा गया',
-        'Marathi': 'મસુદા યશસ્વીપણે જતન કેલા',
+        'Marathi': 'मसुदा यशस्वीरित्या जतन केला',
         'Punjabi': 'ਡਰਾਫਟ ਸਫਲਤਾਪੂਰਵਕ ਸੁਰੱਖਿਅਤ ਕੀਤਾ ਗਿਆ',
         'Urdu': 'ڈرافٹ کامیابی کے ساتھ محفوظ ہو گیا'
       });
@@ -1483,7 +1581,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Thank you for your rating!',
         'Gujarati': 'તમારા રેટિંગ માટે આભાર!',
         'Hindi': 'आपकी रेटिंग के लिए धन्यवाद!',
-        'Marathi': 'તુમચ્યા રેટિંગસાઠી આભાર!',
+        'Marathi': 'तुमच्या रेटिंगसाठी धन्यवाद!',
         'Punjabi': 'ਤੁਹਾਡੀ ਰੇਟਿੰਗ ਲਈ ਧੰਨਵਾਦ!',
         'Urdu': 'آپ کی درجہ بندی کے لیے شکریہ!'
       });
@@ -1491,7 +1589,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Please enter your name',
         'Gujarati': 'મહેરબાની કરીને તમારું નામ દાખલ કરો',
         'Hindi': 'कृपया अपना नाम दर्ज करें',
-        'Marathi': 'કૃપયા તુમચે નાવ ભરા',
+        'Marathi': 'कृपया तुमचे नाव भरा',
         'Punjabi': 'ਕਿਰਪਾ ਕਰਕੇ ਆਪਣਾ ਨਾਮ ਦਰਜ ਕਰੋ',
         'Urdu': 'براہ کرم اپنا نام درج کریں'
       });
@@ -1499,7 +1597,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Please enter a valid 10-digit phone number',
         'Gujarati': 'મહેરબાની કરીને માન્ય ૧૦-આંકડાનો ફોન નંબર દાખલ કરો',
         'Hindi': 'कृपया एक वैध 10-अंकीय फ़ोन नंबर दर्ज करें',
-        'Marathi': 'કૃપયા ૧૦ અંકી વૈધ ફોન નંબર ભરા',
+        'Marathi': 'कृपया १० अंकी वैध फोन नंबर भरा',
         'Punjabi': 'ਕਿਰਪਾ ਕਰਕੇ ਇੱਕ ਵੈਧ 10-ਅੰਕੀ ਫ਼ੋਨ ਨੰਬਰ ਦਰਜ ਕਰੋ',
         'Urdu': 'براہ کرم 10 ہندسوں کا درست فون نمبر درج کریں'
       });
@@ -1507,7 +1605,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Please enter a valid email address',
         'Gujarati': 'મહેરબાની કરીને માન્ય ઈમેલ એડ્રેસ દાખલ કરો',
         'Hindi': 'कृपया एक वैध ईमेल पता दर्ज करें',
-        'Marathi': 'કૃપયા વૈધ ઈમેલ પત્તા ભરા',
+        'Marathi': 'कृपया वैध ईमेल पत्ता भरा',
         'Punjabi': 'ਕਿਰਪਾ ਕਰਕੇ ਇੱਕ ਵੈਧ ਈਮੇਲ ਪਤਾ ਦਰਜ ਕਰੋ',
         'Urdu': 'براہ کرم ایک درست ای میل پتہ درج کریں'
       });
@@ -1519,7 +1617,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Date',
         'Gujarati': 'તારીખ',
         'Hindi': 'तारीख',
-        'Marathi': 'તારીખ',
+        'Marathi': 'तारीख',
         'Punjabi': 'ਤਾਰੀਖ',
         'Urdu': 'تاریخ'
       }, lang);
@@ -1527,7 +1625,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Time',
         'Gujarati': 'સમય',
         'Hindi': 'समय',
-        'Marathi': 'વેળ',
+        'Marathi': 'वेळ',
         'Punjabi': 'ਸਮਾਂ',
         'Urdu': 'وقت'
       }, lang);
@@ -1539,7 +1637,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Added to favorites',
         'Gujarati': 'પસંદગીમાં ઉમેર્યું',
         'Hindi': 'पसंदीदा में जोड़ा गया',
-        'Marathi': 'આવડત્યાત જોડલે',
+        'Marathi': 'आवडीत जोडले',
         'Punjabi': 'ਮਨਪਸੰਦ ਵਿੱਚ ਸ਼ਾਮਲ ਕੀਤਾ ਗਿਆ',
         'Urdu': 'پسندیدہ میں شامل کر دیا گیا'
       });
@@ -1547,7 +1645,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Removed from favorites',
         'Gujarati': 'પસંદગીમાંથી દૂર કર્યું',
         'Hindi': 'पसंदीदा से हटा दिया गया',
-        'Marathi': 'આવડત્યાતૂન કાઢલે',
+        'Marathi': 'आवडीतून काढले',
         'Punjabi': 'ਮਨਪਸੰਦ ਤੋਂ ਹਟਾ ਦਿੱਤਾ ਗਿਆ',
         'Urdu': 'پسندیدہ سے ہٹا دیا گیا'
       });
@@ -1555,7 +1653,7 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'Check out my design: $name',
         'Gujarati': 'મારી ડિઝાઇન જુઓ: $name',
         'Hindi': 'मेरी डिझाइन देखें: $name',
-        'Marathi': 'માઝી ડિઝાઇન પહા: $name',
+        'Marathi': 'माझी डिझाइन पहा: $name',
         'Punjabi': 'ਮੇਰਾ ਡਿਜ਼ਾਈਨ ਦੇਖੋ: $name',
         'Urdu': '$name :میرا ڈیزائن دیکھیں',
       });
@@ -1567,7 +1665,7 @@ class LanguageProvider extends ChangeNotifier {
         'Hindi':
             'निमंत्रण देखें - सुंदर शादी के निमंत्रण बनाएं! अभी डाउनलोड करें.',
         'Marathi':
-            'નિમંત્રણ પહા - સુંદર લગ્ન નિમંત્રણ બનાવા! આતાચ ડાઉનલોડ કરા.',
+            'निमंत्रण पहा - सुंदर लग्न निमंत्रण बनवा! आत्ताच डाउनलोड करा.',
         'Punjabi': 'ਨਿਮੰਤਰਨ ਦੇਖੋ - ਸੁੰਦਰ ਵਿਆਹ ਦੇ ਸੱਦੇ ਬਣਾਓ! ਹੁਣੇ ਡਾਊਨਲੋਡ ਕਰੋ।',
         'Urdu':
             '!نمنترک دیکھیں - شادی کے خوبصورت دعوت نامے بنائیں! ابھی ڈاؤن لوڈ کریں',

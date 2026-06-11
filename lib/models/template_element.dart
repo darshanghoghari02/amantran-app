@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/font_service.dart';
+import '../services/language_registry.dart';
 
 /// Types of elements that can be placed on the canvas
 enum ElementType {
@@ -111,30 +112,18 @@ class TemplateElement {
     // Parse translations map first (supports both lowercase codes and full language names)
     if (json['translations'] is Map) {
       (json['translations'] as Map).forEach((k, v) {
-        String key = k.toString().toLowerCase();
-        if (key == 'english') key = 'en';
-        else if (key == 'gujarati') key = 'gu';
-        else if (key == 'hindi') key = 'hi';
-        else if (key == 'marathi') key = 'mr';
-        else if (key == 'punjabi') key = 'pa';
-        else if (key == 'tamil') key = 'ta';
-        else if (key == 'urdu') key = 'ur';
-        cMap[key] = sanitizeCorruptedText(v.toString());
+        final key = k.toString().trim();
+        final code = LanguageRegistry.instance.codeFor(key);
+        cMap[code] = sanitizeCorruptedText(v.toString());
       });
     }
 
     // Fallbacks if translations map is missing or incomplete
     if (json['content'] is Map) {
       (json['content'] as Map).forEach((k, v) {
-        String key = k.toString().toLowerCase();
-        if (key == 'english') key = 'en';
-        else if (key == 'gujarati') key = 'gu';
-        else if (key == 'hindi') key = 'hi';
-        else if (key == 'marathi') key = 'mr';
-        else if (key == 'punjabi') key = 'pa';
-        else if (key == 'tamil') key = 'ta';
-        else if (key == 'urdu') key = 'ur';
-        cMap[key] = sanitizeCorruptedText(v.toString());
+        final key = k.toString().trim();
+        final code = LanguageRegistry.instance.codeFor(key);
+        cMap[code] = sanitizeCorruptedText(v.toString());
       });
     } else if (json['content'] is String) {
       if (!cMap.containsKey('en')) cMap['en'] = sanitizeCorruptedText(json['content'] as String);
@@ -145,7 +134,7 @@ class TemplateElement {
 
     if (json['text'] is String) {
       final textVal = sanitizeCorruptedText(json['text'] as String);
-      for (final code in ['en', 'gu', 'hi', 'mr', 'pa', 'ta', 'ur']) {
+      for (final code in ['en', 'gu', 'hi', 'mr', 'pa', 'ta', 'ur', 'ks', 'sa', 'or', 'as']) {
         if (!cMap.containsKey(code)) cMap[code] = textVal;
       }
     }
@@ -230,14 +219,13 @@ class TemplateElement {
       'imagePath': assetPath,
       'assetPath': assetPath,
       'mapUrl': mapUrl,
-      'translations': {
-        'English': contentMap['en'] ?? '',
-        'Gujarati': contentMap['gu'] ?? '',
-        'Hindi': contentMap['hi'] ?? '',
-        'Marathi': contentMap['mr'] ?? '',
-        'Tamil': contentMap['ta'] ?? '',
-        'Urdu': contentMap['ur'] ?? '',
-      },
+      'translations': contentMap.map((code, text) {
+        final name = LanguageRegistry.instance.nameForCode(code) ?? code;
+        final displayName = name.isEmpty
+            ? name
+            : '${name[0].toUpperCase()}${name.substring(1)}';
+        return MapEntry(displayName, text);
+      }),
     };
   }
 
@@ -448,29 +436,111 @@ class TemplateElement {
     if (text != null && text.isNotEmpty) {
       return sanitizeCorruptedText(text);
     }
-    // Fallback search: en -> gu -> pa -> hi -> mr -> ur -> ta -> first available non-empty
-    final raw = contentMap['en'] ??
-        contentMap['gu'] ??
-        contentMap['pa'] ??
-        contentMap['hi'] ??
-        contentMap['mr'] ??
-        contentMap['ur'] ??
-        contentMap['ta'] ??
-        (contentMap.values.isNotEmpty ? contentMap.values.firstWhere((v) => v.isNotEmpty, orElse: () => '') : '');
-    return sanitizeCorruptedText(raw);
+    // Never fall back to a different regional script — only English
+    final en = contentMap['en'] ?? '';
+    if (en.isNotEmpty) return sanitizeCorruptedText(en);
+    return '';
   }
 
-  static String _getLanguageCode(String activeLanguage) {
-    switch (activeLanguage.toLowerCase()) {
-      case 'english': return 'en';
-      case 'gujarati': return 'gu';
-      case 'hindi': return 'hi';
-      case 'marathi': return 'mr';
-      case 'punjabi': return 'pa';
-      case 'urdu': return 'ur';
-      case 'tamil': return 'ta';
-      default: return 'en';
+  static bool hasGujaratiScript(String text) =>
+      text.runes.any((r) => r >= 0xA80 && r <= 0xAFF);
+
+  static bool hasArabicScript(String text) =>
+      text.runes.any((r) => (r >= 0x600 && r <= 0x6FF) || (r >= 0x750 && r <= 0x77F));
+
+  static bool hasDevanagariScript(String text) =>
+      text.runes.any((r) => r >= 0x900 && r <= 0x97F);
+
+  static bool hasGurmukhiScript(String text) =>
+      text.runes.any((r) => r >= 0xA00 && r <= 0xA7F);
+
+  static bool isTranslationValid(
+      String result, String targetLang, String source) {
+    if (result.isEmpty) return false;
+    if (result.trim() == source.trim()) return false;
+
+    final code = LanguageRegistry.instance.codeFor(targetLang);
+    switch (code) {
+      case 'ur':
+        if (hasArabicScript(result)) return true;
+        return !hasGujaratiScript(result);
+      case 'gu':
+        return hasGujaratiScript(result) || !hasArabicScript(result);
+      case 'hi':
+      case 'mr':
+      case 'sa':
+      case 'ne':
+        return hasDevanagariScript(result) || !hasGujaratiScript(source);
+      case 'pa':
+        return hasGurmukhiScript(result) || !hasGujaratiScript(source);
+      case 'ta':
+        return result.runes.any((r) => r >= 0xB80 && r <= 0xBFF) ||
+            !hasGujaratiScript(source);
+      case 'bn':
+        return result.runes.any((r) => r >= 0x980 && r <= 0x9FF) ||
+            !hasGujaratiScript(source);
+      default:
+        return !hasGujaratiScript(result) || !hasGujaratiScript(source);
     }
+  }
+
+  TextStyle getTextStyleForLanguage(String activeLanguage, {double scale = 1.0}) {
+    final baseStyle = getTextStyle(scale: scale);
+    final code = languageCodeFor(activeLanguage);
+    switch (code) {
+      case 'ur':
+      case 'ks':
+        return GoogleFonts.notoNastaliqUrdu(textStyle: baseStyle);
+      case 'pa':
+        return GoogleFonts.notoSansGurmukhi(textStyle: baseStyle);
+      case 'gu':
+        return baseStyle.copyWith(fontFamily: 'Noto Serif Gujarati');
+      case 'hi':
+      case 'mr':
+      case 'sa':
+      case 'ne':
+        return GoogleFonts.notoSansDevanagari(textStyle: baseStyle);
+      case 'bn':
+      case 'as':
+        return GoogleFonts.notoSansBengali(textStyle: baseStyle);
+      case 'ta':
+        return GoogleFonts.notoSansTamil(textStyle: baseStyle);
+      case 'te':
+        return GoogleFonts.notoSansTelugu(textStyle: baseStyle);
+      case 'kn':
+        return GoogleFonts.notoSansKannada(textStyle: baseStyle);
+      case 'ml':
+        return GoogleFonts.notoSansMalayalam(textStyle: baseStyle);
+      case 'or':
+        return GoogleFonts.notoSansOriya(textStyle: baseStyle);
+      default:
+        return baseStyle;
+    }
+  }
+
+  static TextDirection textDirectionFor(String activeLanguage) {
+    return LanguageRegistry.instance.isRtl(activeLanguage)
+        ? TextDirection.rtl
+        : TextDirection.ltr;
+  }
+
+  static String languageCodeFor(String activeLanguage) {
+    return LanguageRegistry.instance.codeFor(activeLanguage);
+  }
+
+  static String _getLanguageCode(String activeLanguage) =>
+      languageCodeFor(activeLanguage);
+
+  void setLocalizedText(String activeLanguage, String text) {
+    contentMap[languageCodeFor(activeLanguage)] = sanitizeCorruptedText(text);
+    if (languageCodeFor(activeLanguage) == 'gu') {
+      contentGujarati = text;
+    }
+  }
+
+  String getLocalizedText(String activeLanguage) {
+    return sanitizeCorruptedText(
+        contentMap[languageCodeFor(activeLanguage)] ?? '');
   }
 
   TextStyle getTextStyle({double scale = 1.0}) {
