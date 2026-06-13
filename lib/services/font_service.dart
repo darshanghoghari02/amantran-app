@@ -1,9 +1,10 @@
+import 'dart:convert';
 import 'dart:io';
-import 'dart:typed_data';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:http/http.dart' as http;
+import '../config/api_config.dart';
+import '../utils/image_resolver.dart';
 import '../models/font_model.dart';
 
 class FontService {
@@ -11,7 +12,6 @@ class FontService {
   factory FontService() => _instance;
   FontService._internal();
 
-  final FirebaseFirestore _db = FirebaseFirestore.instance;
   final Set<String> _registeredFonts = {};
 
   /// Static set of all font families that have been dynamically loaded and
@@ -20,21 +20,29 @@ class FontService {
   static final Set<String> registeredFamilies = {};
 
 
-  /// Starts listening to the active fonts on Firestore and downloads/registers them
-  void initFontListener() {
-    _db.collection('fonts').snapshots().listen((snapshot) async {
-      for (var doc in snapshot.docs) {
-        try {
-          final data = doc.data();
-          final font = FontModel.fromJson(data);
-          if (font.isActive && font.fontFamily.isNotEmpty && font.fontUrl.isNotEmpty) {
-            await loadFontDynamically(font.fontFamily, font.fontUrl);
+  /// Starts listening to the active fonts on the backend API and downloads/registers them
+  Future<void> initFontListener() async {
+    try {
+      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/fonts'));
+      if (response.statusCode == 200) {
+        final List<dynamic> list = jsonDecode(response.body);
+        for (var item in list) {
+          try {
+            final font = FontModel.fromJson(Map<String, dynamic>.from(item));
+            final resolvedUrl = resolveImageUrl(font.fontUrl);
+            if (font.isActive && font.fontFamily.isNotEmpty && resolvedUrl.isNotEmpty) {
+              await loadFontDynamically(font.fontFamily, resolvedUrl);
+            }
+          } catch (e) {
+            print("Error processing font item: $e");
           }
-        } catch (e) {
-          print("Error processing font doc: $e");
         }
+      } else {
+        print("Failed to fetch fonts from backend: status=${response.statusCode}");
       }
-    });
+    } catch (e) {
+      print("Error in initFontListener: $e");
+    }
   }
 
   /// Downloads and registers a font dynamically

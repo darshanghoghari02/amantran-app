@@ -899,14 +899,14 @@ class _EditorScreenState extends State<EditorScreen> {
                             ),
                           ],
                         ),
-                        child: const Row(
+                        child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Icon(Icons.add_rounded, color: Colors.white, size: 18),
-                            SizedBox(width: 6),
+                            const Icon(Icons.add_rounded, color: Colors.white, size: 18),
+                            const SizedBox(width: 6),
                             Text(
-                              "Add Text",
-                              style: TextStyle(
+                              lang.addText,
+                              style: const TextStyle(
                                 color: Colors.white,
                                 fontWeight: FontWeight.bold,
                                 fontSize: 13.5,
@@ -1162,14 +1162,14 @@ class _EditorScreenState extends State<EditorScreen> {
       showDialog(
         context: context,
         builder: (ctx) => AlertDialog(
-          title: const Text("Edit Text"),
+          title: Text(lang.editText),
           content: SizedBox(
             width: 400,
             child: TransliterationField(
               initialText: el.getDisplayText(lang.activeInvitationLanguage),
               isTransliterationOn: lang.activeInvitationLanguage != 'English',
               language: lang.activeInvitationLanguage,
-              label: "Edit Content",
+              label: lang.editContent,
               maxLines: 4,
               onChanged: (en, gu) {
                 currentEn = en;
@@ -1381,6 +1381,7 @@ class _EditorScreenState extends State<EditorScreen> {
 
   void _showMapLocationDialog() {
     final provider = context.read<InvitationProvider>();
+    final lang = context.read<LanguageProvider>();
     String currentUrl = '';
     for (final e in provider.elements) {
       if (e.id.contains('_map_') && e.mapUrl != null && e.mapUrl!.isNotEmpty) {
@@ -1397,6 +1398,13 @@ class _EditorScreenState extends State<EditorScreen> {
       context: context,
       builder: (ctx) => StatefulBuilder(
         builder: (context, setDialogState) {
+          final urlText = controller.text.trim();
+          final isValid = urlText.isEmpty ||
+              urlText.toLowerCase().contains('maps.app.goo.gl') ||
+              urlText.toLowerCase().contains('goo.gl/maps') ||
+              urlText.toLowerCase().contains('maps.google.com') ||
+              urlText.toLowerCase().contains('google.com/maps');
+
           void _applyExtractedName(String name) {
             final transliterated = _engine.transliterate(name, lang: 'Gujarati');
             
@@ -1562,9 +1570,11 @@ class _EditorScreenState extends State<EditorScreen> {
                     maxLines: 2,
                     onChanged: (val) {
                       _fetchAddressData(val.trim());
+                      setDialogState(() {});
                     },
                     decoration: InputDecoration(
                       labelText: "Paste Google Maps Link",
+                      errorText: isValid ? null : "Please enter a valid Google Maps link",
                       labelStyle: const TextStyle(
                           color: Color(0xFFF94C66), fontWeight: FontWeight.bold),
                       hintText: "https://maps.google.com/...",
@@ -1603,8 +1613,10 @@ class _EditorScreenState extends State<EditorScreen> {
                     style: TextStyle(fontWeight: FontWeight.bold)),
               ),
               ElevatedButton(
-                onPressed: () {
-                  final newUrl = controller.text.trim();
+                onPressed: !isValid
+                    ? null
+                    : () {
+                        final newUrl = controller.text.trim();
                   _beginAction();
                   setState(() {
                     final updatedElements = List<TemplateElement>.from(provider.elements);
@@ -1712,8 +1724,8 @@ class _EditorScreenState extends State<EditorScreen> {
                       borderRadius: BorderRadius.circular(20)),
                   padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
                 ),
-                child: const Text("Save Link",
-                    style: TextStyle(fontWeight: FontWeight.bold)),
+                child: Text(lang.saveLink,
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
               ),
             ],
           );

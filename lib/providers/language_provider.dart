@@ -200,6 +200,39 @@ class LanguageProvider extends ChangeNotifier {
     return translations[lang] ?? translations['English'] ?? '';
   }
 
+  String getCategoryTranslation(String rawName) {
+    final lower = rawName.toLowerCase().trim();
+    if (lower == 'wedding') {
+      return _t({
+        'English': 'Wedding',
+        'Gujarati': 'લગ્ન',
+        'Hindi': 'शादी',
+        'Marathi': 'लग्न',
+        'Punjabi': 'ਵਿਆਹ',
+        'Urdu': 'شادی',
+      });
+    } else if (lower == 'engagement') {
+      return _t({
+        'English': 'Engagement',
+        'Gujarati': 'સગાઈ',
+        'Hindi': 'सगाई',
+        'Marathi': 'साखरपुडा',
+        'Punjabi': 'ਮੰਗਣੀ',
+        'Urdu': 'منگنی',
+      });
+    } else if (lower == 'baby shower' || lower.contains('baby')) {
+      return _t({
+        'English': 'Baby Shower',
+        'Gujarati': 'બેબી શાવર',
+        'Hindi': 'बेबी शावर',
+        'Marathi': 'बेबी शॉवर',
+        'Punjabi': 'ਬੇਬੀ ਸ਼ਾਵਰ',
+        'Urdu': 'بیبی شاور',
+      });
+    }
+    return rawName;
+  }
+
   String get appTitle => _t({
         'English': 'Invitation Card Maker',
         'Gujarati': 'આમંત્રણ કાર્ડ મેકર',
@@ -1633,22 +1666,6 @@ class LanguageProvider extends ChangeNotifier {
   // ─────────────────────────────────────────────────────────────
   // 🔔 NOTIFICATIONS & FEEDBACK
   // ─────────────────────────────────────────────────────────────
-  String get addedToFavorites => _t({
-        'English': 'Added to favorites',
-        'Gujarati': 'પસંદગીમાં ઉમેર્યું',
-        'Hindi': 'पसंदीदा में जोड़ा गया',
-        'Marathi': 'आवडीत जोडले',
-        'Punjabi': 'ਮਨਪਸੰਦ ਵਿੱਚ ਸ਼ਾਮਲ ਕੀਤਾ ਗਿਆ',
-        'Urdu': 'پسندیدہ میں شامل کر دیا گیا'
-      });
-  String get removedFromFavorites => _t({
-        'English': 'Removed from favorites',
-        'Gujarati': 'પસંદગીમાંથી દૂર કર્યું',
-        'Hindi': 'पसंदीदा से हटा दिया गया',
-        'Marathi': 'आवडीतून काढले',
-        'Punjabi': 'ਮਨਪਸੰਦ ਤੋਂ ਹਟਾ ਦਿੱਤਾ ਗਿਆ',
-        'Urdu': 'پسندیدہ سے ہٹا دیا گیا'
-      });
   String shareDesignText(String name) => _t({
         'English': 'Check out my design: $name',
         'Gujarati': 'મારી ડિઝાઇન જુઓ: $name',
@@ -1670,4 +1687,833 @@ class LanguageProvider extends ChangeNotifier {
         'Urdu':
             '!نمنترک دیکھیں - شادی کے خوبصورت دعوت نامے بنائیں! ابھی ڈاؤن لوڈ کریں',
       });
+
+  // ─────────────────────────────────────────────────────────────
+  // 🧩 ADDED TRANSLATION GETTERS
+  // ─────────────────────────────────────────────────────────────
+  String get accountRemoved => _t({
+        'English': 'Account deleted successfully',
+        'Gujarati': 'એકાઉન્ટ સફળતાપૂર્વક કાઢી નાખવામાં આવ્યું',
+        'Hindi': 'खाता सफलतापूर्वक हटा दिया गया',
+        'Marathi': 'खाते यशस्वीरित्या हटवले गेले',
+        'Punjabi': 'ਖਾਤਾ ਸਫਲਤਾਪੂਰਵਕ ਹਟਾ ਦਿੱਤਾ ਗਿਆ',
+        'Urdu': 'اکاؤنٹ کامیابی کے ساتھ حذف کر دیا گیا'
+  });
+
+  String get accountStatus => _t({
+        'English': 'Account Status',
+        'Gujarati': 'એકાઉન્ટ સ્થિતિ',
+        'Hindi': 'खाता स्थिति',
+        'Marathi': 'खाते स्थिती',
+        'Punjabi': 'ਖਾਤਾ ਸਥਿਤੀ',
+        'Urdu': 'اکاؤنٹ کی حیثیت'
+  });
+
+  String get accountSuspended => _t({
+        'English': 'Account Suspended',
+        'Gujarati': 'એકાઉન્ટ સ્થગિત કરવામાં આવ્યું',
+        'Hindi': 'खाता निलंबित',
+        'Marathi': 'खाते निलंबित केले',
+        'Punjabi': 'ਖਾਤਾ ਮੁਅੱਤਲ ਕੀਤਾ ਗਿਆ',
+        'Urdu': 'اکاؤنٹ معطل کر دیا گیا'
+  });
+
+  String get addText => _t({
+        'English': 'Add Text',
+        'Gujarati': 'લખાણ ઉમેરો',
+        'Hindi': 'टेक्स्ट जोड़ें',
+        'Marathi': 'टेक्स्ट जोडा',
+        'Punjabi': 'ਟੈਕਸਟ ਜੋੜੋ',
+        'Urdu': 'تحریر شامل کریں'
+  });
+
+  String get amantranPremium => _t({
+        'English': 'Amantran Premium',
+        'Gujarati': 'આમંત્રણ પ્રીમિયમ',
+        'Hindi': 'आमंत्रण प्रीमियम',
+        'Marathi': 'आमंत्रण प्रीमियम',
+        'Punjabi': 'ਆਮੰਤਰਨ પ્રીમીਅਮ',
+        'Urdu': 'نمنترک پریمیم'
+  });
+
+  String get autoRenewDisabled => _t({
+        'English': 'Auto-renew disabled successfully',
+        'Gujarati': 'ઓટો-રીન્યુ સફળતાપૂર્વક બંધ કર્યું',
+        'Hindi': 'ऑटो-रिन्यू सफलतापूर्वक अक्षम किया गया',
+        'Marathi': 'ऑटो-रिन्यू यशस्वीरित्या बंद केले',
+        'Punjabi': 'ਆਟੋ-ਰੀਨਿਊ ਸਫਲਤਾਪੂਰਵਕ ਅਸਮਰੱਥ ਕੀਤਾ ਗਿਆ',
+        'Urdu': 'خودکار تجدید کامیابی سے بند کر دی گئی'
+  });
+
+  String get autoRenewOff => _t({
+        'English': 'Auto-renew is off',
+        'Gujarati': 'ઓટો-રીન્યુ બંધ છે',
+        'Hindi': 'ऑटो-रिन्यू बंद है',
+        'Marathi': 'ऑटो-रिन्यू बंद आहे',
+        'Punjabi': 'ਆਟੋ-ਰੀਨਿਊ ਬੰਦ ਹੈ',
+        'Urdu': 'خودکار تجدید بند ہے'
+  });
+
+  String get cancelSubscription => _t({
+        'English': 'Cancel Subscription',
+        'Gujarati': 'સબ્સ્ક્રિપ્શન રદ કરો',
+        'Hindi': 'सदस्यता रद्द करें',
+        'Marathi': 'सदस्यता रद्द करा',
+        'Punjabi': 'ਸਬਸਕ੍ਰਿਪਸ਼ਨ ਰੱਦ ਕਰੋ',
+        'Urdu': 'سبسکرپشن منسوخ کریں'
+  });
+
+  String get cancelSubscriptionMessage => _t({
+        'English': 'Are you sure you want to cancel your subscription?',
+        'Gujarati': 'શું તમે ખરેખર તમારું સબ્સ્ક્રિપ્શન રદ કરવા માંગો છો?',
+        'Hindi': 'क्या आप वाकई अपनी सदस्यता रद्द करना चाहते हैं?',
+        'Marathi': 'तुम्हाला खात्री आहे का की तुम्ही तुमची सदस्यता रद्द करू इच्छिता?',
+        'Punjabi': 'ਕੀ ਤੁਸੀਂ ਯਕੀਨਨ ਆਪਣੀ ਸਬਸਕ੍ਰਿਪਸ਼ਨ ਰੱਦ ਕਰਨਾ ਚਾਹੁੰਦੇ ਹੋ?',
+        'Urdu': 'کیا آپ واقعی اپنی سبسکرپشن منسوخ کرنا چاہتے ہیں؟'
+  });
+
+  String get cardNumber => _t({
+        'English': 'Card Number',
+        'Gujarati': 'કાર્ડ નંબર',
+        'Hindi': 'कार्ड संख्या',
+        'Marathi': 'कार्ड नंबर',
+        'Punjabi': 'ਕਾਰਡ ਨੰਬਰ',
+        'Urdu': 'کارڈ نمبر'
+  });
+
+  String get chooseTemplateSubtitle => _t({
+        'English': 'Choose a design for your occasion',
+        'Gujarati': 'તમારા પ્રસંગ માટે એક ડિઝાઇન પસંદ કરો',
+        'Hindi': 'अपने अवसर के लिए एक डिज़ाइन चुनें',
+        'Marathi': 'तुमच्या प्रसंगासाठी डिझाईन निवडा',
+        'Punjabi': 'ਆਪਣੇ ਮੌਕੇ ਲਈ ਇੱਕ ਡਿਜ਼ਾਈਨ ਚੁਣੋ',
+        'Urdu': 'اپنے موقع کے لیے ایک ڈیزائن منتخب کریں'
+  });
+
+  String get confirmCancel => _t({
+        'English': 'Yes, Cancel',
+        'Gujarati': 'હા, રદ કરો',
+        'Hindi': 'हाँ, रद्द करें',
+        'Marathi': 'होय, रद्द करा',
+        'Punjabi': 'ਹਾਂ, ਰੱਦ ਕਰੋ',
+        'Urdu': 'ہاں، منسوخ کریں'
+  });
+
+  String get contactSupport => _t({
+        'English': 'Contact Support',
+        'Gujarati': 'સપોર્ટનો સંપર્ક કરો',
+        'Hindi': 'सपोर्ट से संपर्क करें',
+        'Marathi': 'सपोर्टशी संपर्क साधा',
+        'Punjabi': 'ਸਹਾਇਤਾ ਨਾਲ ਸੰਪਰਕ ਕਰੋ',
+        'Urdu': 'سپورٹ سے رابطہ کریں'
+  });
+
+  String get contactSupportMessage => _t({
+        'English': 'Your account has been suspended. Please contact support.',
+        'Gujarati': 'તમારું એકાઉન્ટ સ્થગિત કરવામાં આવ્યું છે. મહેરબાની કરીને સપોર્ટનો સંપર્ક કરો.',
+        'Hindi': 'आपका खाता निलंबित कर दिया गया है। कृपया सपोर्ट से संपर्क करें।',
+        'Marathi': 'तुमचे खाते निलंबित केले गेले आहे. कृपया सपोर्टशी संपर्क साधा.',
+        'Punjabi': 'ਤੁਹਾਡਾ ਖਾਤਾ ਮੁਅੱਤਲ ਕਰ ਦਿੱਤਾ ਗਿਆ ਹੈ। ਕਿਰਪา ਕਰਕੇ ਸਹਾਇਤਾ ਨਾਲ ਸੰਪਰਕ ਕਰੋ।',
+        'Urdu': 'آپ کا اکاؤنٹ معطل کر دیا گیا ہے۔ براہ کرم سپورٹ سے رابطہ کریں۔'
+  });
+
+  String get contactingPaymentSandbox => _t({
+        'English': 'Contacting payment sandbox...',
+        'Gujarati': 'પેમેન્ટ સેન્ડબોક્સનો સંપર્ક કરી રહ્યા છીએ...',
+        'Hindi': 'पेमेंट सैंडबॉक्स से संपर्क किया जा रहा है...',
+        'Marathi': 'पेमेंट सँडबॉक्सशी संपर्क साधत आहे...',
+        'Punjabi': 'ਭੁਗਤਾਨ ਸੈਂਡਬਾਕਸ ਨਾਲ ਸੰਪਰਕ ਕੀਤਾ ਜਾ ਰਿਹਾ ਹੈ...',
+        'Urdu': 'ادائیگی کے سینڈ باکس سے رابطہ کیا جا رہا ہے...'
+  });
+
+  String get createInvitationIn3Steps => _t({
+        'English': '''Create Your Invitation
+in 3 Steps''',
+        'Gujarati': '''તમારું આમંત્રણ
+3 પગલામાં બનાવો''',
+        'Hindi': '''अपना निमंत्रण
+3 चरणों में बनाएं''',
+        'Marathi': '''तुमचे निमंत्रण
+३ पायऱ्यांत बनवा''',
+        'Punjabi': '''ਆਪਣਾ ਸੱਦਾ
+3 ਪੜਾਵਾਂ ਵਿੱਚ ਬਣਾਓ''',
+        'Urdu': '''اپنا دعوت نامہ
+3 مراحل میں بنائیں'''
+  });
+
+  String get creditCard => _t({
+        'English': 'Credit Card',
+        'Gujarati': 'ક્રેડિટ કાર્ડ',
+        'Hindi': 'क्रेडिट कार्ड',
+        'Marathi': 'क्रेडिट कार्ड',
+        'Punjabi': 'ਕ੍ਰੈਡਿਟ ਕਾਰਡ',
+        'Urdu': 'کریڈٹ کارڈ'
+  });
+
+  String get customizeCardSubtitle => _t({
+        'English': 'Edit text and add your details',
+        'Gujarati': 'ટેક્સ્ટ સંપાદિત કરો અને તમારી વિગતો ઉમેરો',
+        'Hindi': 'टेक्स्ट संपादित करें और अपना विवरण जोड़ें',
+        'Marathi': 'मजकूर संपादित करा आणि तुमचे तपशील जोडा',
+        'Punjabi': 'ਟੈਕਸਟ ਸੰਪਾਦਿਤ ਕਰੋ ਅਤੇ ਆਪਣੇ ਵੇਰਵੇ ਜੋੜੋ',
+        'Urdu': 'تحریر میں ترمیم کریں اور اپنی تفصیلات شامل کریں'
+  });
+
+  String get cvvCode => _t({
+        'English': 'CVV Code',
+        'Gujarati': 'CVV કોડ',
+        'Hindi': 'सीवीवी कोड',
+        'Marathi': 'सीव्हीव्ही कोड',
+        'Punjabi': 'ਸੀਵੀਵੀ ਕੋਡ',
+        'Urdu': 'سی وی وی کوڈ'
+  });
+
+  String get darshanabhilashiList => _t({
+        'English': 'Darshanabhilashi List',
+        'Gujarati': 'દર્શનાભિલાષી યાદી',
+        'Hindi': 'दर्शनाभिलाषी सूची',
+        'Marathi': 'दर्शनाभिलाषी यादी',
+        'Punjabi': 'ਦਰਸ਼ਨਾਭਿਲਾਸ਼ੀ ਸੂਚੀ',
+        'Urdu': 'درشنابھیلاشی کی فہرست'
+  });
+
+  String get deleteElement => _t({
+        'English': 'Delete Element',
+        'Gujarati': 'તત્વ કાઢી નાખો',
+        'Hindi': 'तत्व हटाएं',
+        'Marathi': 'घटक हटवा',
+        'Punjabi': 'ਤੱਤ ਹਟਾਓ',
+        'Urdu': 'عنصر حذف کریں'
+  });
+
+  String get downloadShareSubtitle => _t({
+        'English': 'Download and share your invitation easily',
+        'Gujarati': 'તમારા આમંત્રણને સરળતાથી ડાઉનલોડ કરો અને શેર કરો',
+        'Hindi': 'अपना निमंत्रण आसानी से डाउनलोड और साझा करें',
+        'Marathi': 'तुमचे निमंत्रण सहजपणे डाउनलोड आणि शेअर करा',
+        'Punjabi': 'ਆਪਣੇ ਸੱਦੇ ਨੂੰ ਆਸਾਨੀ ਨਾਲ ਡਾਊਨਲੋਡ ਅਤੇ ਸਾਂਝਾ ਕਰੋ',
+        'Urdu': 'اپنا دعوت نامہ آسانی سے ڈاؤن لوڈ اور شیئر کریں'
+  });
+
+  String get duplicateElement => _t({
+        'English': 'Duplicate Element',
+        'Gujarati': 'ડુપ્લિકેટ તત્વ',
+        'Hindi': 'डुप्लिकेट तत्व',
+        'Marathi': 'ड्युप्लिकेट घटक',
+        'Punjabi': 'ਡੁਪਲੀਕੇਟ ਤੱਤ',
+        'Urdu': 'نقل تیار کریں'
+  });
+
+  String get addedToFavorites => _t({
+        'English': 'Added to favorites',
+        'Gujarati': 'પસંદગીમાં ઉમેર્યું',
+        'Hindi': 'पसंदीदा में जोड़ा गया',
+        'Marathi': 'आवडतांमध्ये जोडले',
+        'Punjabi': 'ਪਸੰਦ ਵਿੱਚ ਜੋੜਿਆ ਗਿਆ',
+        'Urdu': 'پسندیدہ میں شامل کیا گیا'
+  });
+
+  String get removedFromFavorites => _t({
+        'English': 'Removed from favorites',
+        'Gujarati': 'પસંદગીમાંથી દૂર કર્યું',
+        'Hindi': 'पसंदीदा से हटा दिया गया',
+        'Marathi': 'आवडतांमधून काढले',
+        'Punjabi': 'ਪਸੰਦ ਤੋਂ ਹਟਾਇਆ ਗਿਆ',
+        'Urdu': 'پسندیدہ سے ہٹا دیا گیا'
+  });
+
+  String get editContent => _t({
+        'English': 'Edit Content',
+        'Gujarati': 'સામગ્રી સંપાદિત કરો',
+        'Hindi': 'सामग्री संपादित करें',
+        'Marathi': 'सामग्री संपादित करा',
+        'Punjabi': 'ਸਮੱਗਰੀ ਸੰਪਾਦਿਤ ਕਰੋ',
+        'Urdu': 'مواد میں ترمیم کریں'
+  });
+
+  String get editInFewTaps => _t({
+        'English': 'edit in just few taps',
+        'Gujarati': 'માત્ર થોડા ક્લિક્સમાં સંપાદિત કરો',
+        'Hindi': 'बस कुछ ही टैप में संपादित करें',
+        'Marathi': 'फक्त काही टॅप्समध्ये संपादित करा',
+        'Punjabi': 'ਸਿਰਫ਼ ਕੁਝ ਟੈਪਾਂ ਵਿੱਚ ਸੰਪਾਦਿਤ ਕਰੋ',
+        'Urdu': 'صرف چند کلکس میں ترمیم کریں'
+  });
+
+  String get editText => _t({
+        'English': 'Edit Text',
+        'Gujarati': 'ટેક્સ્ટ સંપાદિત કરો',
+        'Hindi': 'टेक्स्ट संपादित करें',
+        'Marathi': 'मजकूर संपादित करा',
+        'Punjabi': 'ਟੈਕਸਟ ਸੰਪਾਦਿਤ ਕਰੋ',
+        'Urdu': 'تحریر में संशोधन करें'
+  });
+
+  String get emailAddress => _t({
+        'English': 'Email Address',
+        'Gujarati': 'ઈમેલ એડ્રેસ',
+        'Hindi': 'ईमेल पता',
+        'Marathi': 'ईमेल पत्ता',
+        'Punjabi': 'ਈਮੇਲ ਪਤਾ',
+        'Urdu': 'ای میل پتہ'
+  });
+
+  String get enterName => _t({
+        'English': 'Enter Name',
+        'Gujarati': 'નામ દાખલ કરો',
+        'Hindi': 'नाम दर्ज करें',
+        'Marathi': 'नाव प्रविष्ट करा',
+        'Punjabi': 'ਨਾਮ ਦਰਜ ਕਰੋ',
+        'Urdu': 'نام درج کریں'
+  });
+
+  String get enterPhone => _t({
+        'English': 'Enter Phone Number',
+        'Gujarati': 'ફોન નંબર દાખલ કરો',
+        'Hindi': 'फ़ोन नंबर दर्ज करें',
+        'Marathi': 'फोन नंबर प्रविष्ट करा',
+        'Punjabi': 'ਫ਼ੋਨ ਨੰਬਰ ਦਰਜ ਕਰੋ',
+        'Urdu': 'فون نمبر درج کریں'
+  });
+
+  String get expirationDate => _t({
+        'English': 'Expiration Date',
+        'Gujarati': 'સમાપ્તિ તારીખ',
+        'Hindi': 'समाप्ति तिथि',
+        'Marathi': 'कालबाह्य तारीख',
+        'Punjabi': 'ਮਿਆਦ ਪੁੱਗਣ ਦੀ ਤਾਰੀਖ',
+        'Urdu': 'میعاد ختم ہونے کی تاریخ'
+  });
+
+  String get expiresOn => _t({
+        'English': 'Expires on',
+        'Gujarati': 'સમાપ્ત થાય છે',
+        'Hindi': 'को समाप्त होगा',
+        'Marathi': 'रोजी संपेल',
+        'Punjabi': 'ਨੂੰ ਮਿਆਦ ਪੁੱਗ ਰਹੀ ਹੈ',
+        'Urdu': 'کو ختم ہوگا'
+  });
+
+  String get exploreCategoriesSubtitle => _t({
+        'English': 'Explore categories and create a perfect invitation for your occasion',
+        'Gujarati': 'શ્રેણીઓ શોધો અને તમારા પ્રસંગ માટે એક પરફેક્ટ આમંત્રણ બનાવો',
+        'Hindi': 'श्रेणियां एक्सप्लोर करें और अपने अवसर के लिए एक परफेक्ट निमंत्रण बनाएं',
+        'Marathi': 'श्रेण्या एक्सप्लोर करा आणि तुमच्या प्रसंगासाठी एक परिपूर्ण निमंत्रण तयार करा',
+        'Punjabi': 'ਸ਼੍ਰੇਣੀਆਂ ਦੀ ਪੜਚੋਲ ਕਰੋ ਅਤੇ ਆਪਣੇ ਮੌਕੇ ਲਈ ਇੱਕ ਸੰਪੂਰਨ ਸੱਦਾ ਬਣਾਓ',
+        'Urdu': 'زمرے دریافت کریں اور اپنے موقع کے لیے ایک بہترین دعوت نامہ بنائیں'
+  });
+
+  String get failedToCancel => _t({
+        'English': 'Failed to cancel subscription',
+        'Gujarati': 'સબ્સ્ક્રિપ્શન રદ કરવામાં નિષ્ફળ',
+        'Hindi': 'सदस्यता रद्द करने में विफल',
+        'Marathi': 'सदस्यता रद्द करण्यात अयशस्वी',
+        'Punjabi': 'ਸਬਸਕ੍ਰਿਪਸ਼ਨ ਰੱਦ ਕਰਨ ਵਿੱਚ ਅਸਫਲ',
+        'Urdu': 'سبسکرپشن منسوخ کرنے میں ناکامی'
+  });
+
+  String get forEveryOccasion => _t({
+        'English': 'for every occasion',
+        'Gujarati': 'દરેક પ્રસંગ માટે',
+        'Hindi': 'हर अवसर के लिए',
+        'Marathi': 'प्रत्येक प्रसंगासाठी',
+        'Punjabi': 'ਹਰ ਮੌਕੇ ਲਈ',
+        'Urdu': 'ہر موقع کے لیے'
+  });
+
+  String get freeAccount => _t({
+        'English': 'Free Account',
+        'Gujarati': 'મફત એકાઉન્ટ',
+        'Hindi': 'निःशुल्क खाता',
+        'Marathi': 'मोफत खाते',
+        'Punjabi': 'ਮੁਫ਼ਤ ਖਾਤਾ',
+        'Urdu': 'مفت اکاؤنٹ'
+  });
+
+  String get gatewayMode => _t({
+        'English': 'Gateway Mode',
+        'Gujarati': 'ગેટવે મોડ',
+        'Hindi': 'गेटवे मोड',
+        'Marathi': 'गेटवे मोड',
+        'Punjabi': 'ਗੇਟਵੇ ਮੋਡ',
+        'Urdu': 'گیٹ وے موڈ'
+  });
+
+  String get guestName => _t({
+        'English': 'Guest Name',
+        'Gujarati': 'મહેમાનનું નામ',
+        'Hindi': 'अतिथि का नाम',
+        'Marathi': 'पाहुण्याचे नाव',
+        'Punjabi': 'ਮਹਿਮਾਨ ਦਾ ਨਾਮ',
+        'Urdu': 'مہمان کا نام'
+  });
+
+  String get hundredPlusTemplates => _t({
+        'English': '100+ Premium Templates',
+        'Gujarati': '૧૦૦+ પ્રીમિયમ ટેમ્પ્લેટ્સ',
+        'Hindi': '100+ प्रीमियम टेम्पलेट्स',
+        'Marathi': '१००+ प्रीमियम टेम्पलेट्स',
+        'Punjabi': '100+ ਪ੍ਰੀਮੀਅਮ ਟੈਂਪਲੇਟਸ',
+        'Urdu': '100+ پریمیم ٹیمپلیٹس'
+  });
+
+  String get invoiceTransactionCompleted => _t({
+        'English': 'Transaction Completed',
+        'Gujarati': 'ટ્રાન્ઝેક્શન પૂર્ણ થયું',
+        'Hindi': 'लेनदेन पूरा हुआ',
+        'Marathi': 'व्यवहार पूर्ण झाला',
+        'Punjabi': 'ਲੈਣ-ਦੇਣ ਪੂਰਾ ਹੋਇਆ',
+        'Urdu': 'لین دین مکمل ہو گیا'
+  });
+
+  String get invoiceTransactionHistory => _t({
+        'English': 'Transaction History',
+        'Gujarati': 'ટ્રાન્ઝેક્શન ઇતિહાસ',
+        'Hindi': 'लेनदेन इतिहास',
+        'Marathi': 'व्यवहार इतिहास',
+        'Punjabi': 'ਲੈਣ-ਦੇਣ ਦਾ ઇਤિਹਾਸ',
+        'Urdu': 'لین دین کی تاریخ'
+  });
+
+  String get keepPremium => _t({
+        'English': 'Keep Premium',
+        'Gujarati': 'પ્રીમિયમ ચાલુ રાખો',
+        'Hindi': 'प्रीमियम रखें',
+        'Marathi': 'प्रीमियम ठेवा',
+        'Punjabi': 'ਪ੍ਰੀਮੀਅਮ ਰੱਖੋ',
+        'Urdu': 'پریمیم رکھیں'
+  });
+
+  String get loadingDynamicPages => _t({
+        'English': 'Loading dynamic page layers...',
+        'Gujarati': 'ડાયનેમિક પેજ લેયર્સ લોડ કરી રહ્યાં છે...',
+        'Hindi': 'डायनेमिक पेज लेयर्स लोड हो रहे हैं...',
+        'Marathi': 'डायनॅमिक पेज लेयर्स लोड होत आहेत...',
+        'Punjabi': 'ਡਾਇਨਾਮਿਕ ਪੰਨੇ ਦੇ ਲੇਅਰ ਲੋਡ ਹੋ ਰਹੇ ਹਨ...',
+        'Urdu': 'ڈائنامک پیج لیئرز لوڈ ہو رہی ہیں...'
+  });
+
+  String get loginOrSignup => _t({
+        'English': 'Login or Signup',
+        'Gujarati': 'લોગિન અથવા સાઇનઅપ',
+        'Hindi': 'लॉगिन या साइनअप',
+        'Marathi': 'लॉगिन किंवा साइनअप',
+        'Punjabi': 'ਲੌਗਇਨ ਜਾਂ ਸਾਈਨ ਅੱਪ',
+        'Urdu': 'لاگ ان یا سائن اپ'
+  });
+
+  String get mameruMosalList => _t({
+        'English': 'Mameru Mosal List',
+        'Gujarati': 'મોસાળ યાદી',
+        'Hindi': 'मामेरु मोसाल सूची',
+        'Marathi': 'માमेरू मोसाळ यादी',
+        'Punjabi': 'ਮਾਮੇਰੂ ਮੋਸਾਲ ਸੂਚੀ',
+        'Urdu': 'مامیرو موسال کی فہرست'
+  });
+
+  String get manageSubscription => _t({
+        'English': 'Manage Subscription',
+        'Gujarati': 'સબ્સ્ક્રિપ્શન મેનેજ કરો',
+        'Hindi': 'सदस्यता प्रबंधित करें',
+        'Marathi': 'सदस्यता व्यवस्थापित करा',
+        'Punjabi': 'ਸਬਸਕ੍ਰਿਪਸ਼ਨ ਪ੍ਰਬੰਧਿਤ ਕਰੋ',
+        'Urdu': 'سبسکرپشن کا انتظام کریں'
+  });
+
+  String get masiFoiLadla => _t({
+        'English': 'Masi Foi Ladla',
+        'Gujarati': 'માસી ફોઈ લાડલા',
+        'Hindi': 'मासी फोई लाडला',
+        'Marathi': 'मावशी आत्या लाडके',
+        'Punjabi': 'ਮਾਸੀ ਭੂਆ ਲਾਡਲੇ',
+        'Urdu': 'ماسی پھپھو لاڈلے'
+  });
+
+  String get monthly => _t({
+        'English': 'Monthly',
+        'Gujarati': 'માસિક',
+        'Hindi': 'मासिक',
+        'Marathi': 'मासिक',
+        'Punjabi': 'ਮਾਸਿਕ',
+        'Urdu': 'ماہانہ'
+  });
+
+  String get monthlyPremiumPass => _t({
+        'English': 'Monthly Premium Pass',
+        'Gujarati': 'માસિક પ્રીમિયમ પાસ',
+        'Hindi': 'मासिक प्रीमियम पास',
+        'Marathi': 'मासिक प्रीमियम पास',
+        'Punjabi': 'ਮਾਸਿਕ ਪ੍ਰੀਮੀਅม ਪਾਸ',
+        'Urdu': 'ماہانہ پریمیم پاس'
+  });
+
+  String get mostPopularSave => _t({
+        'English': 'Most Popular (Save 40%)',
+        'Gujarati': 'સૌથી લોકપ્રિય (૪૦% બચાવો)',
+        'Hindi': 'सबसे लोकप्रिय (40% बचाएं)',
+        'Marathi': 'सर्वात लोकप्रिय (४०% वाचवा)',
+        'Punjabi': 'ਸਭ ਤੋਂ ਪ੍ਰਸਿੱਧ (40% ਬਚਾਓ)',
+        'Urdu': 'سب سے مقبول (40 فیصد بچت)'
+  });
+
+  String get noPlansAvailable => _t({
+        'English': 'No plans available',
+        'Gujarati': 'કોઈ પ્લાન ઉપલબ્ધ નથી',
+        'Hindi': 'कोई प्लान उपलब्ध नहीं',
+        'Marathi': 'कोणतीही योजना उपलब्ध नाही',
+        'Punjabi': 'ਕੋਈ ਪਲਾਨ ਉਪਲਬਧ ਨਹੀਂ',
+        'Urdu': 'کوئی پلان دستیاب نہیں ہے'
+  });
+
+  String get noteOptional => _t({
+        'English': 'Note (Optional)',
+        'Gujarati': 'નોંધ (વૈકલ્પિક)',
+        'Hindi': 'नोट (वैकल्पिक)',
+        'Marathi': 'टीप (पर्यायी)',
+        'Punjabi': 'ਨੋਟ (ਵੈਕਲਪਿਕ)',
+        'Urdu': 'نوٹ (اختیاری)'
+  });
+
+  String get paymentFailed => _t({
+        'English': 'Payment Failed',
+        'Gujarati': 'ચુકવણી નિષ્ફળ ગઈ',
+        'Hindi': 'भुगतान विफल',
+        'Marathi': 'पेमेंट अयशस्वी',
+        'Punjabi': 'ਭੁਗਤਾਨ ਅਸਫਲ ਰਿਹਾ',
+        'Urdu': 'ادائیگی ناکام ہو گئی'
+  });
+
+  String get paymentSandboxGateway => _t({
+        'English': 'Payment Sandbox Gateway',
+        'Gujarati': 'પેમેન્ટ સેન્ડબોક્સ ગેટવે',
+        'Hindi': 'भुगतान सैंडबॉक्स गेटवे',
+        'Marathi': 'पेमेंट सँडबॉक्स गेटवे',
+        'Punjabi': 'ਭੁਗਤਾਨ ਸੈਂਡਬਾਕਸ ਗੇਟਵੇ',
+        'Urdu': 'ادائیگی کا سینڈ باکس گیٹ وے'
+  });
+
+  String get paymentSuccessful => _t({
+        'English': 'Payment Successful',
+        'Gujarati': 'ચુકવણી સફળ રહી',
+        'Hindi': 'भुगतान सफल रहा',
+        'Marathi': 'पेमेंट यशस्वी',
+        'Punjabi': 'ਭੁਗਤਾਨ ਸਫਲ ਰਿਹਾ',
+        'Urdu': 'ادائیگی کامیاب رہی'
+  });
+
+  String get perDays => _t({
+        'English': 'days',
+        'Gujarati': 'દિવસો',
+        'Hindi': 'दिन',
+        'Marathi': 'दिवस',
+        'Punjabi': 'ਦਿਨ',
+        'Urdu': 'دن'
+  });
+
+  String get perMonth => _t({
+        'English': 'month',
+        'Gujarati': 'મહિનો',
+        'Hindi': 'महीना',
+        'Marathi': 'महिना',
+        'Punjabi': 'ਮਹੀਨਾ',
+        'Urdu': 'مہینہ'
+  });
+
+  String get perYear => _t({
+        'English': 'year',
+        'Gujarati': 'વર્ષ',
+        'Hindi': 'वर्ष',
+        'Marathi': 'वर्ष',
+        'Punjabi': 'ਸਾਲ',
+        'Urdu': 'سال'
+  });
+
+  String get premiumSubscription => _t({
+        'English': 'Premium Subscription',
+        'Gujarati': 'પ્રીમિયમ સબ્સ્ક્રિપ્શન',
+        'Hindi': 'प्रीमियम सदस्यता',
+        'Marathi': 'प्रीमियम सदस्यता',
+        'Punjabi': 'ਪ੍ਰੀਮੀਅਮ ਸਬਸਕ੍ਰਿਪਸ਼ਨ',
+        'Urdu': 'پریمیم سبسکرپشن'
+  });
+
+  String get preset => _t({
+        'English': 'Preset',
+        'Gujarati': 'પ્રિસેટ',
+        'Hindi': 'प्रीसेट',
+        'Marathi': 'प्रीसेट',
+        'Punjabi': 'ਪ੍ਰੀਸੈਟ',
+        'Urdu': 'پہلے سے طے شدہ'
+  });
+
+  String get renewsAutomaticallyOn => _t({
+        'English': 'Renews automatically on',
+        'Gujarati': 'ઓટોમેટીક રીન્યુ થાય છે',
+        'Hindi': 'अपने आप नवीनीकृत होगा',
+        'Marathi': 'रोजी आपोआप नूतनीकरण होईल',
+        'Punjabi': 'ਨੂੰ ਆਪਣੇ ਆਪ ਨਵਿਆਇਆ ਜਾਵੇਗਾ',
+        'Urdu': 'خود بخود تجدید ہوگی'
+  });
+
+  String get rsvp => _t({
+        'English': 'RSVP',
+        'Gujarati': 'RSVP',
+        'Hindi': 'आरएसवीपी',
+        'Marathi': 'आरएसव्हीपी',
+        'Punjabi': 'ਆਰਐਸਵੀਪੀ',
+        'Urdu': 'جواب دیں'
+  });
+
+  String get rsvpStatus => _t({
+        'English': 'RSVP Status',
+        'Gujarati': 'RSVP સ્થિતિ',
+        'Hindi': 'आरएसवीपी स्थिति',
+        'Marathi': 'आरएसव्हीपी स्थिती',
+        'Punjabi': 'ਆਰਐਸਵੀਪੀ ਸਥਿਤੀ',
+        'Urdu': 'آر ایس وی پی کی حیثیت'
+  });
+
+  String get sandboxTest => _t({
+        'English': 'Sandbox Test',
+        'Gujarati': 'સેન્ડબોક્સ ટેસ્ટ',
+        'Hindi': 'सैंडबॉक्स परीक्षण',
+        'Marathi': 'सँडबॉक्स चाचणी',
+        'Punjabi': 'ਸੈਂਡਬਾਕਸ ਟੈਸਟ',
+        'Urdu': 'سینڈ باکس ٹیسٹ'
+  });
+
+  String get saveLink => _t({
+        'English': 'Save Link',
+        'Gujarati': 'લિંક સાચવો',
+        'Hindi': 'लिंक सहेजें',
+        'Marathi': 'लिंक जतन करा',
+        'Punjabi': 'ਲਿੰક સૂરક્ષિત કરો',
+        'Urdu': 'لنک محفوظ کریں'
+  });
+
+  String get selectPaymentMethod => _t({
+        'English': 'Select Payment Method',
+        'Gujarati': 'ચુકવણી પદ્ધતિ પસંદ કરો',
+        'Hindi': 'भुगतान विधि चुनें',
+        'Marathi': 'पेमेंट पद्धत निवडा',
+        'Punjabi': 'ਭੁਗਤਾਨ ਵਿਧੀ ਚੁਣੋ',
+        'Urdu': 'ادائیگی کا طریقہ منتخب کریں'
+  });
+
+  String get sendOtp => _t({
+        'English': 'Send OTP',
+        'Gujarati': 'OTP મોકલો',
+        'Hindi': 'ओटीपी भेजें',
+        'Marathi': 'ओटीपी पाठवा',
+        'Punjabi': 'ਓਟੀਪੀ ਭੇਜੋ',
+        'Urdu': 'او ٹی پی بھیجیں'
+  });
+
+  String get simulatePaymentFailure => _t({
+        'English': 'Simulate Payment Failure',
+        'Gujarati': 'પેમેન્ટ નિષ્ફળતાનું અનુકરણ કરો',
+        'Hindi': 'भुगतान विफलता का अनुकरण करें',
+        'Marathi': 'पेमेंट अपयशाचे सिम्युलेट करा',
+        'Punjabi': 'ਭੁਗਤਾਨ ਅਸਫਲਤਾ ਦਾ ਅਨੁਕਰਨ ਕਰੋ',
+        'Urdu': 'ادائیگی کی ناکامی کی نقل کریں'
+  });
+
+  String get simulatePaymentTrial => _t({
+        'English': 'Simulate Payment Trial',
+        'Gujarati': 'પેમેન્ટ ટ્રાયલનું અનુકરણ કરો',
+        'Hindi': 'भुगतान परीक्षण का अनुकरण करें',
+        'Marathi': 'पेमेंट चाचणीचे सिम्युलेट करा',
+        'Punjabi': 'ਭੁਗਤਾਨ ਟਰਾਇਲ ਦਾ ਅਨੁਕਰਨ ਕਰੋ',
+        'Urdu': 'ادائیگی کے ٹرائل کی نقل کریں'
+  });
+
+  String get simulateSuccess => _t({
+        'English': 'Simulate Success (',
+        'Gujarati': 'સફળતાનું અનુકરણ કરો (',
+        'Hindi': 'सफलता का अनुकरण करें (',
+        'Marathi': 'यशस्वी सिम्युलेट करा (',
+        'Punjabi': 'ਸਫਲਤਾ ਦਾ ਅਨੁਕਰਨ ਕਰੋ (',
+        'Urdu': 'کامیابی کی نقل کریں ('
+  });
+
+  String get snehdhinList => _t({
+        'English': 'Snehdhin List',
+        'Gujarati': 'સ્નેહાધીન યાદી',
+        'Hindi': 'स्नेहाधीन सूची',
+        'Marathi': 'स्नेहाधीन यादी',
+        'Punjabi': 'ਸਨੇਹਾਧੀਨ ਸੂਚੀ',
+        'Urdu': 'سنیہادھین کی فہرست'
+  });
+
+  String get subscribeNow => _t({
+        'English': 'Subscribe Now',
+        'Gujarati': 'હમણાં સબ્સ્ક્રાઇબ કરો',
+        'Hindi': 'अभी सदस्यता लें',
+        'Marathi': 'आत्ताच सबस्क्राइब करा',
+        'Punjabi': 'ਹੁਣੇ ਸਬਸਕ੍ਰਾਈਬ ਕਰੋ',
+        'Urdu': 'ابھی سبسکرائب کریں'
+  });
+
+  String get subscribeToUnlock => _t({
+        'English': 'Subscribe to unlock premium templates',
+        'Gujarati': 'પ્રીમિયમ ટેમ્પ્લેટ્સ અનલૉક કરવા માટે સબ્સ્ક્રાઇબ કરો',
+        'Hindi': 'प्रीमियम टेम्पलेट्स अनलॉक करने के लिए सदस्यता लें',
+        'Marathi': 'प्रीमियम टेम्पलेट्स अनलॉक करण्यासाठी सबस्क्राइब करा',
+        'Punjabi': 'ਪ੍ਰੀਮੀਅਮ ਟੈਂਪਲੇਟਸ ਨੂੰ ਅਨਲੌਕ ਕਰਨ ਲਈ ਸਬਸਕ੍ਰਾਈਬ ਕਰੋ',
+        'Urdu': 'پریمیم ٹیمپلیٹس کو غیر مقفل کرنے کے لیے سبسکرائب کریں'
+  });
+
+  String get tahukoPoem => _t({
+        'English': 'Tahuko Poem',
+        'Gujarati': 'ટહુકો કવિતા',
+        'Hindi': 'टहुको कविता',
+        'Marathi': 'टहुको कविता',
+        'Punjabi': 'ਟਹੂਕੋ ਕਵਿਤਾ',
+        'Urdu': 'ٹہوکو نظم'
+  });
+
+  String get templateDetail => _t({
+        'English': 'Template Detail',
+        'Gujarati': 'ટેમ્પ્લેટ વિગત',
+        'Hindi': 'टेम्पलेट विवरण',
+        'Marathi': 'टेम्पलेट तपशील',
+        'Punjabi': 'ਟੈਂਪਲੇਟ ਵੇਰਵਾ',
+        'Urdu': 'ٹیمپلیٹ تفصیل'
+  });
+
+  String get threeDayFreeTrial => _t({
+        'English': '3-Day Free Trial',
+        'Gujarati': '૩-દિવસીય મફત ટ્રાયલ',
+        'Hindi': '3-दिन का निःशुल्क परीक्षण',
+        'Marathi': '३ दिवसांची मोफत चाचणी',
+        'Punjabi': '3-ਦਿਨ ਦੀ ਮੁਫ਼ਤ ਅਜ਼ਮਾਇਸ਼',
+        'Urdu': '3 روزہ مفت ٹرائل'
+  });
+
+  String get trialActiveUntil => _t({
+        'English': 'Trial active until',
+        'Gujarati': 'ટ્રાયલ સક્રિય છે સુધી',
+        'Hindi': 'परीक्षण सक्रिय है तक',
+        'Marathi': 'रोजीपर्यंत चाचणी सक्रिय असेल',
+        'Punjabi': 'ਤੱਕ ਟਰਾਇਲ ਸਰਗਰਮ ਹੈ',
+        'Urdu': 'ٹرائل فعال ہے تک'
+  });
+
+  String get tryAgain => _t({
+        'English': 'Try Again',
+        'Gujarati': 'ફરીથી પ્રયાસ કરો',
+        'Hindi': 'पुनः प्रयास करें',
+        'Marathi': 'पुन्हा प्रयत्न करा',
+        'Punjabi': 'ਦੁਬਾਰਾ ਕੋਸ਼ਿਸ਼ ਕਰੋ',
+        'Urdu': 'دوبارہ کوشش کریں'
+  });
+
+  String get upiApp => _t({
+        'English': 'UPI App',
+        'Gujarati': 'UPI એપ',
+        'Hindi': 'यूपीआई ऐप',
+        'Marathi': 'यूपीआय ॲप',
+        'Punjabi': 'ਯੂਪੀਆਈ ਐਪ',
+        'Urdu': 'یو پی آئی ایپ'
+  });
+
+  String get uploadSvg => _t({
+        'English': 'Upload SVG',
+        'Gujarati': 'SVG અપલોડ કરો',
+        'Hindi': 'एसवीजी अपलोड करें',
+        'Marathi': 'SVG अपलोड करा',
+        'Punjabi': 'SVG ਅਪਲੋਡ ਕਰੋ',
+        'Urdu': 'ایس وی جی اپ لوڈ کریں'
+  });
+
+  String get userManagement => _t({
+        'English': 'User Management',
+        'Gujarati': 'વપરાશકર્તા સંચાલન',
+        'Hindi': 'उपयोगकर्ता प्रबंधन',
+        'Marathi': 'वापरकर्ता व्यवस्थापन',
+        'Punjabi': 'ਉਪਭੋਗਤਾ ਪ੍ਰਬੰਧਨ',
+        'Urdu': 'صارف کا انتظام'
+  });
+
+  String get userRole => _t({
+        'English': 'User Role',
+        'Gujarati': 'વપરાશકર્તા ભૂમિકા',
+        'Hindi': 'उपयोगकर्ता भूमिका',
+        'Marathi': 'वापरकर्ता भूमिका',
+        'Punjabi': 'ਉਪਭੋਗਤਾ ਦੀ ਭੂਮਿਕਾ',
+        'Urdu': 'صارف کا کردار'
+  });
+
+  String get validUntil => _t({
+        'English': 'Valid Until',
+        'Gujarati': 'સુધી માન્ય',
+        'Hindi': 'तक मान्य',
+        'Marathi': 'पर्यंत वैध',
+        'Punjabi': 'ਤੱਕ ਵੈਧ',
+        'Urdu': 'تک درست'
+  });
+
+  String get verifyingFunds => _t({
+        'English': 'Verifying funds...',
+        'Gujarati': 'ભંડોળની ચકાસણી કરી રહ્યા છીએ...',
+        'Hindi': 'फंड सत्यापित किया जा रहा है...',
+        'Marathi': 'निधीची पडताळणी करत आहे...',
+        'Punjabi': 'ਫੰਡਾਂ ਦੀ ਪੜਤਾਲ ਕੀਤੀ ਜਾ ਰਹੀ ਹੈ...',
+        'Urdu': 'فنڈز کی تصدیق کی جا رہی ہے...'
+  });
+
+  String get virtualPaymentAddress => _t({
+        'English': 'Virtual Payment Address (VPA)',
+        'Gujarati': 'વર્ચ્યુઅલ પેમેન્ટ એડ્રેસ (VPA)',
+        'Hindi': 'वर्चुअल भुगतान पता (VPA)',
+        'Marathi': 'व्हर्च्युअल payment पत्ता (VPA)',
+        'Punjabi': 'ਵਰਚੁਅਲ ਪੇਮੈਂਟ ਐਡਰੈੱਸ (VPA)',
+        'Urdu': 'ورچوئل پیمنٹ ایڈریس (VPA)'
+  });
+
+  String get weddingTemplate => _t({
+        'English': 'Wedding Template',
+        'Gujarati': 'લગ્ન ટેમ્પ્લેટ',
+        'Hindi': 'शादी का टेम्पलेट',
+        'Marathi': 'लग्न टेम्पलेट',
+        'Punjabi': 'ਵਿਆਹ ਦਾ ਟੈਂਪਲੇਟ',
+        'Urdu': 'شادی کا ٹیمپلیٹ'
+  });
+
+  String get welcomeBack => _t({
+        'English': 'Welcome Back!',
+        'Gujarati': 'આપનું સ્વાગત છે!',
+        'Hindi': 'आपका स्वागत है!',
+        'Marathi': 'पुन्हा स्वागत आहे!',
+        'Punjabi': 'ਜੀ ਆਇਆਂ ਨੂੰ!',
+        'Urdu': 'خوش آمدید!'
+  });
+
+  String get withLovedOnes => _t({
+        'English': 'with your loved ones',
+        'Gujarati': 'તમારા સ્નેહીજનો સાથે',
+        'Hindi': 'अपने प्रियजनों के साथ',
+        'Marathi': 'तुमच्या प्रियजनांसोबत',
+        'Punjabi': 'ਆਪਣੇ ਪਿਆਰਿਆਂ ਨਾਲ',
+        'Urdu': 'اپنے پیاروں کے ساتھ'
+  });
+
+  String get yearlyPremiumPass => _t({
+        'English': 'Yearly Premium Pass',
+        'Gujarati': 'વાર્ષિક પ્રીમિયમ પાસ',
+        'Hindi': 'वार्षिक प्रीमियम पास',
+        'Marathi': 'वार्षिक प्रीमियम पास',
+        'Punjabi': 'ਸਾਲਾਨਾ ਪ੍ਰੀਮੀਅਮ ਪਾਸ',
+        'Urdu': 'سالانہ پریمیم پاس'
+  });
+
+  String get yearlySave => _t({
+        'English': 'Yearly Save',
+        'Gujarati': 'વાર્ષિક બચત',
+        'Hindi': 'वार्षिक बचत',
+        'Marathi': 'वार्षिक बचत',
+        'Punjabi': 'ਸਾਲਾਨਾ ਬਚਤ',
+        'Urdu': 'سالانہ بچت'
+  });
+
 }

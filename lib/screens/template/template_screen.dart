@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/template_model.dart';
+import '../../widgets/translated_text.dart';
 import 'template_detail_screen.dart';
 import '../../providers/favorites_provider.dart';
 import '../../providers/language_provider.dart';
@@ -63,7 +64,7 @@ class _TemplateScreenState extends State<TemplateScreen> {
                         ),
                       ),
                       const SizedBox(width: 16),
-                      Text(
+                      TranslatedText(
                         widget.title,
                         style: const TextStyle(
                           fontSize: 18,
@@ -159,7 +160,7 @@ class _TemplateScreenState extends State<TemplateScreen> {
                                 child: Column(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    Text(
+                                    TranslatedText(
                                       template.title.isEmpty ? "Template ${index + 1}" : template.title,
                                       style: const TextStyle(
                                         fontSize: 13,

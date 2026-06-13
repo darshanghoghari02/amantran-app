@@ -806,11 +806,27 @@ class _CustomColorPickerDialog extends StatefulWidget {
 
 class _CustomColorPickerDialogState extends State<_CustomColorPickerDialog> {
   late HSVColor _hsvColor;
+  final GlobalKey _svAreaKey = GlobalKey();
+  final GlobalKey _hueSliderKey = GlobalKey();
+  Size? _svAreaSize;
+  Size? _hueSliderSize;
 
   @override
   void initState() {
     super.initState();
     _hsvColor = HSVColor.fromColor(widget.initialColor);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _updateSizes();
+    });
+  }
+
+  void _updateSizes() {
+    final svRenderBox = _svAreaKey.currentContext?.findRenderObject() as RenderBox?;
+    final hueRenderBox = _hueSliderKey.currentContext?.findRenderObject() as RenderBox?;
+    setState(() {
+      _svAreaSize = svRenderBox?.size;
+      _hueSliderSize = hueRenderBox?.size;
+    });
   }
 
   void _onHueChanged(double value) {
@@ -851,31 +867,21 @@ class _CustomColorPickerDialogState extends State<_CustomColorPickerDialog> {
               height: 150,
               child: GestureDetector(
                 onPanUpdate: (details) {
-                  final renderBox = context.findRenderObject() as RenderBox?;
-                  if (renderBox != null) {
-                    final size = Size(
-                        renderBox.size.width - 32, 150); // rough estimation
-                    final s =
-                        (details.localPosition.dx / size.width).clamp(0.0, 1.0);
-                    final v = 1.0 -
-                        (details.localPosition.dy / size.height)
-                            .clamp(0.0, 1.0);
+                  if (_svAreaSize != null) {
+                    final s = (details.localPosition.dx / _svAreaSize!.width).clamp(0.0, 1.0);
+                    final v = 1.0 - (details.localPosition.dy / _svAreaSize!.height).clamp(0.0, 1.0);
                     _onSVChanged(s, v);
                   }
                 },
                 onTapDown: (details) {
-                  final renderBox = context.findRenderObject() as RenderBox?;
-                  if (renderBox != null) {
-                    final size = Size(renderBox.size.width - 32, 150);
-                    final s =
-                        (details.localPosition.dx / size.width).clamp(0.0, 1.0);
-                    final v = 1.0 -
-                        (details.localPosition.dy / size.height)
-                            .clamp(0.0, 1.0);
+                  if (_svAreaSize != null) {
+                    final s = (details.localPosition.dx / _svAreaSize!.width).clamp(0.0, 1.0);
+                    final v = 1.0 - (details.localPosition.dy / _svAreaSize!.height).clamp(0.0, 1.0);
                     _onSVChanged(s, v);
                   }
                 },
                 child: Container(
+                  key: _svAreaKey,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(8),
                     gradient: LinearGradient(
@@ -904,9 +910,8 @@ class _CustomColorPickerDialogState extends State<_CustomColorPickerDialog> {
                     child: Stack(
                       children: [
                         Positioned(
-                          left: _hsvColor.saturation * (280) -
-                              10, // approximate width
-                          top: (1.0 - _hsvColor.value) * 150 - 10,
+                          left: _hsvColor.saturation * (_svAreaSize?.width ?? 280) - 10,
+                          top: (1.0 - _hsvColor.value) * (_svAreaSize?.height ?? 150) - 10,
                           child: Container(
                             width: 20,
                             height: 20,
@@ -934,26 +939,21 @@ class _CustomColorPickerDialogState extends State<_CustomColorPickerDialog> {
               height: 20,
               child: GestureDetector(
                 onPanUpdate: (details) {
-                  final renderBox = context.findRenderObject() as RenderBox?;
-                  if (renderBox != null) {
-                    final width = renderBox.size.width - 32;
-                    final hue =
-                        (details.localPosition.dx / width).clamp(0.0, 1.0) *
-                            360.0;
+                  if (_hueSliderSize != null) {
+                    final effectiveWidth = _hueSliderSize!.width - 20;
+                    final hue = (details.localPosition.dx / effectiveWidth).clamp(0.0, 1.0) * 360.0;
                     _onHueChanged(hue);
                   }
                 },
                 onTapDown: (details) {
-                  final renderBox = context.findRenderObject() as RenderBox?;
-                  if (renderBox != null) {
-                    final width = renderBox.size.width - 32;
-                    final hue =
-                        (details.localPosition.dx / width).clamp(0.0, 1.0) *
-                            360.0;
+                  if (_hueSliderSize != null) {
+                    final effectiveWidth = _hueSliderSize!.width - 20;
+                    final hue = (details.localPosition.dx / effectiveWidth).clamp(0.0, 1.0) * 360.0;
                     _onHueChanged(hue);
                   }
                 },
                 child: Container(
+                  key: _hueSliderKey,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(10),
                     gradient: const LinearGradient(
@@ -971,7 +971,7 @@ class _CustomColorPickerDialogState extends State<_CustomColorPickerDialog> {
                   child: Stack(
                     children: [
                       Positioned(
-                        left: (_hsvColor.hue / 360.0) * 280 - 10,
+                        left: (_hsvColor.hue / 360.0) * ((_hueSliderSize?.width ?? 280) - 20),
                         top: 0,
                         bottom: 0,
                         child: Container(

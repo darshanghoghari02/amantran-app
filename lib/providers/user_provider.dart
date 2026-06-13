@@ -2,7 +2,6 @@ import 'dart:io';
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:hive/hive.dart';
 import '../repositories/user_repository.dart';
 import '../services/storage_service.dart';
@@ -49,12 +48,16 @@ class UserProvider extends ChangeNotifier {
   String _accountStatus = 'active';
   bool _isLoading = false;
   bool _isSocialOtpVerified = true;
-  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _userSub;
+  Timer? _statusTimer;
 
   final List<AccountModel> _recentAccounts = []; // Empty or memory-only list to satisfy layout interfaces
 
   UserProvider() {
     _init();
+    // Periodically verify account status from backend to instantly enforce suspensions
+    _statusTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      checkUserStatusSilently();
+    });
   }
 
   String get name => _name;
@@ -84,8 +87,11 @@ class UserProvider extends ChangeNotifier {
         _phone != '+91 00000 00000' && 
         _phone != '+910000000000' &&
         cleanedPhone.length >= 10;
-        
-    return hasName && hasEmail && hasPhone;
+    
+    // Profile is complete if user has name and email
+    // Phone is optional for social login (Google/Apple)
+    // Phone is required for phone login
+    return hasName && hasEmail;
   }
 
   String _normalizePhone(String phone) {
@@ -107,56 +113,6 @@ class UserProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  QueryDocumentSnapshot<Map<String, dynamic>> _selectBestDocument(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
-    if (docs.length == 1) return docs.first;
-
-    QueryDocumentSnapshot<Map<String, dynamic>> bestDoc = docs.first;
-    int bestScore = -1;
-
-    for (final doc in docs) {
-      final data = doc.data();
-      int score = 0;
-
-      final provider = data['provider'] as String? ?? '';
-      if (provider == 'google' || provider == 'google.com' || provider == 'apple' || provider == 'apple.com') {
-        score += 10;
-      }
-
-      final email = data['email'] as String? ?? '';
-      final normalizedEmail = _normalizeEmail(email);
-      final hasRealEmail = normalizedEmail.isNotEmpty && 
-          normalizedEmail != 'user@example.com' &&
-          RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(normalizedEmail);
-      if (hasRealEmail) {
-        score += 5;
-      }
-
-      final name = data['name'] as String? ?? '';
-      final hasRealName = name.trim().isNotEmpty && 
-          name.toLowerCase() != 'new user' && 
-          name.toLowerCase() != 'user';
-      if (hasRealName) {
-        score += 5;
-      }
-
-      final phone = data['phone'] as String? ?? '';
-      final cleanedPhone = phone.replaceAll(RegExp(r'\D'), '');
-      final hasRealPhone = phone.isNotEmpty && 
-          phone != '+91 00000 00000' && 
-          phone != '+910000000000' &&
-          cleanedPhone.length >= 10;
-      if (hasRealPhone) {
-        score += 2;
-      }
-
-      if (score > bestScore) {
-        bestScore = score;
-        bestDoc = doc;
-      }
-    }
-
-    return bestDoc;
-  }
 
   Future<String> _resolveUid(User user) async {
     try {
@@ -165,14 +121,13 @@ class UserProvider extends ChangeNotifier {
       if (user.email != null && user.email!.isNotEmpty) {
         final email = _normalizeEmail(user.email!);
         print("[_resolveUid] Querying by email: $email");
-        final emailQuery = await FirebaseFirestore.instance
-            .collection('app_users')
-            .where('email', isEqualTo: email)
-            .get();
-        if (emailQuery.docs.isNotEmpty) {
-          final bestDoc = _selectBestDocument(emailQuery.docs);
-          print("[_resolveUid] Resolved by email match to: ${bestDoc.id}");
-          return bestDoc.id;
+        final matchedUser = await _userRepository.resolveUserDocument(email: email);
+        if (matchedUser != null) {
+          final resolvedId = matchedUser['uid'] ?? matchedUser['id'];
+          if (resolvedId != null) {
+            print("[_resolveUid] Resolved by email match to: $resolvedId");
+            return resolvedId.toString();
+          }
         }
       }
 
@@ -180,14 +135,13 @@ class UserProvider extends ChangeNotifier {
       if (rawPhone != null && rawPhone.isNotEmpty) {
         final phone = _normalizePhone(rawPhone);
         print("[_resolveUid] Querying by phone: $phone");
-        final phoneQuery = await FirebaseFirestore.instance
-            .collection('app_users')
-            .where('phone', isEqualTo: phone)
-            .get();
-        if (phoneQuery.docs.isNotEmpty) {
-          final bestDoc = _selectBestDocument(phoneQuery.docs);
-          print("[_resolveUid] Resolved by phone match to: ${bestDoc.id}");
-          return bestDoc.id;
+        final matchedUser = await _userRepository.resolveUserDocument(phone: phone);
+        if (matchedUser != null) {
+          final resolvedId = matchedUser['uid'] ?? matchedUser['id'];
+          if (resolvedId != null) {
+            print("[_resolveUid] Resolved by phone match to: $resolvedId");
+            return resolvedId.toString();
+          }
         }
       }
     } catch (e) {
@@ -197,107 +151,47 @@ class UserProvider extends ChangeNotifier {
     return user.uid;
   }
 
-  Future<void> _mergeUserData(String sourceUid, String targetUid) async {
-    if (sourceUid == targetUid) return;
-
-    final firestore = FirebaseFirestore.instance;
-    print("Merging user data from $sourceUid to $targetUid...");
-
-    try {
-      final collections = ['drafts', 'cards', 'guests', 'templates'];
-      for (final col in collections) {
-        final srcCol = firestore.collection('app_users').doc(sourceUid).collection(col);
-        final destCol = firestore.collection('app_users').doc(targetUid).collection(col);
-
-        final snapshot = await srcCol.get();
-        final batch = firestore.batch();
-
-        for (final doc in snapshot.docs) {
-          batch.set(destCol.doc(doc.id), doc.data(), SetOptions(merge: true));
-          batch.delete(doc.reference);
-        }
-        await batch.commit();
-      }
-
-      // Merge subscription if target does not have one, or keep the active one
-      final srcSubDoc = firestore.collection('user_subscriptions').doc(sourceUid);
-      final destSubDoc = firestore.collection('user_subscriptions').doc(targetUid);
-
-      final srcSub = await srcSubDoc.get();
-      final destSub = await destSubDoc.get();
-
-      if (srcSub.exists) {
-        final srcData = srcSub.data()!;
-        final destData = destSub.exists ? destSub.data() : null;
-
-        bool shouldCopy = false;
-        if (destData == null) {
-          shouldCopy = true;
-        } else {
-          final srcActive = srcData['isActive'] == true;
-          final destActive = destData['isActive'] == true;
-          if (srcActive && !destActive) {
-            shouldCopy = true;
-          }
-        }
-
-        if (shouldCopy) {
-          await destSubDoc.set(srcData, SetOptions(merge: true));
-        }
-        await srcSubDoc.delete();
-      }
-
-      // Finally delete the source user document
-      await firestore.collection('app_users').doc(sourceUid).delete();
-      print("User data merge complete.");
-    } catch (e) {
-      print("Error merging user data: $e");
-    }
-  }
-
   Future<void> _init() async {
     await _loadRecentAccounts();
 
     // Listen to Firebase Auth state changes
     _auth.authStateChanges().listen((user) async {
-      _userSub?.cancel();
       if (user != null) {
         _isLoading = true;
         notifyListeners();
 
-        // Resolve UID based on email/phone matching
-        final resolvedUid = await _resolveUid(user);
-        FirestoreService().setResolvedUid(resolvedUid);
+        try {
+          // Resolve UID based on email/phone matching
+          final resolvedUid = await _resolveUid(user);
+          FirestoreService().setResolvedUid(resolvedUid);
 
-        // Setup real-time listener to user's doc
-        _userSub = FirebaseFirestore.instance.collection('app_users').doc(resolvedUid).snapshots().listen((docSnap) async {
+          // Fetch user document from MySQL backend
+          final userDoc = await _userRepository.fetchUserDocument(resolvedUid);
           _isLoading = false;
-          if (docSnap.exists) {
-            final data = docSnap.data();
-            if (data != null) {
-              _name = data['name'] ?? '';
-              _email = data['email'] ?? '';
-              _profileImagePath = data['profilePhoto'];
-              _role = data['role'] ?? 'user';
-              final rawStatus = data['accountStatus'] ?? data['status'];
-              if (rawStatus != null) {
-                _accountStatus = rawStatus.toString().toLowerCase() == 'suspended' ? 'suspended' : 'active';
-              } else if (data['isBlocked'] == true) {
-                _accountStatus = 'suspended';
-              } else {
-                _accountStatus = 'active';
-              }
-              _phone = data['phone'] ?? user.phoneNumber ?? '';
 
-              if (_name.isNotEmpty) {
-                _addToRecentAccounts(AccountModel(
-                  name: _name,
-                  phone: _phone,
-                  email: _email,
-                  profileImagePath: _profileImagePath,
-                ));
-              }
-              notifyListeners();
+          if (userDoc != null) {
+            _name = userDoc['name'] ?? '';
+            _email = userDoc['email'] ?? '';
+            _profileImagePath = userDoc['profilePhoto'];
+            print("Initial profile image path loaded: $_profileImagePath");
+            _role = userDoc['role'] ?? 'user';
+            final rawStatus = userDoc['accountStatus'] ?? userDoc['status'];
+            if (rawStatus != null) {
+              _accountStatus = rawStatus.toString().toLowerCase() == 'suspended' ? 'suspended' : 'active';
+            } else if (userDoc['isBlocked'] == true) {
+              _accountStatus = 'suspended';
+            } else {
+              _accountStatus = 'active';
+            }
+            _phone = userDoc['phone'] ?? user.phoneNumber ?? '';
+
+            if (_name.isNotEmpty) {
+              _addToRecentAccounts(AccountModel(
+                name: _name,
+                phone: _phone,
+                email: _email,
+                profileImagePath: _profileImagePath,
+              ));
             }
           } else {
             // Document doesn't exist, create it initially
@@ -308,7 +202,7 @@ class UserProvider extends ChangeNotifier {
             _accountStatus = 'active';
             _phone = user.phoneNumber ?? '';
 
-            // Create user document
+            // Create user document in MySQL backend
             await _userRepository.saveUserDocument(
               uid: resolvedUid,
               name: _name.isEmpty ? 'New User' : _name,
@@ -318,24 +212,55 @@ class UserProvider extends ChangeNotifier {
               provider: user.providerData.isNotEmpty ? user.providerData.first.providerId : 'google',
             );
           }
-        }, onError: (e) {
-          print("Error listening to user document: $e");
+        } catch (e) {
+          print("Error initializing user: $e");
           _isLoading = false;
-          notifyListeners();
-        });
+        }
+        notifyListeners();
       } else {
         _clearInMemoryState();
       }
     });
   }
 
-  /// Fetches the user profile from Cloud Firestore
-  Future<void> fetchProfileFromCloud() async {
+  /// Fetches the user profile from Cloud / MySQL backend
+  Future<void> fetchProfileFromCloud({String? phone}) async {
     final user = _auth.currentUser;
-    if (user == null) return;
+    
+    String? resolvedUid = FirestoreService().resolvedUid;
+    
+    if (resolvedUid == null) {
+      if (user != null) {
+        resolvedUid = await _resolveUid(user);
+      } else if (phone != null) {
+        final normalized = _normalizePhone(phone);
+        print("[fetchProfileFromCloud] Resolving UID by phone: $normalized");
+        final matchedUser = await _userRepository.resolveUserDocument(phone: normalized);
+        if (matchedUser != null) {
+          resolvedUid = (matchedUser['uid'] ?? matchedUser['id'])?.toString();
+          print("[fetchProfileFromCloud] Resolved UID by phone match: $resolvedUid");
+        } else {
+          final phoneDigits = normalized.replaceAll(RegExp(r'\D'), '');
+          resolvedUid = 'whatsapp_$phoneDigits';
+          print("[fetchProfileFromCloud] New WhatsApp user, using generated UID: $resolvedUid");
+        }
+      } else if (_phone.isNotEmpty) {
+        final normalized = _normalizePhone(_phone);
+        final matchedUser = await _userRepository.resolveUserDocument(phone: normalized);
+        if (matchedUser != null) {
+          resolvedUid = (matchedUser['uid'] ?? matchedUser['id'])?.toString();
+        } else {
+          final phoneDigits = normalized.replaceAll(RegExp(r'\D'), '');
+          resolvedUid = 'whatsapp_$phoneDigits';
+        }
+      }
+    }
 
-    // Proactively resolve the UID to avoid race conditions during login/OTP verification
-    final resolvedUid = await _resolveUid(user);
+    if (resolvedUid == null) {
+      print("[fetchProfileFromCloud] resolvedUid is null, cannot fetch profile.");
+      return;
+    }
+
     FirestoreService().setResolvedUid(resolvedUid);
 
     final userDoc = await _userRepository.fetchUserDocument(resolvedUid);
@@ -343,6 +268,7 @@ class UserProvider extends ChangeNotifier {
       _name = userDoc['name'] ?? '';
       _email = userDoc['email'] ?? '';
       _profileImagePath = userDoc['profilePhoto'];
+      print("Fetched profile image path: $_profileImagePath");
       _role = userDoc['role'] ?? 'user';
       final rawStatus = userDoc['accountStatus'] ?? userDoc['status'];
       if (rawStatus != null) {
@@ -352,7 +278,7 @@ class UserProvider extends ChangeNotifier {
       } else {
         _accountStatus = 'active';
       }
-      _phone = userDoc['phone'] ?? user.phoneNumber ?? '';
+      _phone = userDoc['phone'] ?? phone ?? (user != null ? user.phoneNumber ?? '' : '');
 
       if (_name.isNotEmpty) {
         _addToRecentAccounts(AccountModel(
@@ -364,26 +290,36 @@ class UserProvider extends ChangeNotifier {
       }
       notifyListeners();
     } else {
-      final profile = await _userRepository.fetchProfile();
-      if (profile != null) {
-        _name = profile['name'] ?? '';
-        _phone = profile['phone'] ?? user.phoneNumber ?? '';
-        _email = profile['email'] ?? '';
-        _profileImagePath = profile['profileImagePath'];
-        _role = 'user';
-        _accountStatus = 'active';
+      // Document doesn't exist on backend.
+      if (user != null) {
+        final profile = await _userRepository.fetchProfile();
+        if (profile != null) {
+          _name = profile['name'] ?? '';
+          _phone = profile['phone'] ?? user.phoneNumber ?? '';
+          _email = profile['email'] ?? '';
+          _profileImagePath = profile['profileImagePath'];
+          _role = 'user';
+          _accountStatus = 'active';
 
-        await _userRepository.saveUserDocument(
-          uid: resolvedUid,
-          name: _name,
-          email: _email,
-          phone: _normalizePhone(_phone),
-          profilePhoto: _profileImagePath,
-          provider: user.providerData.isNotEmpty ? user.providerData.first.providerId : 'phone',
-        );
-        notifyListeners();
-      } else {
-        _phone = user.phoneNumber ?? '';
+          await _userRepository.saveUserDocument(
+            uid: resolvedUid,
+            name: _name,
+            email: _email,
+            phone: _normalizePhone(_phone),
+            profilePhoto: _profileImagePath,
+            provider: user.providerData.isNotEmpty ? user.providerData.first.providerId : 'phone',
+          );
+          notifyListeners();
+        } else {
+          _phone = user.phoneNumber ?? '';
+          _role = 'user';
+          _accountStatus = 'active';
+          notifyListeners();
+        }
+      } else if (phone != null) {
+        _name = '';
+        _email = '';
+        _phone = _normalizePhone(phone);
         _role = 'user';
         _accountStatus = 'active';
         notifyListeners();
@@ -399,23 +335,84 @@ class UserProvider extends ChangeNotifier {
     String? profilePhoto,
     required String provider,
   }) async {
+    String resolvedUid = uid;
+    String? existingProfilePhoto;
+    
+    // Resolve UID first to avoid duplicate email/phone constraints on database
+    if (email != null && email.isNotEmpty) {
+      final normalizedEmail = _normalizeEmail(email);
+      final matchedUser = await _userRepository.resolveUserDocument(email: normalizedEmail);
+      if (matchedUser != null) {
+        final resolvedId = matchedUser['uid'] ?? matchedUser['id'];
+        if (resolvedId != null) {
+          resolvedUid = resolvedId.toString();
+          existingProfilePhoto = matchedUser['profilePhoto'];
+          print("[saveOrUpdateUserInCloud] Resolved UID by email: $resolvedUid, existingPhoto: $existingProfilePhoto");
+        }
+      }
+    } else if (phone != null && phone.isNotEmpty) {
+      final normalizedPhone = _normalizePhone(phone);
+      final matchedUser = await _userRepository.resolveUserDocument(phone: normalizedPhone);
+      if (matchedUser != null) {
+        final resolvedId = matchedUser['uid'] ?? matchedUser['id'];
+        if (resolvedId != null) {
+          resolvedUid = resolvedId.toString();
+          existingProfilePhoto = matchedUser['profilePhoto'];
+          print("[saveOrUpdateUserInCloud] Resolved UID by phone: $resolvedUid, existingPhoto: $existingProfilePhoto");
+        }
+      }
+    }
+
+    FirestoreService().setResolvedUid(resolvedUid);
+
+    // Preserve the existing database profile photo if one is already uploaded/set
+    final photoToSave = (existingProfilePhoto != null && existingProfilePhoto.isNotEmpty)
+        ? existingProfilePhoto
+        : profilePhoto;
+
     await _userRepository.saveUserDocument(
-      uid: uid,
+      uid: resolvedUid,
       name: name,
       email: email ?? 'user@example.com',
       phone: phone != null ? _normalizePhone(phone) : null,
-      profilePhoto: profilePhoto,
+      profilePhoto: photoToSave,
       provider: provider,
     );
   }
 
   /// Updates profile in Cloud Firestore, uploading the local profile image to Firebase Storage first if needed
-  void updateProfile({
+  Future<void> updateProfile({
     required String name,
     required String phone,
     required String email,
     String? profileImagePath,
-  }) {
+  }) async {
+    final currentUid = FirestoreService().currentUid;
+    
+    // Check if email already exists for a different user
+    if (email.trim().isNotEmpty) {
+      final normalizedEmail = _normalizeEmail(email);
+      final existingUserByEmail = await _userRepository.resolveUserDocument(email: normalizedEmail);
+      if (existingUserByEmail != null) {
+        final existingUid = (existingUserByEmail['uid'] ?? existingUserByEmail['id'])?.toString();
+        if (existingUid != null && existingUid != currentUid) {
+          throw Exception("This email address is already registered with another account.");
+        }
+      }
+    }
+
+    // Check if phone number already exists for a different user
+    if (phone.trim().isNotEmpty) {
+      final normalizedPhone = _normalizePhone(phone);
+      final existingUserByPhone = await _userRepository.resolveUserDocument(phone: normalizedPhone);
+      if (existingUserByPhone != null) {
+        final existingUid = (existingUserByPhone['uid'] ?? existingUserByPhone['id'])?.toString();
+        if (existingUid != null && existingUid != currentUid) {
+          throw Exception("This phone number is already registered with another account.");
+        }
+      }
+    }
+
     _name = name;
     _phone = phone;
     _email = email;
@@ -432,8 +429,8 @@ class UserProvider extends ChangeNotifier {
 
     notifyListeners();
 
-    // Trigger background upload and Firestore sync asynchronously
-    _syncProfileToCloudInBackground(
+    // Trigger upload and Firestore sync
+    await _syncProfileToCloudInBackground(
       name: name,
       phone: phone,
       email: email,
@@ -450,13 +447,27 @@ class UserProvider extends ChangeNotifier {
     String? finalImageUrl = localImagePath;
 
     try {
-      // 1. Upload file if it's a local file
+      // 1. Delete old profile image if it exists and is a remote URL
+      if (_profileImagePath != null && _profileImagePath!.startsWith('http')) {
+        print("Deleting old profile image: $_profileImagePath");
+        try {
+          await _storageService.deleteFile(_profileImagePath!);
+          print("Old profile image deleted successfully");
+        } catch (e) {
+          print("Failed to delete old profile image: $e");
+          // Continue with upload even if delete fails
+        }
+      }
+
+      // 2. Upload file if it's a local file
       if (localImagePath != null && !localImagePath.startsWith('http') && File(localImagePath).existsSync()) {
+        print("Uploading profile image from: $localImagePath");
         finalImageUrl = await _storageService.uploadFile(
           file: File(localImagePath),
           folder: 'uploads',
           customFileName: 'profile_picture_${DateTime.now().millisecondsSinceEpoch}',
         );
+        print("Profile image uploaded to: $finalImageUrl");
 
         // Update the in-memory path to the remote URL now that it is uploaded successfully
         _profileImagePath = finalImageUrl;
@@ -472,82 +483,11 @@ class UserProvider extends ChangeNotifier {
       }
 
       final currentResolvedUid = FirestoreService().currentUid;
-      final normalizedEmail = _normalizeEmail(email);
       final normalizedPhone = _normalizePhone(phone);
 
-      // Check if another user document exists with this phone or email
-      String? duplicateUid;
-      if (normalizedEmail.isNotEmpty) {
-        final emailQuery = await FirebaseFirestore.instance
-            .collection('app_users')
-            .where('email', isEqualTo: normalizedEmail)
-            .get();
-        for (final doc in emailQuery.docs) {
-          if (doc.id != currentResolvedUid) {
-            duplicateUid = doc.id;
-            break;
-          }
-        }
-      }
-
-      if (duplicateUid == null && normalizedPhone.isNotEmpty) {
-        final phoneQuery = await FirebaseFirestore.instance
-            .collection('app_users')
-            .where('phone', isEqualTo: normalizedPhone)
-            .get();
-        for (final doc in phoneQuery.docs) {
-          if (doc.id != currentResolvedUid) {
-            duplicateUid = doc.id;
-            break;
-          }
-        }
-      }
-
-      String targetUid = currentResolvedUid;
-      if (duplicateUid != null) {
-        // We have a duplicate! Let's choose the primary UID
-        // Prefer the Google/Apple one as targetUid, or currentResolvedUid if no preference
-        final dupDoc = await FirebaseFirestore.instance.collection('app_users').doc(duplicateUid).get();
-        final dupProvider = dupDoc.data()?['provider'] ?? '';
-        final isDupSocial = dupProvider == 'google' || dupProvider == 'google.com' || dupProvider == 'apple' || dupProvider == 'apple.com';
-
-        String sourceUid;
-        if (isDupSocial) {
-          targetUid = duplicateUid;
-          sourceUid = currentResolvedUid;
-        } else {
-          targetUid = currentResolvedUid;
-          sourceUid = duplicateUid;
-        }
-
-        // Merge sourceUid data into targetUid
-        await _mergeUserData(sourceUid, targetUid);
-
-        // If current resolved UID changed to targetUid, update it in FirestoreService
-        if (targetUid != currentResolvedUid) {
-          FirestoreService().setResolvedUid(targetUid);
-          // Re-subscribe UserProvider's listener to the new targetUid!
-          _userSub?.cancel();
-          _userSub = FirebaseFirestore.instance.collection('app_users').doc(targetUid).snapshots().listen((docSnap) async {
-            if (docSnap.exists) {
-              final data = docSnap.data();
-              if (data != null) {
-                _name = data['name'] ?? '';
-                _email = data['email'] ?? '';
-                _profileImagePath = data['profilePhoto'];
-                _role = data['role'] ?? 'user';
-                _accountStatus = data['accountStatus'] ?? 'active';
-                _phone = data['phone'] ?? _phone;
-                notifyListeners();
-              }
-            }
-          });
-        }
-      }
-
-      // 2. Save profile details to Cloud Firestore
+      // Save profile details to MySQL backend
       await _userRepository.saveUserDocument(
-        uid: targetUid,
+        uid: currentResolvedUid,
         name: name,
         email: email,
         phone: normalizedPhone,
@@ -557,9 +497,10 @@ class UserProvider extends ChangeNotifier {
             : 'google',
       );
 
-      print("Profile successfully synced to cloud.");
+      print("Profile successfully synced to backend.");
     } catch (e) {
-      print("Error syncing profile to cloud: $e");
+      print("Error syncing profile to backend: $e");
+      rethrow;
     }
   }
 
@@ -586,7 +527,6 @@ class UserProvider extends ChangeNotifier {
     _accountStatus = 'active';
     _isLoading = false;
     _isSocialOtpVerified = true;
-    _userSub?.cancel();
     FirestoreService().clearResolvedUid();
     notifyListeners();
   }
@@ -596,9 +536,37 @@ class UserProvider extends ChangeNotifier {
     await _auth.signOut();
   }
 
+  Future<void> checkUserStatusSilently() async {
+    final user = _auth.currentUser;
+    if (user == null) return;
+
+    try {
+      final resolvedUid = FirestoreService().resolvedUid;
+      if (resolvedUid == null) return;
+
+      final userDoc = await _userRepository.fetchUserDocument(resolvedUid);
+      if (userDoc != null) {
+        final rawStatus = userDoc['accountStatus'] ?? userDoc['status'];
+        String newStatus = 'active';
+        if (rawStatus != null) {
+          newStatus = rawStatus.toString().toLowerCase() == 'suspended' ? 'suspended' : 'active';
+        } else if (userDoc['isBlocked'] == true) {
+          newStatus = 'suspended';
+        }
+
+        if (newStatus != _accountStatus) {
+          _accountStatus = newStatus;
+          notifyListeners();
+        }
+      }
+    } catch (e) {
+      print("Error in silent user status check: $e");
+    }
+  }
+
   @override
   void dispose() {
-    _userSub?.cancel();
+    _statusTimer?.cancel();
     super.dispose();
   }
 

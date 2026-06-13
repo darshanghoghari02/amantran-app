@@ -487,6 +487,48 @@ class TemplateElement {
   TextStyle getTextStyleForLanguage(String activeLanguage, {double scale = 1.0}) {
     final baseStyle = getTextStyle(scale: scale);
     final code = languageCodeFor(activeLanguage);
+    
+    // First, check if the element has a custom fontFamily that should be respected
+    // If the fontFamily is not the default 'Roboto', use it
+    if (fontFamily != 'Roboto' && fontFamily.isNotEmpty) {
+      // Try to apply the custom font first
+      final String lowerFamily = fontFamily.toLowerCase();
+      
+      // Check for locally bundled fonts
+      if (lowerFamily == 'kap011') {
+        return baseStyle.copyWith(fontFamily: 'KAP011');
+      }
+      if (lowerFamily == 'noto serif gujarati') {
+        return baseStyle.copyWith(fontFamily: 'Noto Serif Gujarati');
+      }
+      if (lowerFamily == 'kankotri') {
+        return baseStyle.copyWith(fontFamily: 'Kankotri');
+      }
+      if (lowerFamily.startsWith('custom_')) {
+        return baseStyle.copyWith(fontFamily: fontFamily);
+      }
+      
+      // Check for dynamically registered fonts
+      String? matchedRegisteredFamily;
+      for (final reg in FontService.registeredFamilies) {
+        if (reg.toLowerCase() == lowerFamily) {
+          matchedRegisteredFamily = reg;
+          break;
+        }
+      }
+      if (matchedRegisteredFamily != null) {
+        return baseStyle.copyWith(fontFamily: matchedRegisteredFamily);
+      }
+      
+      // Try GoogleFonts
+      try {
+        return GoogleFonts.getFont(fontFamily, textStyle: baseStyle);
+      } catch (_) {
+        // Fall through to language-specific fonts
+      }
+    }
+    
+    // Fall back to language-specific fonts if no custom font is set or it failed
     switch (code) {
       case 'ur':
       case 'ks':

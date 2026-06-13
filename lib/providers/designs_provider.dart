@@ -1,8 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user_design.dart';
-import '../models/template_model.dart';
 import '../models/template_element.dart';
 import '../repositories/draft_repository.dart';
 import '../providers/app_data_provider.dart';
@@ -81,6 +81,21 @@ class DesignsProvider extends ChangeNotifier {
     _cardsSubscription?.cancel();
   }
 
+  Future<void> refreshDesigns() async {
+    final uid = FirestoreService().resolvedUid;
+    if (uid == null) return;
+
+    try {
+      final rawDrafts = await _draftRepository.fetchDrafts(uid);
+      final rawCards = await _draftRepository.fetchCards(uid);
+      _rawDrafts = rawDrafts;
+      _rawCards = rawCards;
+      _reparseDesigns();
+    } catch (e) {
+      debugPrint("Error refreshing designs: $e");
+    }
+  }
+
   void _reparseDesigns() {
     _designs.clear();
 
@@ -115,17 +130,26 @@ class DesignsProvider extends ChangeNotifier {
       }
     }
 
-    try {
-      final UserDesign finalDesign = design.id == targetId
-          ? design
-          : UserDesign(
-              id: targetId,
-              template: design.template,
-              elements: design.elements,
-              updatedAt: DateTime.now(),
-              isDraft: design.isDraft,
-            );
+    final UserDesign finalDesign = design.id == targetId
+        ? design
+        : UserDesign(
+            id: targetId,
+            template: design.template,
+            elements: design.elements,
+            updatedAt: DateTime.now(),
+            isDraft: true,
+          );
 
+    // Instantly update in-memory collections and notify listeners
+    _designs.removeWhere((d) => d.id == targetId || d.id == design.id);
+    _designs.add(finalDesign);
+
+    _rawDrafts.removeWhere((d) => d['id'] == targetId || d['id'] == design.id);
+    _rawDrafts.add(userDesignToJson(finalDesign));
+
+    notifyListeners();
+
+    try {
       final json = userDesignToJson(finalDesign);
       await _draftRepository.saveDraft(targetId, json);
       
@@ -145,80 +169,25 @@ class DesignsProvider extends ChangeNotifier {
         },
       );
     } catch (e) {
-      debugPrint("Failed to save draft to Firestore: $e");
+      debugPrint("Failed to save draft to database: $e");
     }
     return targetId;
   }
 
-  String _getBrideNameEn(List<TemplateElement> elements) {
-    try {
-      final el = elements.firstWhere((e) => e.id == 'p1_bride' || e.id.startsWith('p1_bride_'));
-      return el.content.replaceAll('ચિ. ', '').replaceAll('Chi. ', '').trim();
-    } catch (_) {
-      return '';
-    }
-  }
 
-  String _getBrideNameGu(List<TemplateElement> elements) {
-    try {
-      final el = elements.firstWhere((e) => e.id == 'p1_bride' || e.id.startsWith('p1_bride_'));
-      return el.contentGujarati.replaceAll('ચિ. ', '').replaceAll('Chi. ', '').trim();
-    } catch (_) {
-      return '';
-    }
-  }
-
-  String _getGroomNameEn(List<TemplateElement> elements) {
-    try {
-      final el = elements.firstWhere((e) => e.id == 'p1_groom' || e.id.startsWith('p1_groom_'));
-      return el.content.replaceAll('ચિ. ', '').replaceAll('Chi. ', '').trim();
-    } catch (_) {
-      return '';
-    }
-  }
-
-  String _getGroomNameGu(List<TemplateElement> elements) {
-    try {
-      final el = elements.firstWhere((e) => e.id == 'p1_groom' || e.id.startsWith('p1_groom_'));
-      return el.contentGujarati.replaceAll('ચિ. ', '').replaceAll('Chi. ', '').trim();
-    } catch (_) {
-      return '';
-    }
-  }
-
-  bool _areNamesEqual(List<TemplateElement> els1, List<TemplateElement> els2) {
-    final b1En = _getBrideNameEn(els1);
-    final b1Gu = _getBrideNameGu(els1);
-    final g1En = _getGroomNameEn(els1);
-    final g1Gu = _getGroomNameGu(els1);
-
-    final b2En = _getBrideNameEn(els2);
-    final b2Gu = _getBrideNameGu(els2);
-    final g2En = _getGroomNameEn(els2);
-    final g2Gu = _getGroomNameGu(els2);
-
-    final placeholders = {
-      '', 'groom name', 'bride name', 'groom', 'bride', 'var', 'kanya',
-      'વરનું નામ', 'કન્યાનું નામ', 'વર', 'કન્યા', 'ચિ.', 'chi.', 'શુભ', 'શુભ લગ્ન'
-    };
-
-    final b1EnNorm = b1En.toLowerCase();
-    final b2EnNorm = b2En.toLowerCase();
-    final g1EnNorm = g1En.toLowerCase();
-    final g2EnNorm = g2En.toLowerCase();
-
-    if (placeholders.contains(b1EnNorm) || placeholders.contains(g1EnNorm) ||
-        placeholders.contains(b2EnNorm) || placeholders.contains(g2EnNorm)) {
-      return false;
-    }
-
-    final brideMatches = (b1EnNorm == b2EnNorm && b1EnNorm.isNotEmpty) || (b1Gu.trim() == b2Gu.trim() && b1Gu.trim().isNotEmpty);
-    final groomMatches = (g1EnNorm == g2EnNorm && g1EnNorm.isNotEmpty) || (g1Gu.trim() == g2Gu.trim() && g1Gu.trim().isNotEmpty);
-
-    return brideMatches && groomMatches;
-  }
 
   Future<void> saveCompleted(UserDesign design) async {
+    // Instantly update in-memory collections and notify listeners
+    final completedDesign = design.copyWith(isDraft: false);
+    _designs.removeWhere((d) => d.id == design.id);
+    _designs.add(completedDesign);
+
+    _rawDrafts.removeWhere((d) => d['id'] == design.id);
+    _rawCards.removeWhere((d) => d['id'] == design.id);
+    _rawCards.add(userDesignToJson(completedDesign));
+
+    notifyListeners();
+
     try {
       final json = userDesignToJson(design);
       await _draftRepository.saveCompleted(design.id, json);
@@ -232,11 +201,17 @@ class DesignsProvider extends ChangeNotifier {
         },
       );
     } catch (e) {
-      debugPrint("Failed to save completed card to Firestore: $e");
+      debugPrint("Failed to save completed card to database: $e");
     }
   }
 
   Future<void> deleteDesign(String id) async {
+    // Instantly update in-memory collections and notify listeners
+    _designs.removeWhere((d) => d.id == id);
+    _rawDrafts.removeWhere((d) => d['id'] == id);
+    _rawCards.removeWhere((d) => d['id'] == id);
+    notifyListeners();
+
     try {
       await _draftRepository.deleteDraft(id);
       await _draftRepository.deleteCard(id);
@@ -248,7 +223,7 @@ class DesignsProvider extends ChangeNotifier {
         },
       );
     } catch (e) {
-      debugPrint("Failed to delete design from Firestore: $e");
+      debugPrint("Failed to delete design from database: $e");
     }
   }
 
@@ -270,23 +245,32 @@ class DesignsProvider extends ChangeNotifier {
       'updatedAt': design.updatedAt.toIso8601String(),
       'isDraft': design.isDraft,
       'elements': design.elements.map((e) => e.toJson()).toList(),
+      'pdfName': design.pdfName,
     };
   }
 
   UserDesign userDesignFromJson(Map<String, dynamic> json) {
-    final templateId = json['templateId']?.toString() ?? '';
-    TemplateModel matchedTemplate = _appData?.getTemplateById(templateId) ?? TemplateModel(
-      id: templateId,
-      title: 'Unknown Template',
-      slug: '',
-      thumbnail: '',
-      previewImage: '',
-      categoryId: '',
-      createdAt: DateTime.now(),
-      updatedAt: DateTime.now(),
-    );
+    var customizedData = json['customizedData'];
+    Map<String, dynamic>? customizedMap;
+    if (customizedData is Map) {
+      customizedMap = Map<String, dynamic>.from(customizedData);
+    } else if (customizedData is String && customizedData.isNotEmpty) {
+      try {
+        customizedMap = Map<String, dynamic>.from(jsonDecode(customizedData));
+      } catch (_) {}
+    }
 
-    final List<dynamic>? elementsList = json['elements'];
+    final templateId = json['templateId']?.toString() ?? customizedMap?['templateId']?.toString() ?? '';
+    if (templateId.isEmpty) {
+      throw Exception("Missing template ID");
+    }
+
+    final matchedTemplate = _appData?.getTemplateById(templateId);
+    if (matchedTemplate == null) {
+      throw Exception("Template $templateId is inactive or not found");
+    }
+
+    final List<dynamic>? elementsList = json['elements'] ?? customizedMap?['elements'];
     final List<TemplateElement> parsedElements = [];
     if (elementsList != null) {
       for (var item in elementsList) {
@@ -297,22 +281,28 @@ class DesignsProvider extends ChangeNotifier {
       }
     }
 
-    // Try to parse updatedAt safely. If Firestore serverTimestamp is used, it might be represented in different ways.
+    // Try to parse updatedAt safely.
     DateTime updatedAt = DateTime.now();
-    if (json['updatedAt'] != null) {
-      if (json['updatedAt'] is String) {
-        updatedAt = DateTime.tryParse(json['updatedAt'].toString()) ?? DateTime.now();
-      } else if (json['updatedAt'] is Timestamp) {
-        updatedAt = (json['updatedAt'] as Timestamp).toDate();
+    final rawUpdatedAt = json['updatedAt'] ?? customizedMap?['updatedAt'];
+    if (rawUpdatedAt != null) {
+      if (rawUpdatedAt is String) {
+        updatedAt = DateTime.tryParse(rawUpdatedAt.toString()) ?? DateTime.now();
+      } else if (rawUpdatedAt is Timestamp) {
+        updatedAt = rawUpdatedAt.toDate();
       }
     }
 
+    final rawIsDraft = json['isDraft'] ?? customizedMap?['isDraft'];
+    final isDraft = rawIsDraft == true;
+    final pdfName = json['pdfName']?.toString() ?? customizedMap?['pdfName']?.toString();
+
     return UserDesign(
-      id: json['id']?.toString() ?? '',
+      id: json['id']?.toString() ?? customizedMap?['id']?.toString() ?? '',
       template: matchedTemplate,
       elements: parsedElements,
       updatedAt: updatedAt,
-      isDraft: json['isDraft'] == true,
+      isDraft: isDraft,
+      pdfName: pdfName,
     );
   }
 

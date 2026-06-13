@@ -175,6 +175,10 @@ class _DesignPdfShareDialogState extends State<DesignPdfShareDialog> {
   }
 
   String _getPdfFileName() {
+    if (widget.design.pdfName != null && widget.design.pdfName!.isNotEmpty) {
+      return _sanitizeFileName(widget.design.pdfName!);
+    }
+
     String groom = '';
     String bride = '';
     

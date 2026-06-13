@@ -2,10 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'package:device_info_plus/device_info_plus.dart';
 import 'dart:io';
 import '../../providers/user_provider.dart';
 import '../../providers/language_provider.dart';
 import '../../widgets/top_notification.dart';
+import '../../utils/image_resolver.dart';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
@@ -42,6 +45,26 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Future<void> _pickImage() async {
+    // Request storage permissions
+    PermissionStatus status;
+    if (Platform.isAndroid) {
+      final androidInfo = await DeviceInfoPlugin().androidInfo;
+      if (androidInfo.version.sdkInt >= 33) {
+        status = await Permission.photos.request();
+      } else {
+        status = await Permission.storage.request();
+      }
+    } else {
+      status = await Permission.photos.request();
+    }
+
+    if (!status.isGranted) {
+      if (mounted) {
+        _showError("Permission denied. Please grant storage permission to select image.");
+      }
+      return;
+    }
+
     final picker = ImagePicker();
     final pickedFile = await picker.pickImage(source: ImageSource.gallery);
     if (pickedFile != null) {
@@ -75,19 +98,23 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     }
 
     try {
-      context.read<UserProvider>().updateProfile(
+      await context.read<UserProvider>().updateProfile(
         name: _nameController.text.trim(),
         phone: "+91${_phoneController.text}",
         email: _emailController.text.trim(),
         profileImagePath: _tempImagePath,
       );
-      
+
+      // Refresh profile from backend to get the updated image URL
+      await context.read<UserProvider>().fetchProfileFromCloud();
+
       if (mounted) {
         Navigator.pop(context); // Pop EditProfileScreen
         TopNotification.show(context, message: lang.profileUpdated);
       }
     } catch (e) {
-      _showError("Failed to update profile: $e");
+      final cleanMsg = e.toString().replaceAll('Exception: ', '').replaceAll('Exception', '');
+      _showError(cleanMsg);
     }
   }
 
@@ -160,9 +187,16 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         ],
                       ),
                       child: ClipOval(
-                        child: _tempImagePath != null
+                        child: _tempImagePath != null && _tempImagePath!.isNotEmpty
                             ? (_tempImagePath!.startsWith('http')
-                                ? Image.network(_tempImagePath!, fit: BoxFit.cover)
+                                ? Image.network(
+                                    resolveImageUrl(_tempImagePath!),
+                                    fit: BoxFit.cover,
+                                    errorBuilder: (context, error, stackTrace) {
+                                      print('Error loading temp profile image: $error');
+                                      return Image.asset('assets/images/banner_image.png', fit: BoxFit.cover);
+                                    },
+                                  )
                                 : Image.file(File(_tempImagePath!), fit: BoxFit.cover))
                             : Image.asset('assets/images/banner_image.png', fit: BoxFit.cover),
                       ),

@@ -8,6 +8,7 @@ import 'package:pdf/widgets.dart' as pw;
 import 'package:path_provider/path_provider.dart';
 import 'package:open_file/open_file.dart';
 import 'package:share_plus/share_plus.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
@@ -19,6 +20,7 @@ import '../../models/user_design.dart';
 import '../../providers/designs_provider.dart';
 import 'widgets/preview_page.dart';
 import '../../providers/language_provider.dart';
+import '../../providers/user_provider.dart';
 import '../../widgets/top_notification.dart';
 import '../../services/interaction_service.dart';
 
@@ -154,6 +156,7 @@ class _SuccessScreenState extends State<SuccessScreen> {
   Future<void> _startSavingProcess(List<TemplateElement> elementsToRender) async {
     final lang = context.read<LanguageProvider>();
     _updateSaveStatus(lang.finalizingDesign, 0.05);
+    final baseName = _defaultPdfBaseName();
 
     try {
       await WidgetsBinding.instance.endOfFrame;
@@ -234,7 +237,6 @@ class _SuccessScreenState extends State<SuccessScreen> {
 
       _updateSaveStatus(lang.saving, 0.85);
 
-      final baseName = _defaultPdfBaseName();
       final dir = await _getSaveDirectory();
       final path = '${dir.path}/$baseName.pdf';
       final file = File(path);
@@ -266,6 +268,7 @@ class _SuccessScreenState extends State<SuccessScreen> {
           elements: elementsToRender,
           updatedAt: DateTime.now(),
           isDraft: false,
+          pdfName: baseName,
         ));
 
     if (mounted) {
@@ -358,6 +361,15 @@ class _SuccessScreenState extends State<SuccessScreen> {
         pdfDisplayName = sanitized;
       });
 
+      context.read<DesignsProvider>().saveCompleted(UserDesign(
+            id: widget.designId,
+            template: widget.template,
+            elements: widget.data.customElements ?? [],
+            updatedAt: DateTime.now(),
+            isDraft: false,
+            pdfName: sanitized,
+          ));
+
       TopNotification.show(
         context,
         message: '$sanitized.pdf',
@@ -375,12 +387,82 @@ class _SuccessScreenState extends State<SuccessScreen> {
     }
   }
 
-  void _sharePdf(String platform) {
+  Future<void> _sharePdf(String platform) async {
     if (savedPdfPath == null) return;
-    Share.shareXFiles(
-      [XFile(savedPdfPath!)],
-      text: 'Check out my Wedding Invitation!',
-    );
+
+    bool sharedDirectly = false;
+
+    if (Platform.isAndroid && platform != 'Other') {
+      // For Messages, just open SMS app without PDF attachment
+      if (platform == 'Messages' || platform == 'Messenger') {
+        try {
+          const channel = MethodChannel('com.olivepatel.nimantran/apk_share');
+          final bool? success = await channel.invokeMethod<bool>(
+            'openSmsApp',
+            {},
+          );
+          sharedDirectly = success ?? false;
+        } catch (e) {
+          debugPrint('Open SMS app failed: $e');
+        }
+      } else {
+        // For WhatsApp and Gmail, share with PDF attachment
+        String? packageName;
+        if (platform == 'WhatsApp') {
+          packageName = 'com.whatsapp';
+        } else if (platform == 'Gmail') {
+          packageName = 'com.google.android.gm';
+        }
+
+        if (packageName != null) {
+          try {
+            final fileName = savedPdfPath!.split('/').last;
+            final tempDir = await getTemporaryDirectory();
+            final tempFile = File('${tempDir.path}/$fileName');
+            if (await tempFile.exists()) {
+              try {
+                await tempFile.delete();
+              } catch (_) {}
+            }
+            await File(savedPdfPath!).copy(tempFile.path);
+
+            // Get user's email for Gmail FROM field
+            final userProvider = context.read<UserProvider>();
+            final userEmail = userProvider.email;
+
+            const channel = MethodChannel('com.olivepatel.nimantran/apk_share');
+            final bool? success = await channel.invokeMethod<bool>(
+              'shareFileToPackage',
+              {
+                'filePath': tempFile.path,
+                'packageName': packageName,
+                'userEmail': userEmail,
+              },
+            );
+            sharedDirectly = success ?? false;
+          } catch (e) {
+            debugPrint('Direct share to $packageName failed: $e');
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text('Direct share failed: $e\nMake sure to COLD RUN/REBUILD the app if you just changed native code.'),
+                  duration: const Duration(seconds: 5),
+                ),
+              );
+            }
+          }
+        }
+      }
+    }
+
+    // For "Other" or if direct share failed, show Android Share Sheet
+    if (!sharedDirectly) {
+      await Share.shareXFiles(
+        [XFile(savedPdfPath!)],
+        text: 'Check out my Wedding Invitation!',
+      );
+    }
+
     InteractionService.logInteraction(
       type: 'share_invitation',
       description: 'Shared invitation via $platform',
@@ -808,12 +890,12 @@ class _SuccessScreenState extends State<SuccessScreen> {
                   ),
                   const SizedBox(width: 20),
                   _buildSocialItem(
-                    onTap: () => _sharePdf('Messenger'),
+                    onTap: () => _sharePdf('Messages'),
                     logo: _outlinedContainer(
                       color: Colors.blue,
                       child: const Icon(Icons.message, color: Colors.blue, size: 26),
                     ),
-                    label: "Messenger",
+                    label: "Messages",
                   ),
                   const SizedBox(width: 20),
                   _buildSocialItem(

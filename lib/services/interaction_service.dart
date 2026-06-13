@@ -1,11 +1,10 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
 import 'package:firebase_auth/firebase_auth.dart';
-import 'firestore_service.dart';
+import '../config/api_config.dart';
 
 class InteractionService {
-  static final FirestoreService _firestoreService = FirestoreService();
-
-  /// Logs a structured user interaction to the user's isolated subcollection `users/{uid}/interactions`
+  /// Logs a structured user interaction to the backend audit logs
   static Future<void> logInteraction({
     required String type,
     required String description,
@@ -13,22 +12,24 @@ class InteractionService {
   }) async {
     try {
       final user = FirebaseAuth.instance.currentUser;
-      if (user == null) return; // Fail silently if user is not authenticated yet
+      final userId = user?.uid ?? 'anonymous';
 
-      final docId = '${DateTime.now().millisecondsSinceEpoch}_$type';
-      final docRef = _firestoreService.getUserDoc('interactions', docId);
-
-      await docRef.set({
-        'id': docId,
+      final data = {
+        'userId': userId,
         'type': type,
         'description': description,
-        'timestamp': FieldValue.serverTimestamp(),
         if (details != null) 'details': details,
-      });
+      };
+
+      await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/api/app/audit-logs'),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode(data),
+      );
     } catch (e) {
-      // Avoid printing in production if possible, but keep standard debug logging
-      // so it is visible in the console
-      print("Failed to log interaction to Firestore: $e");
+      print("Failed to log interaction to backend: $e");
     }
   }
 }

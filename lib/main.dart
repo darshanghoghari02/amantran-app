@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter/services.dart';
 
 // 🔴 MODELS
 import 'features/guests/data/models/guest_model.dart';
@@ -24,9 +25,13 @@ import 'screens/auth/complete_profile_screen.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'firebase_options.dart';
+import 'config/api_config.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // Resolve base URL for local testing environment
+  await ApiConfig.resolveBaseUrl();
 
   // 🔥 INIT FIREBASE
   try {

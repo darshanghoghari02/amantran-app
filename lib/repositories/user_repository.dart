@@ -1,20 +1,18 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import '../config/api_config.dart';
 import '../services/firestore_service.dart';
 
 class UserRepository {
   final FirestoreService _firestoreService = FirestoreService();
 
-  static const String _profileCollection = 'profile';
-  static const String _profileDocId = 'details';
-  static const String _settingsCollection = 'settings';
-  static const String _settingsDocId = 'preferences';
-
-  /// Fetches the user profile from `users/{uid}/profile/details`
+  /// Fetches the user profile from `/api/app/users/{uid}/profile`
   Future<Map<String, dynamic>?> fetchProfile() async {
     try {
-      final docSnap = await _firestoreService.getUserDoc(_profileCollection, _profileDocId).get();
-      if (docSnap.exists) {
-        return docSnap.data();
+      final uid = _firestoreService.currentUid;
+      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/users/$uid/profile'));
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
       }
     } catch (e) {
       print("Error fetching user profile: $e");
@@ -22,37 +20,46 @@ class UserRepository {
     return null;
   }
 
-  /// Saves or updates the user profile in `users/{uid}/profile/details`
+  /// Saves or updates the user profile in `/api/app/users/{uid}/profile`
   Future<void> saveProfile({
     required String name,
     required String phone,
     required String email,
     String? profileImagePath,
   }) async {
-    final data = {
-      'name': name,
-      'phone': phone,
-      'email': email,
-      if (profileImagePath != null) 'profileImagePath': profileImagePath,
-      'updatedAt': FieldValue.serverTimestamp(),
-    };
-
     try {
-      await _firestoreService.getUserDoc(_profileCollection, _profileDocId).set(
-        data,
-        SetOptions(merge: true),
+      final uid = _firestoreService.currentUid;
+      final data = {
+        'name': name,
+        'phone': phone,
+        'email': email,
+        if (profileImagePath != null) 'profileImagePath': profileImagePath,
+        'updatedAt': DateTime.now().toIso8601String()
+      };
+
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/api/app/users/$uid/profile'),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode(data),
       );
+
+      if (response.statusCode != 200 && response.statusCode != 201) {
+        throw Exception("Failed to save profile: Status ${response.statusCode}");
+      }
     } catch (e) {
       throw Exception("Failed to save profile: $e");
     }
   }
 
-  /// Fetches the user settings from `users/{uid}/settings/preferences`
+  /// Fetches the user settings from `/api/app/users/{uid}/settings`
   Future<Map<String, dynamic>?> fetchSettings() async {
     try {
-      final docSnap = await _firestoreService.getUserDoc(_settingsCollection, _settingsDocId).get();
-      if (docSnap.exists) {
-        return docSnap.data();
+      final uid = _firestoreService.currentUid;
+      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/users/$uid/settings'));
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
       }
     } catch (e) {
       print("Error fetching user settings: $e");
@@ -60,35 +67,40 @@ class UserRepository {
     return null;
   }
 
-  /// Saves or updates the user settings in `users/{uid}/settings/preferences`
+  /// Saves or updates the user settings in `/api/app/users/{uid}/settings`
   Future<void> saveSettings(Map<String, dynamic> settings) async {
     try {
-      await _firestoreService.getUserDoc(_settingsCollection, _settingsDocId).set(
-        {
-          ...settings,
-          'updatedAt': FieldValue.serverTimestamp(),
+      final uid = _firestoreService.currentUid;
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/api/app/users/$uid/settings'),
+        headers: {
+          'Content-Type': 'application/json',
         },
-        SetOptions(merge: true),
+        body: jsonEncode(settings),
       );
+
+      if (response.statusCode != 200 && response.statusCode != 201) {
+        throw Exception("Failed to save settings: Status ${response.statusCode}");
+      }
     } catch (e) {
       throw Exception("Failed to save settings: $e");
     }
   }
 
-  /// Fetch primary user document from `app_users/{uid}`
+  /// Fetch primary user document from `/api/app/users/{uid}`
   Future<Map<String, dynamic>?> fetchUserDocument(String uid) async {
     try {
-      final docSnap = await FirebaseFirestore.instance.collection('app_users').doc(uid).get();
-      if (docSnap.exists) {
-        return docSnap.data();
+      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/users/$uid'));
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
       }
     } catch (e) {
-      print("Error fetching user document from app_users/$uid: $e");
+      print("Error fetching user document from backend: $e");
     }
     return null;
   }
 
-  /// Create or update user document in `app_users/{uid}`
+  /// Create or update user document in `/api/app/users`
   Future<void> saveUserDocument({
     required String uid,
     required String name,
@@ -99,32 +111,158 @@ class UserRepository {
     String? role,
     String? accountStatus,
   }) async {
-    final docRef = FirebaseFirestore.instance.collection('app_users').doc(uid);
-    
     try {
-      final docSnap = await docRef.get();
-      
-      final Map<String, dynamic> data = {
+      final data = {
+        'uid': uid,
         'name': name,
         'email': email,
         if (phone != null) 'phone': phone,
         if (profilePhoto != null) 'profilePhoto': profilePhoto,
         'provider': provider,
-        'lastLoginAt': FieldValue.serverTimestamp(),
+        if (role != null) 'role': role,
+        if (accountStatus != null) 'accountStatus': accountStatus,
       };
 
-      if (!docSnap.exists) {
-        data['role'] = role ?? 'user';
-        data['accountStatus'] = accountStatus ?? 'active';
-        data['createdAt'] = FieldValue.serverTimestamp();
-        await docRef.set(data);
-      } else {
-        if (role != null) data['role'] = role;
-        if (accountStatus != null) data['accountStatus'] = accountStatus;
-        await docRef.update(data);
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/api/app/users'),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode(data),
+      );
+
+      if (response.statusCode != 200 && response.statusCode != 201) {
+        try {
+          final errData = jsonDecode(response.body);
+          if (errData is Map && errData.containsKey('error')) {
+            throw Exception(errData['error']);
+          }
+        } catch (_) {}
+        throw Exception("Failed to save user document: Status ${response.statusCode}");
       }
     } catch (e) {
-      throw Exception("Failed to save user document: $e");
+      rethrow;
     }
+  }
+
+  /// Resolves user document from database by email or phone
+  Future<Map<String, dynamic>?> resolveUserDocument({String? email, String? phone}) async {
+    try {
+      final queryParams = <String, String>{};
+      if (email != null) queryParams['email'] = email;
+      if (phone != null) queryParams['phone'] = phone;
+
+      final uri = Uri.parse('${ApiConfig.baseUrl}/api/app/users/resolve/find').replace(queryParameters: queryParams);
+      final response = await http.get(uri);
+
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+    } catch (e) {
+      print("Error resolving user document from API: $e");
+    }
+    return null;
+  }
+
+  /// Fetches rating for user from `/api/app/ratings/{userId}`
+  Future<Map<String, dynamic>?> fetchRating(String userId) async {
+    try {
+      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/ratings/$userId'));
+      if (response.statusCode == 200) {
+        return jsonDecode(response.body) as Map<String, dynamic>;
+      }
+    } catch (e) {
+      print("Error fetching user rating: $e");
+    }
+    return null;
+  }
+
+  /// Saves or updates the rating in `/api/app/ratings`
+  Future<void> saveRating({
+    required String userId,
+    required int rating,
+    String? userName,
+    String? userEmail,
+    String? userPhone,
+  }) async {
+    try {
+      final data = {
+        'userId': userId,
+        'rating': rating,
+        if (userName != null) 'userName': userName,
+        if (userEmail != null) 'userEmail': userEmail,
+        if (userPhone != null) 'userPhone': userPhone,
+      };
+
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/api/app/ratings'),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode(data),
+      );
+
+      if (response.statusCode != 200 && response.statusCode != 201) {
+        throw Exception("Failed to save rating: Status ${response.statusCode}");
+      }
+    } catch (e) {
+      throw Exception("Failed to save rating: $e");
+    }
+  }
+
+  /// Fetches all users from backend `/api/app/users`
+  Future<List<Map<String, dynamic>>?> fetchAllUsers() async {
+    try {
+      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/users'));
+      if (response.statusCode == 200) {
+        final list = jsonDecode(response.body) as List<dynamic>;
+        return list.map((item) => item as Map<String, dynamic>).toList();
+      }
+    } catch (e) {
+      print("Error fetching all users: $e");
+    }
+    return null;
+  }
+
+  /// Updates user role and status in backend `/api/app/users/{uid}`
+  Future<void> updateAppUser({
+    required String uid,
+    required String role,
+    required String accountStatus,
+  }) async {
+    try {
+      final data = {
+        'role': role,
+        'accountStatus': accountStatus,
+      };
+
+      final response = await http.put(
+        Uri.parse('${ApiConfig.baseUrl}/api/app/users/$uid'),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode(data),
+      );
+
+      if (response.statusCode != 200) {
+        throw Exception("Failed to update user: Status ${response.statusCode}");
+      }
+    } catch (e) {
+      throw Exception("Failed to update user: $e");
+    }
+  }
+
+  /// Fetches transactions for user from `/api/app/transactions/{userId}`
+  Future<List<Map<String, dynamic>>?> fetchTransactions(String userId) async {
+    try {
+      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/transactions/$userId'));
+      if (response.statusCode == 200) {
+        final list = jsonDecode(response.body) as List<dynamic>;
+        return list.map((item) => item as Map<String, dynamic>).toList();
+      }
+    } catch (e) {
+      print("Error fetching user transactions: $e");
+    }
+    return null;
   }
 }

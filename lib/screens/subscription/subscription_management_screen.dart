@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../repositories/user_repository.dart';
 import '../../providers/subscription_provider.dart';
+import '../../providers/language_provider.dart';
 import '../../services/firestore_service.dart';
 import '../../models/subscription_plan.dart';
 import 'mock_payment_screen.dart';
@@ -36,19 +37,20 @@ class _SubscriptionManagementScreenState extends State<SubscriptionManagementScr
   void initState() {
     super.initState();
     _fetchTransactions();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        context.read<SubscriptionProvider>().fetchSubscriptionStatus();
+      }
+    });
   }
 
   Future<void> _fetchTransactions() async {
     final uid = FirestoreService().resolvedUid;
     if (uid == null) return;
     try {
-      final snapshot = await FirebaseFirestore.instance
-          .collection('transactions')
-          .where('userId', isEqualTo: uid)
-          .get();
+      final listData = await UserRepository().fetchTransactions(uid);
       
-      final list = snapshot.docs.map((doc) {
-        final data = doc.data();
+      final list = (listData ?? []).map((data) {
         DateTime dt = DateTime.now();
         if (data['timestamp'] != null) {
           dt = DateTime.tryParse(data['timestamp'].toString()) ?? DateTime.now();
@@ -80,23 +82,24 @@ class _SubscriptionManagementScreenState extends State<SubscriptionManagementScr
   }
 
   void _showCancelConfirmation() {
+    final lang = context.read<LanguageProvider>();
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF16161A),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: const Text(
-          "Cancel Subscription?",
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+        title: Text(
+          lang.cancelSubscription,
+          style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
         ),
-        content: const Text(
-          "Your premium access will remain active until the end of your current billing period. Auto-renew will be disabled.",
-          style: TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
+        content: Text(
+          lang.cancelSubscriptionMessage,
+          style: const TextStyle(color: Colors.white70, fontSize: 13, height: 1.4),
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: const Text("Keep Premium", style: TextStyle(color: Colors.white54)),
+            child: Text(lang.keepPremium, style: const TextStyle(color: Colors.white54)),
           ),
           ElevatedButton(
             onPressed: () async {
@@ -105,7 +108,7 @@ class _SubscriptionManagementScreenState extends State<SubscriptionManagementScr
               if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
-                    content: Text(success ? "Auto-renew disabled. Premium active until expiry." : "Failed to cancel. Try again."),
+                    content: Text(success ? lang.autoRenewDisabled : lang.failedToCancel),
                     backgroundColor: success ? Colors.green : Colors.red,
                   ),
                 );
@@ -113,7 +116,7 @@ class _SubscriptionManagementScreenState extends State<SubscriptionManagementScr
               _fetchTransactions();
             },
             style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFF94C66)),
-            child: const Text("Confirm Cancel"),
+            child: Text(lang.confirmCancel),
           ),
         ],
       ),
@@ -122,6 +125,7 @@ class _SubscriptionManagementScreenState extends State<SubscriptionManagementScr
 
   @override
   Widget build(BuildContext context) {
+    final lang = context.watch<LanguageProvider>();
     final subProvider = context.watch<SubscriptionProvider>();
     final isSubscribed = subProvider.isSubscribed;
     final plans = subProvider.plans;
@@ -152,9 +156,9 @@ class _SubscriptionManagementScreenState extends State<SubscriptionManagementScr
               onPressed: () => Navigator.pop(context),
             ),
             flexibleSpace: FlexibleSpaceBar(
-              title: const Text(
-                "AMANTRAN PREMIUM",
-                style: TextStyle(
+              title: Text(
+                lang.amantranPremium,
+                style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.w900,
                   fontSize: 16,
@@ -203,9 +207,9 @@ class _SubscriptionManagementScreenState extends State<SubscriptionManagementScr
                     const SizedBox(height: 28),
                   ] else ...[
                     // Subscriber Management Controls
-                    const Text(
-                      "MANAGE SUBSCRIPTION",
-                      style: TextStyle(color: Colors.white30, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1),
+                    Text(
+                      lang.manageSubscription,
+                      style: const TextStyle(color: Colors.white30, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1),
                     ),
                     const SizedBox(height: 12),
                     _buildSubscribedControls(plans),
@@ -213,9 +217,9 @@ class _SubscriptionManagementScreenState extends State<SubscriptionManagementScr
                   ],
 
                   // Invoices List
-                  const Text(
-                    "INVOICE & TRANSACTION HISTORY",
-                    style: TextStyle(color: Colors.white30, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1),
+                  Text(
+                    lang.invoiceTransactionHistory,
+                    style: const TextStyle(color: Colors.white30, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1),
                   ),
                   const SizedBox(height: 12),
                   _buildInvoicesList(),
@@ -230,30 +234,33 @@ class _SubscriptionManagementScreenState extends State<SubscriptionManagementScr
   }
 
   Widget _buildStatusHeader(SubscriptionProvider provider) {
+    final lang = context.read<LanguageProvider>();
     final sub = provider.subscription;
     final isSub = provider.isSubscribed;
     
-    String planLabel = "Free Account";
-    String details = "Subscribe to unlock premium templates & downloads";
+    String planLabel = lang.freeAccount;
+    String details = lang.subscribeToUnlock;
     Color statusColor = Colors.white38;
     IconData statusIcon = Icons.info_outline;
 
     if (isSub) {
       statusIcon = Icons.stars;
       if (sub.planType == 'trial') {
-        planLabel = "3-Day Free Trial";
-        details = "Trial active until ${_formatDate(sub.expiryDate)}";
+        planLabel = lang.threeDayFreeTrial;
+        details = "${lang.trialActiveUntil} ${_formatDate(sub.expiryDate)}";
         statusColor = const Color(0xFFFFD700);
       } else {
         final matchingPlan = provider.plans.firstWhere(
           (p) => p.id == sub.planType,
           orElse: () => SubscriptionPlanModel(
             id: sub.planType,
-            name: sub.planType == 'yearly'
-                ? "Yearly Premium Pass"
-                : sub.planType == 'monthly'
-                    ? "Monthly Premium Pass"
-                    : "${sub.planType.toUpperCase()} Pass",
+            name: sub.planType.toLowerCase().contains('lifetime')
+                ? "Lifetime Premium Pass"
+                : sub.planType == 'yearly'
+                    ? lang.yearlyPremiumPass
+                    : sub.planType == 'monthly'
+                        ? lang.monthlyPremiumPass
+                        : "${sub.planType.toUpperCase()} Pass",
             price: 0.0,
             description: '',
             isActive: true,
@@ -264,10 +271,12 @@ class _SubscriptionManagementScreenState extends State<SubscriptionManagementScr
         planLabel = matchingPlan.name;
         statusColor = const Color(0xFFF94C66);
 
-        if (sub.autoRenew && sub.status != 'cancelled') {
-          details = "Renews automatically on ${_formatDate(sub.expiryDate)}";
+        if (sub.planType.toLowerCase().contains('lifetime')) {
+          details = "Lifetime access • Never expires";
+        } else if (sub.autoRenew && sub.status != 'cancelled') {
+          details = "${lang.renewsAutomaticallyOn} ${_formatDate(sub.expiryDate)}";
         } else {
-          details = "Expires on ${_formatDate(sub.expiryDate)} (Auto-renew off)";
+          details = "${lang.expiresOn} ${_formatDate(sub.expiryDate)} ${lang.autoRenewOff}";
         }
       }
     }
@@ -312,6 +321,7 @@ class _SubscriptionManagementScreenState extends State<SubscriptionManagementScr
   }
 
   Widget _buildToggleSelector(List<SubscriptionPlanModel> plans) {
+    final lang = context.read<LanguageProvider>();
     if (plans.isEmpty) return const SizedBox.shrink();
 
     return Container(
@@ -324,9 +334,9 @@ class _SubscriptionManagementScreenState extends State<SubscriptionManagementScr
         children: plans.map((plan) {
           String text = plan.name;
           if (plan.id == 'monthly') {
-            text = "Monthly";
+            text = lang.monthly;
           } else if (plan.id == 'yearly') {
-            text = "Yearly (Save 58%)";
+            text = lang.yearlySave;
           }
           return Expanded(
             child: _billingTab(text, plan.id),
@@ -367,6 +377,7 @@ class _SubscriptionManagementScreenState extends State<SubscriptionManagementScr
   }
 
   Widget _buildPlanShowcase(List<SubscriptionPlanModel> plans) {
+    final lang = context.read<LanguageProvider>();
     if (plans.isEmpty) {
       return Container(
         padding: const EdgeInsets.all(24),
@@ -374,10 +385,10 @@ class _SubscriptionManagementScreenState extends State<SubscriptionManagementScr
           color: const Color(0xFF16161A),
           borderRadius: BorderRadius.circular(28),
         ),
-        child: const Center(
+        child: Center(
           child: Text(
-            "No plans available at the moment.",
-            style: TextStyle(color: Colors.white70, fontSize: 14),
+            lang.noPlansAvailable,
+            style: const TextStyle(color: Colors.white70, fontSize: 14),
           ),
         ),
       );
@@ -392,10 +403,10 @@ class _SubscriptionManagementScreenState extends State<SubscriptionManagementScr
     final planName = selectedPlan.name;
     final price = selectedPlan.price;
     final durationDesc = selectedPlan.durationType == 'yearly'
-        ? '/year'
+        ? lang.perYear
         : selectedPlan.durationType == 'monthly'
-            ? '/month'
-            : '/${selectedPlan.durationDays} days';
+            ? lang.perMonth
+            : '/${selectedPlan.durationDays}${lang.perDays}';
 
     final isPopular = planId == 'yearly';
 
@@ -428,9 +439,9 @@ class _SubscriptionManagementScreenState extends State<SubscriptionManagementScr
                   borderRadius: BorderRadius.circular(8),
                   border: Border.all(color: const Color(0xFFFFD700).withOpacity(0.4), width: 0.5),
                 ),
-                child: const Text(
-                  "MOST POPULAR - SAVE 58%",
-                  style: TextStyle(color: Color(0xFFFFD700), fontSize: 9, fontWeight: FontWeight.bold, letterSpacing: 1),
+                child: Text(
+                  lang.mostPopularSave,
+                  style: const TextStyle(color: Color(0xFFFFD700), fontSize: 9, fontWeight: FontWeight.bold, letterSpacing: 1),
                 ),
               ),
             ),

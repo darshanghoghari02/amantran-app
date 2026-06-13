@@ -199,32 +199,76 @@ class _SubscriptionBottomSheetState extends State<SubscriptionBottomSheet> {
                 final navigator = Navigator.of(context);
                 final provider = context.read<SubscriptionProvider>();
 
+                // Handle individual template purchase separately
+                if (_selectedPlan == 'lifetime') {
+                  if (widget.template == null) return;
+                  
+                  final price = widget.template!.singlePurchasePrice ?? 49.0;
+                  
+                  // Dismiss bottom sheet
+                  navigator.pop();
+                  
+                  // Show loading dialog
+                  showDialog(
+                    context: context,
+                    barrierDismissible: false,
+                    builder: (_) => const Center(
+                      child: CircularProgressIndicator(color: Color(0xFFF94C66)),
+                    ),
+                  );
+                  
+                  // Purchase the template directly
+                  final success = await provider.purchaseTemplate(
+                    widget.template!.id,
+                    price: price,
+                  );
+                  
+                  // Close loading dialog
+                  if (context.mounted) {
+                    Navigator.of(context).pop();
+                  }
+                  
+                  // Show result
+                  if (context.mounted) {
+                    if (success) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Template purchased successfully!'),
+                          backgroundColor: Colors.green,
+                        ),
+                      );
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Purchase failed. Please try again.'),
+                          backgroundColor: Colors.red,
+                        ),
+                      );
+                    }
+                  }
+                  return;
+                }
+
+                // Handle subscription plan purchase
                 String planName = "Premium Plan";
                 double price = 99.0;
                 bool isTrial = false;
 
-                if (_selectedPlan == 'lifetime') {
-                  if (widget.template == null) return;
-                  planName = widget.template!.title;
-                  price = widget.template!.singlePurchasePrice ?? 49.0;
-                  isTrial = false;
-                } else {
-                  final chosenPlan = provider.plans.firstWhere(
-                    (p) => p.id == _selectedPlan,
-                    orElse: () => SubscriptionPlanModel(
-                      id: _selectedPlan!,
-                      name: _selectedPlan == 'yearly' ? 'Yearly Premium' : 'Monthly Premium',
-                      price: _selectedPlan == 'yearly' ? 499.0 : 99.0,
-                      description: '',
-                      isActive: true,
-                      includedCategories: [],
-                      includedTemplateIds: [],
-                    ),
-                  );
-                  planName = chosenPlan.name;
-                  price = chosenPlan.price;
-                  isTrial = await provider.checkTrialEligibility();
-                }
+                final chosenPlan = provider.plans.firstWhere(
+                  (p) => p.id == _selectedPlan,
+                  orElse: () => SubscriptionPlanModel(
+                    id: _selectedPlan!,
+                    name: _selectedPlan == 'yearly' ? 'Yearly Premium' : 'Monthly Premium',
+                    price: _selectedPlan == 'yearly' ? 499.0 : 99.0,
+                    description: '',
+                    isActive: true,
+                    includedCategories: [],
+                    includedTemplateIds: [],
+                  ),
+                );
+                planName = chosenPlan.name;
+                price = chosenPlan.price;
+                isTrial = await provider.checkTrialEligibility();
 
                 // Dismiss bottom sheet
                 navigator.pop();

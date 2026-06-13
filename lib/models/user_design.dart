@@ -7,6 +7,7 @@ class UserDesign {
   final List<TemplateElement> elements;
   final DateTime updatedAt;
   final bool isDraft;
+  final String? pdfName;
   
   UserDesign({
     required this.id,
@@ -14,9 +15,10 @@ class UserDesign {
     required this.elements,
     required this.updatedAt,
     this.isDraft = true,
+    this.pdfName,
   });
 
-  UserDesign copyWith({bool? isDraft, DateTime? updatedAt}) {
+  UserDesign copyWith({bool? isDraft, DateTime? updatedAt, String? pdfName}) {
     return UserDesign(
       id: id,
       template: template,
@@ -24,6 +26,7 @@ class UserDesign {
       elements: elements.map((e) => e.copyWith()).toList(),
       updatedAt: updatedAt ?? this.updatedAt,
       isDraft: isDraft ?? this.isDraft,
+      pdfName: pdfName ?? this.pdfName,
     );
   }
 }

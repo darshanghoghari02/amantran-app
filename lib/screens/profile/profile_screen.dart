@@ -3,12 +3,13 @@ import 'dart:io';
 import 'dart:math';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import '../../repositories/user_repository.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'app_language_screen.dart';
 import 'invitation_language_screen.dart';
 import '../../providers/language_provider.dart';
 import '../../providers/user_provider.dart';
+import '../../utils/image_resolver.dart';
 import '../../providers/subscription_provider.dart';
 import '../../widgets/rating_dialog.dart';
 import '../../widgets/top_notification.dart';
@@ -19,6 +20,7 @@ import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import '../../models/subscription_plan.dart';
 import '../subscription/subscription_management_screen.dart';
+import 'edit_profile_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -28,6 +30,16 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> {
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        context.read<SubscriptionProvider>().fetchSubscriptionStatus();
+      }
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final lang = context.watch<LanguageProvider>();
@@ -62,38 +74,83 @@ class _ProfileScreenState extends State<ProfileScreen> {
               const SizedBox(height: 24),
 
               // ── Avatar with dashed circle border ──
-              SizedBox(
-                width: 110,
-                height: 110,
-                child: CustomPaint(
-                  painter: _DashedCirclePainter(
-                    color: const Color(0xFFF94C66).withOpacity(0.5),
-                    strokeWidth: 1.5,
-                    dashCount: 40,
-                  ),
-                  child: Center(
-                    child: Container(
-                      width: 90,
-                      height: 90,
-                      decoration: const BoxDecoration(
-                        shape: BoxShape.circle,
-                      ),
-                      child: ClipOval(
-                        child: context.watch<UserProvider>().profileImagePath !=
-                                null
-                            ? (context.watch<UserProvider>().profileImagePath!.startsWith('http')
-                                ? Image.network(
-                                    context.watch<UserProvider>().profileImagePath!,
-                                    fit: BoxFit.cover)
-                                : Image.file(
-                                    File(context
-                                        .watch<UserProvider>()
-                                        .profileImagePath!),
-                                    fit: BoxFit.cover))
-                            : Image.asset(
-                                'assets/images/banner_image.png',
-                                fit: BoxFit.cover,
+              GestureDetector(
+                onTap: () {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const EditProfileScreen(),
+                    ),
+                  );
+                },
+                child: SizedBox(
+                  width: 110,
+                  height: 110,
+                  child: CustomPaint(
+                    painter: _DashedCirclePainter(
+                      color: const Color(0xFFF94C66).withOpacity(0.5),
+                      strokeWidth: 1.5,
+                      dashCount: 40,
+                    ),
+                    child: Center(
+                      child: Stack(
+                        children: [
+                          Container(
+                            width: 90,
+                            height: 90,
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                            ),
+                            child: ClipOval(
+                              child: context.watch<UserProvider>().profileImagePath != null &&
+                                      context.watch<UserProvider>().profileImagePath!.isNotEmpty
+                                  ? (context.watch<UserProvider>().profileImagePath!.startsWith('http')
+                                      ? Image.network(
+                                          resolveImageUrl(context.watch<UserProvider>().profileImagePath!),
+                                          fit: BoxFit.cover,
+                                          key: ValueKey(context.watch<UserProvider>().profileImagePath!),
+                                          errorBuilder: (context, error, stackTrace) {
+                                            print('Error loading profile image in profile screen: $error');
+                                            return Image.asset(
+                                              'assets/images/banner_image.png',
+                                              fit: BoxFit.cover,
+                                            );
+                                          },
+                                          loadingBuilder: (context, child, loadingProgress) {
+                                            if (loadingProgress == null) return child;
+                                            return const Center(
+                                              child: CircularProgressIndicator(
+                                                strokeWidth: 2,
+                                                color: Color(0xFFF94C66),
+                                              ),
+                                            );
+                                          },
+                                        )
+                                      : Image.file(
+                                          File(context
+                                              .watch<UserProvider>()
+                                              .profileImagePath!),
+                                          fit: BoxFit.cover,
+                                          key: ValueKey(context.watch<UserProvider>().profileImagePath!)))
+                                  : Image.asset(
+                                      'assets/images/banner_image.png',
+                                      fit: BoxFit.cover,
+                                    ),
+                            ),
+                          ),
+                          Positioned(
+                            bottom: 0,
+                            right: 0,
+                            child: Container(
+                              padding: const EdgeInsets.all(6),
+                              decoration: const BoxDecoration(
+                                color: Color(0xFFF94C66),
+                                shape: BoxShape.circle,
                               ),
+                              child: const Icon(Icons.edit, color: Colors.white, size: 16),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
@@ -140,7 +197,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     if (userProvider.isAdmin) ...[
                       _buildMenuItem(
                         icon: Icons.admin_panel_settings_outlined,
-                        title: "User Management",
+                        title: lang.userManagement,
                         onTap: () {
                           Navigator.push(
                             context,
@@ -222,15 +279,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                         );
 
+                        final _userRepository = UserRepository();
                         bool alreadyHasRating = false;
                         try {
-                          final doc = await FirebaseFirestore.instance
-                              .collection('app_users')
-                              .doc(uid)
-                              .collection('ratings')
-                              .doc('user_rating')
-                              .get();
-                          if (doc.exists && doc.data() != null) {
+                          final ratingDoc = await _userRepository.fetchRating(uid);
+                          if (ratingDoc != null) {
                             alreadyHasRating = true;
                           }
                         } catch (e) {
@@ -259,25 +312,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           builder: (ctx) => const RatingDialog(),
                         );
                         if (rating != null && context.mounted) {
-                          // Save rating inside the user's document subcollection
+                          // Save rating inside backend via UserRepository
                           try {
                             final userProvider = context.read<UserProvider>();
                             
-                            await FirebaseFirestore.instance
-                                .collection('app_users')
-                                .doc(uid)
-                                .collection('ratings')
-                                .doc('user_rating')
-                                .set({
-                              'rating': rating,
-                              'userId': uid,
-                              'userName': userProvider.name,
-                              'userEmail': userProvider.email,
-                              'userPhone': userProvider.phone,
-                              'createdAt': FieldValue.serverTimestamp(),
-                            });
+                            await _userRepository.saveRating(
+                              userId: uid,
+                              rating: rating,
+                              userName: userProvider.name,
+                              userEmail: userProvider.email,
+                              userPhone: userProvider.phone,
+                            );
                           } catch (e) {
-                            debugPrint("Error saving rating to Firestore: $e");
+                            debugPrint("Error saving rating to backend: $e");
                           }
 
                           if (context.mounted) {
@@ -461,6 +508,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   Widget _buildSubscriptionCard(BuildContext context) {
     final subProvider = context.watch<SubscriptionProvider>();
+    final lang = context.watch<LanguageProvider>();
     final isSubscribed = subProvider.isSubscribed;
     final sub = subProvider.subscription;
 
@@ -524,24 +572,26 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         Text(
                           sub.planType == 'trial'
                               ? "Premium Free Trial"
-                              : subProvider.plans
-                                  .firstWhere(
-                                    (p) => p.id == sub.planType,
-                                    orElse: () => SubscriptionPlanModel(
-                                      id: sub.planType,
-                                      name: sub.planType == 'yearly'
-                                          ? "Premium Yearly Plan"
-                                          : sub.planType == 'monthly'
-                                              ? "Premium Monthly Plan"
-                                              : "${sub.planType.toUpperCase()} Plan",
-                                      price: 0.0,
-                                      description: '',
-                                      isActive: true,
-                                      includedCategories: [],
-                                      includedTemplateIds: [],
-                                    ),
-                                  )
-                                  .name,
+                              : sub.planType.toLowerCase().contains('lifetime')
+                                  ? "Lifetime Premium Pass"
+                                  : subProvider.plans
+                                      .firstWhere(
+                                        (p) => p.id == sub.planType,
+                                        orElse: () => SubscriptionPlanModel(
+                                          id: sub.planType,
+                                          name: sub.planType == 'yearly'
+                                              ? "Premium Yearly Plan"
+                                              : sub.planType == 'monthly'
+                                                  ? "Premium Monthly Plan"
+                                                  : "${sub.planType.toUpperCase()} Plan",
+                                          price: 0.0,
+                                          description: '',
+                                          isActive: true,
+                                          includedCategories: [],
+                                          includedTemplateIds: [],
+                                        ),
+                                      )
+                                      .name,
                           style: const TextStyle(
                             color: Colors.white,
                             fontSize: 16,
@@ -582,14 +632,18 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    "Valid Until",
+                    sub.planType.toLowerCase().contains('lifetime')
+                        ? "Validity"
+                        : lang.validUntil,
                     style: TextStyle(
                       color: Colors.white.withOpacity(0.5),
                       fontSize: 12,
                     ),
                   ),
                   Text(
-                    formatDate(sub.expiryDate),
+                    sub.planType.toLowerCase().contains('lifetime')
+                        ? "Lifetime / Never Expires"
+                        : formatDate(sub.expiryDate),
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 13,
@@ -689,9 +743,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                   ),
-                  child: const Text(
-                    "Subscribe Now",
-                    style: TextStyle(
+                  child: Text(
+                    lang.subscribeNow,
+                    style: const TextStyle(
                       fontSize: 13,
                       fontWeight: FontWeight.bold,
                     ),

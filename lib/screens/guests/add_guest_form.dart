@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../models/guest_model.dart';
 import '../../providers/guest_provider.dart';
+import '../../providers/language_provider.dart';
 import '../../widgets/top_notification.dart';
 import '../../services/interaction_service.dart';
 
@@ -57,6 +58,7 @@ class _AddGuestFormState extends State<AddGuestForm> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = context.watch<LanguageProvider>();
     return Scaffold(
       backgroundColor: const Color(0xFFFCF9F9),
       body: SafeArea(
@@ -79,7 +81,7 @@ class _AddGuestFormState extends State<AddGuestForm> {
                     ),
                   ),
                   const SizedBox(width: 16),
-                  const Text("Add Guest", style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87)),
+                  Text(lang.addGuest, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87)),
                   const Spacer(),
                   ElevatedButton(
                     onPressed: _save,
@@ -88,7 +90,7 @@ class _AddGuestFormState extends State<AddGuestForm> {
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
                       padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10), elevation: 0,
                     ),
-                    child: const Text("Save", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                    child: Text(lang.save, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
                   ),
                 ],
               ),
@@ -100,14 +102,14 @@ class _AddGuestFormState extends State<AddGuestForm> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const Text("Guest Name", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: Colors.black87)),
+                    Text(lang.guestName, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: Colors.black87)),
                     const SizedBox(height: 8),
                     TextField(
                       controller: _nameCtrl,
                       decoration: _inputDecoration("Enter name"),
                     ),
                     const SizedBox(height: 20),
-                    const Text("Phone Number", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: Colors.black87)),
+                    Text(lang.phoneNumber, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: Colors.black87)),
                     const SizedBox(height: 8),
                     TextField(
                       controller: _phoneCtrl,
@@ -116,7 +118,7 @@ class _AddGuestFormState extends State<AddGuestForm> {
                       decoration: _inputDecoration("Enter name phone number"),
                     ),
                     const SizedBox(height: 20),
-                    const Text("Note(Optional)", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: Colors.black87)),
+                    Text(lang.noteOptional, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: Colors.black87)),
                     const SizedBox(height: 8),
                     TextField(
                       controller: _noteCtrl,
@@ -124,7 +126,7 @@ class _AddGuestFormState extends State<AddGuestForm> {
                       decoration: _inputDecoration("Add any note"),
                     ),
                     const SizedBox(height: 20),
-                    const Text("RSVP status", style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: Colors.black87)),
+                    Text(lang.rsvpStatus, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: Colors.black87)),
                     const SizedBox(height: 8),
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 14),

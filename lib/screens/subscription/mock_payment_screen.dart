@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/subscription_provider.dart';
+import '../../providers/language_provider.dart';
 
 class MockPaymentScreen extends StatefulWidget {
   final String planId;
@@ -82,6 +83,7 @@ class _MockPaymentScreenState extends State<MockPaymentScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = context.watch<LanguageProvider>();
     final double displayAmount = widget.isTrial ? 0.0 : widget.price;
 
     return Scaffold(
@@ -93,9 +95,9 @@ class _MockPaymentScreenState extends State<MockPaymentScreen> {
           icon: const Icon(Icons.close, color: Colors.white70),
           onPressed: () => Navigator.pop(context, false),
         ),
-        title: const Text(
-          "Payment Sandbox Gateway",
-          style: TextStyle(
+        title: Text(
+          lang.paymentSandboxGateway,
+          style: const TextStyle(
             color: Colors.white,
             fontSize: 16,
             fontWeight: FontWeight.bold,
@@ -136,7 +138,7 @@ class _MockPaymentScreenState extends State<MockPaymentScreen> {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                widget.isTrial ? "3-Day Free Trial" : "Premium Subscription",
+                                widget.isTrial ? lang.threeDayFreeTrial : lang.premiumSubscription,
                                 style: TextStyle(
                                   color: Colors.white.withOpacity(0.5),
                                   fontSize: 12,
@@ -161,12 +163,12 @@ class _MockPaymentScreenState extends State<MockPaymentScreen> {
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
                           Text(
-                            "Gateway Mode",
+                            lang.gatewayMode,
                             style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 11),
                           ),
-                          const Text(
-                            "SANDBOX TEST",
-                            style: TextStyle(
+                          Text(
+                            lang.sandboxTest,
+                            style: const TextStyle(
                               color: Color(0xFFFFD700),
                               fontWeight: FontWeight.bold,
                               fontSize: 11,
@@ -181,9 +183,9 @@ class _MockPaymentScreenState extends State<MockPaymentScreen> {
                 const SizedBox(height: 24),
 
                 // Method Selectors
-                const Text(
-                  "SELECT PAYMENT METHOD",
-                  style: TextStyle(
+                Text(
+                  lang.selectPaymentMethod,
+                  style: const TextStyle(
                     color: Colors.white38,
                     fontSize: 11,
                     fontWeight: FontWeight.w900,
@@ -194,11 +196,11 @@ class _MockPaymentScreenState extends State<MockPaymentScreen> {
                 Row(
                   children: [
                     Expanded(
-                      child: _methodButton("Credit Card", 'card', Icons.credit_card),
+                      child: _methodButton(lang.creditCard, 'card', Icons.credit_card),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: _methodButton("UPI / App", 'upi', Icons.account_balance_wallet),
+                      child: _methodButton(lang.upiApp, 'upi', Icons.account_balance_wallet),
                     ),
                   ],
                 ),
@@ -226,7 +228,7 @@ class _MockPaymentScreenState extends State<MockPaymentScreen> {
                         ),
                       ),
                       child: Text(
-                        widget.isTrial ? "Simulate Payment (Trial: ₹0)" : "Simulate Success (Pay ₹${displayAmount.toInt()})",
+                        widget.isTrial ? lang.simulatePaymentTrial : "${lang.simulateSuccess}${displayAmount.toInt()})",
                         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
                       ),
                     ),
@@ -241,9 +243,9 @@ class _MockPaymentScreenState extends State<MockPaymentScreen> {
                           borderRadius: BorderRadius.circular(16),
                         ),
                       ),
-                      child: const Text(
-                        "Simulate Payment Failure",
-                        style: TextStyle(fontWeight: FontWeight.bold),
+                      child: Text(
+                        lang.simulatePaymentFailure,
+                        style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
                     ),
                   ],
@@ -301,19 +303,20 @@ class _MockPaymentScreenState extends State<MockPaymentScreen> {
   }
 
   Widget _buildCardForm() {
+    final lang = context.read<LanguageProvider>();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildTextField("Card Number", _cardNumberController, Icons.credit_card_outlined),
+        _buildTextField(lang.cardNumber, _cardNumberController, Icons.credit_card_outlined),
         const SizedBox(height: 16),
         Row(
           children: [
             Expanded(
-              child: _buildTextField("Expiration Date", _expiryController, Icons.calendar_today_outlined),
+              child: _buildTextField(lang.expirationDate, _expiryController, Icons.calendar_today_outlined),
             ),
             const SizedBox(width: 16),
             Expanded(
-              child: _buildTextField("CVV Code", _cvvController, Icons.lock_outline),
+              child: _buildTextField(lang.cvvCode, _cvvController, Icons.lock_outline),
             ),
           ],
         ),
@@ -322,10 +325,11 @@ class _MockPaymentScreenState extends State<MockPaymentScreen> {
   }
 
   Widget _buildUpiForm() {
+    final lang = context.read<LanguageProvider>();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        _buildTextField("Virtual Payment Address (VPA / UPI ID)", _upiController, Icons.alternate_email_outlined),
+        _buildTextField(lang.virtualPaymentAddress, _upiController, Icons.alternate_email_outlined),
       ],
     );
   }
@@ -361,6 +365,7 @@ class _MockPaymentScreenState extends State<MockPaymentScreen> {
   }
 
   Widget _buildProcessingState() {
+    final lang = context.read<LanguageProvider>();
     if (_processingStep == 'processing') {
       return Column(
         mainAxisSize: MainAxisSize.min,
@@ -369,13 +374,13 @@ class _MockPaymentScreenState extends State<MockPaymentScreen> {
             color: Color(0xFFF94C66),
           ),
           const SizedBox(height: 24),
-          const Text(
-            "Contacting payment sandbox...",
-            style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+          Text(
+            lang.contactingPaymentSandbox,
+            style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
           Text(
-            "Verifying funds with mock Stripe API",
+            lang.verifyingFunds,
             style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 12),
           ),
         ],
@@ -393,13 +398,13 @@ class _MockPaymentScreenState extends State<MockPaymentScreen> {
             child: const Icon(Icons.check, color: Colors.white, size: 48),
           ),
           const SizedBox(height: 24),
-          const Text(
-            "Payment Successful!",
-            style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+          Text(
+            lang.paymentSuccessful,
+            style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
           Text(
-            "Your invoice transaction has been completed.",
+            lang.invoiceTransactionCompleted,
             style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 13),
           ),
         ],
@@ -417,9 +422,9 @@ class _MockPaymentScreenState extends State<MockPaymentScreen> {
             child: const Icon(Icons.close, color: Colors.white, size: 48),
           ),
           const SizedBox(height: 24),
-          const Text(
-            "Payment Failed",
-            style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
+          Text(
+            lang.paymentFailed,
+            style: const TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
           Text(
@@ -438,7 +443,7 @@ class _MockPaymentScreenState extends State<MockPaymentScreen> {
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
-            child: const Text("Try Again", style: TextStyle(color: Colors.white)),
+            child: Text(lang.tryAgain, style: const TextStyle(color: Colors.white)),
           ),
         ],
       );

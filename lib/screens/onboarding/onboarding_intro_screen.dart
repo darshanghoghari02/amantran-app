@@ -142,8 +142,8 @@ class OnboardingIntroScreen extends StatelessWidget {
                               children: [
                                 _buildFeature(
                                   Icons.grid_view_rounded,
-                                  "100+ Template",
-                                  "for every occasion",
+                                  lang.hundredPlusTemplates,
+                                  lang.forEveryOccasion,
                                   const Color(0xFFFFF0F1),
                                   const Color(0xFFF94C66),
                                   isSmallScreen,
@@ -151,8 +151,8 @@ class OnboardingIntroScreen extends StatelessWidget {
                                 _buildDivider(),
                                 _buildFeature(
                                   Icons.auto_fix_high_rounded,
-                                  "Easy customize",
-                                  "edit in just few taps",
+                                  lang.easyCustomize,
+                                  lang.editInFewTaps,
                                   const Color(0xFFF5F0FF),
                                   const Color(0xFF9B51E0),
                                   isSmallScreen,
@@ -160,8 +160,8 @@ class OnboardingIntroScreen extends StatelessWidget {
                                 _buildDivider(),
                                 _buildFeature(
                                   Icons.near_me_rounded,
-                                  "Share instantly",
-                                  "with your loved ones",
+                                  lang.shareInstantly,
+                                  lang.withLovedOnes,
                                   const Color(0xFFF0FFF4),
                                   const Color(0xFF27AE60),
                                   isSmallScreen,

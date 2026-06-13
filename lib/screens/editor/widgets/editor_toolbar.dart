@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:provider/provider.dart';
 import '../../../models/template_element.dart';
+import '../../../providers/language_provider.dart';
 
 /// Bottom toolbar for the editor canvas.
 ///
@@ -104,6 +106,7 @@ class _EditorToolbarState extends State<EditorToolbar>
   @override
   Widget build(BuildContext context) {
     final element = widget.selectedElement;
+    final lang = context.watch<LanguageProvider>();
 
     if (element == null) {
       return Container(
@@ -225,6 +228,7 @@ class _EditorToolbarState extends State<EditorToolbar>
   // 🔤 FONT TAB
   // ─────────────────────────────────────────────────
   Widget _buildFontTab(TemplateElement element) {
+    final lang = context.read<LanguageProvider>();
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
       child: Column(
@@ -310,12 +314,12 @@ class _EditorToolbarState extends State<EditorToolbar>
               IconButton(
                 icon: Icon(Icons.copy, color: Colors.blue.shade400),
                 onPressed: widget.onDuplicate,
-                tooltip: "Duplicate element",
+                tooltip: lang.duplicateElement,
               ),
               IconButton(
                 icon: Icon(Icons.delete_outline, color: Colors.red.shade400),
                 onPressed: widget.onDelete,
-                tooltip: "Delete element",
+                tooltip: lang.deleteElement,
               ),
             ],
           ),

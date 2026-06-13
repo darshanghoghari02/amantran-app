@@ -55,6 +55,11 @@ class _InvitationLanguageScreenState extends State<InvitationLanguageScreen> {
   @override
   void initState() {
     super.initState();
+    Future.microtask(() {
+      if (mounted) {
+        context.read<AppDataProvider>().refreshDataSilently();
+      }
+    });
     if (widget.isSingleSelect) {
       final activeLang = Provider.of<LanguageProvider>(context, listen: false).activeInvitationLanguage;
       if (activeLang.isNotEmpty) {

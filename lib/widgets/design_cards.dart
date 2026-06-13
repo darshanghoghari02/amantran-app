@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../models/user_design.dart';
 import '../utils/image_resolver.dart';
+import 'translated_text.dart';
 
 class DraftCard extends StatefulWidget {
   final UserDesign design;
@@ -67,7 +68,7 @@ class _DraftCardState extends State<DraftCard> {
               height: 36,
               alignment: Alignment.center,
               padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Text(
+              child: TranslatedText(
                 widget.design.template.title,
                 style: const TextStyle(
                   fontSize: 12,
@@ -211,7 +212,7 @@ class _CompletedDesignCardState extends State<CompletedDesignCard> {
           ),
         ),
         const SizedBox(height: 8),
-        Text(
+        TranslatedText(
           widget.design.template.title,
           style: const TextStyle(
             fontSize: 12,

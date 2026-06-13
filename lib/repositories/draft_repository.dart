@@ -1,88 +1,128 @@
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:async';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+import '../config/api_config.dart';
 import '../services/firestore_service.dart';
 
 class DraftRepository {
   final FirestoreService _firestoreService = FirestoreService();
 
-  static const String _draftsSubcollection = 'drafts';
-  static const String _cardsSubcollection = 'cards';
-
-  /// Stream of user drafts from `users/{uid}/drafts`
+  /// Stream of user drafts from backend `/api/app/drafts/:userId`
   Stream<List<Map<String, dynamic>>> watchDrafts() {
-    try {
-      return _firestoreService
-          .getUserSubcollection(_draftsSubcollection)
-          .orderBy('updatedAt', descending: true)
-          .snapshots()
-          .map((snapshot) {
-        return snapshot.docs.map((doc) => doc.data()).toList();
-      });
-    } catch (e) {
-      print("Error watching drafts: $e");
-      return Stream.value([]);
-    }
+    final uid = _firestoreService.resolvedUid;
+    if (uid == null) return Stream.value([]);
+
+    return Stream.fromFuture(fetchDrafts(uid));
   }
 
-  /// Stream of completed user cards from `users/{uid}/cards`
+  Future<List<Map<String, dynamic>>> fetchDrafts(String userId) async {
+    try {
+      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/drafts/$userId'));
+      if (response.statusCode == 200) {
+        final List<dynamic> list = jsonDecode(response.body);
+        return list.map((e) => Map<String, dynamic>.from(e)).toList();
+      }
+    } catch (e) {
+      print("Error fetching drafts: $e");
+    }
+    return [];
+  }
+
+  /// Stream of completed user cards from backend `/api/app/cards/:userId`
   Stream<List<Map<String, dynamic>>> watchCards() {
-    try {
-      return _firestoreService
-          .getUserSubcollection(_cardsSubcollection)
-          .orderBy('updatedAt', descending: true)
-          .snapshots()
-          .map((snapshot) {
-        return snapshot.docs.map((doc) => doc.data()).toList();
-      });
-    } catch (e) {
-      print("Error watching cards: $e");
-      return Stream.value([]);
-    }
+    final uid = _firestoreService.resolvedUid;
+    if (uid == null) return Stream.value([]);
+
+    return Stream.fromFuture(fetchCards(uid));
   }
 
-  /// Saves a draft to `users/{uid}/drafts/{id}`
+  Future<List<Map<String, dynamic>>> fetchCards(String userId) async {
+    try {
+      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/cards/$userId'));
+      if (response.statusCode == 200) {
+        final List<dynamic> list = jsonDecode(response.body);
+        return list.map((e) => Map<String, dynamic>.from(e)).toList();
+      }
+    } catch (e) {
+      print("Error fetching cards: $e");
+    }
+    return [];
+  }
+
+  /// Saves a draft to backend
   Future<void> saveDraft(String id, Map<String, dynamic> designJson) async {
+    final uid = _firestoreService.resolvedUid;
+    if (uid == null) throw Exception("User not authenticated.");
+
     try {
-      final docRef = _firestoreService.getUserDoc(_draftsSubcollection, id);
-      await docRef.set({
-        ...designJson,
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/api/app/drafts'),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'id': id,
+          'userId': uid,
+          ...designJson,
+        }),
+      );
+
+      if (response.statusCode != 200 && response.statusCode != 201) {
+        throw Exception("Failed to save draft to backend: Status ${response.statusCode}");
+      }
     } catch (e) {
-      throw Exception("Failed to save draft to Firestore: $e");
+      throw Exception("Failed to save draft to backend: $e");
     }
   }
 
-  /// Saves a completed card to `users/{uid}/cards/{id}` and deletes it from drafts if it exists
+  /// Saves a completed card to backend and deletes it from drafts if it exists
   Future<void> saveCompleted(String id, Map<String, dynamic> designJson) async {
+    final uid = _firestoreService.resolvedUid;
+    if (uid == null) throw Exception("User not authenticated.");
+
     try {
-      final cardRef = _firestoreService.getUserDoc(_cardsSubcollection, id);
-      await cardRef.set({
-        ...designJson,
-        'updatedAt': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/api/app/cards'),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'id': id,
+          'userId': uid,
+          ...designJson,
+        }),
+      );
+
+      if (response.statusCode != 200 && response.statusCode != 201) {
+        throw Exception("Failed to save completed card to backend: Status ${response.statusCode}");
+      }
 
       // Remove from drafts if present
       await deleteDraft(id);
     } catch (e) {
-      throw Exception("Failed to save completed card to Firestore: $e");
+      throw Exception("Failed to save completed card to backend: $e");
     }
   }
 
-  /// Deletes a draft from `users/{uid}/drafts/{id}`
+  /// Deletes a draft from backend
   Future<void> deleteDraft(String id) async {
     try {
-      final docRef = _firestoreService.getUserDoc(_draftsSubcollection, id);
-      await docRef.delete();
+      final response = await http.delete(Uri.parse('${ApiConfig.baseUrl}/api/app/drafts/$id'));
+      if (response.statusCode != 200) {
+        print("Failed to delete draft from backend: Status ${response.statusCode}");
+      }
     } catch (e) {
       print("Failed to delete draft: $e");
     }
   }
 
-  /// Deletes a completed card from `users/{uid}/cards/{id}`
+  /// Deletes a completed card from backend
   Future<void> deleteCard(String id) async {
     try {
-      final docRef = _firestoreService.getUserDoc(_cardsSubcollection, id);
-      await docRef.delete();
+      final response = await http.delete(Uri.parse('${ApiConfig.baseUrl}/api/app/cards/$id'));
+      if (response.statusCode != 200) {
+        print("Failed to delete completed card from backend: Status ${response.statusCode}");
+      }
     } catch (e) {
       print("Failed to delete completed card: $e");
     }

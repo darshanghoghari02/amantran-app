@@ -1,4 +1,4 @@
-import 'dart:io';
+import '../config/api_config.dart';
 
 String resolveImageUrl(String path) {
   if (path.isEmpty) return '';
@@ -29,7 +29,7 @@ String resolveImageUrl(String path) {
       resolvedPath.contains('192.168.')) {
     final uri = Uri.tryParse(resolvedPath);
     if (uri != null) {
-      resolvedPath = 'https://amantran-admin-backend.onrender.com${uri.path}${uri.hasQuery ? '?${uri.query}' : ''}';
+      resolvedPath = '${ApiConfig.baseUrl}${uri.path}${uri.hasQuery ? '?${uri.query}' : ''}';
     }
   }
 
@@ -38,7 +38,7 @@ String resolveImageUrl(String path) {
   }
   if (resolvedPath.startsWith('/assets/') || resolvedPath.startsWith('assets/')) {
     final cleanPath = resolvedPath.startsWith('/') ? resolvedPath : '/$resolvedPath';
-    return 'https://amantran-admin-backend.onrender.com$cleanPath';
+    return '${ApiConfig.baseUrl}$cleanPath';
   }
   return resolvedPath;
 }

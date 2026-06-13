@@ -261,11 +261,11 @@ class _FormScreenState extends State<FormScreen> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        const TabBar(
+                        TabBar(
                           labelColor: Colors.redAccent,
                           unselectedLabelColor: Colors.grey,
                           indicatorColor: Colors.redAccent,
-                          tabs: [Tab(text: "Preset"), Tab(text: "Upload SVG")],
+                          tabs: [Tab(text: lang.preset), Tab(text: lang.uploadSvg)],
                         ),
                         SizedBox(
                           height: 120,
@@ -485,7 +485,7 @@ class _FormScreenState extends State<FormScreen> {
                     initialText: provider.snehdhinEn,
                     isTransliterationOn: lang.activeInvitationLanguage != 'English',
                     language: lang.activeInvitationLanguage,
-                    label: "Snehdhin List",
+                    label: lang.snehdhinList,
                     maxLines: 5,
                     onChanged: (en, gu) { provider.updateField(() { provider.snehdhinEn = en; provider.snehdhinGu = gu; }, fieldName: 'snehdhin'); },
                   ),
@@ -494,7 +494,7 @@ class _FormScreenState extends State<FormScreen> {
                     initialText: provider.darshanabhilashiEn,
                     isTransliterationOn: lang.activeInvitationLanguage != 'English',
                     language: lang.activeInvitationLanguage,
-                    label: "Darshanabhilashi List",
+                    label: lang.darshanabhilashiList,
                     maxLines: 5,
                     onChanged: (en, gu) { provider.updateField(() { provider.darshanabhilashiEn = en; provider.darshanabhilashiGu = gu; }, fieldName: 'darshanabhilashi'); },
                   ),
@@ -503,7 +503,7 @@ class _FormScreenState extends State<FormScreen> {
                     initialText: provider.mameruMosalEn,
                     isTransliterationOn: lang.activeInvitationLanguage != 'English',
                     language: lang.activeInvitationLanguage,
-                    label: "Mameru / Mosal List",
+                    label: lang.mameruMosalList,
                     maxLines: 3,
                     onChanged: (en, gu) { provider.updateField(() { provider.mameruMosalEn = en; provider.mameruMosalGu = gu; }, fieldName: 'mameruMosal'); },
                   ),
@@ -512,7 +512,7 @@ class _FormScreenState extends State<FormScreen> {
                     initialText: provider.masiFoiLadlaEn,
                     isTransliterationOn: lang.activeInvitationLanguage != 'English',
                     language: lang.activeInvitationLanguage,
-                    label: "Masi / Foi na Ladla",
+                    label: lang.masiFoiLadla,
                     maxLines: 3,
                     onChanged: (en, gu) { provider.updateField(() { provider.masiFoiLadlaEn = en; provider.masiFoiLadlaGu = gu; }, fieldName: 'masiFoiLadla'); },
                   ),
@@ -521,7 +521,7 @@ class _FormScreenState extends State<FormScreen> {
                     initialText: provider.tahukoEn,
                     isTransliterationOn: lang.activeInvitationLanguage != 'English',
                     language: lang.activeInvitationLanguage,
-                    label: "Tahuko (Poem)",
+                    label: lang.tahukoPoem,
                     maxLines: 4,
                     onChanged: (en, gu) { provider.updateField(() { provider.tahukoEn = en; provider.tahukoGu = gu; }, fieldName: 'tahuko'); },
                   ),

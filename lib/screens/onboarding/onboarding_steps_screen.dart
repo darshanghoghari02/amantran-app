@@ -70,7 +70,7 @@ class OnboardingStepsScreen extends StatelessWidget {
                       SizedBox(height: isSmallScreen ? 20 : 35),
                       
                       Text(
-                        "Create Your Invitation\nin 3 Steps",
+                        lang.createInvitationIn3Steps,
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: isSmallScreen ? 22 : 26,
@@ -84,7 +84,7 @@ class OnboardingStepsScreen extends StatelessWidget {
                       Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 40),
                         child: Text(
-                          "Explore categories and create a perfect\ninvitation for your occasion",
+                          lang.exploreCategoriesSubtitle,
                           textAlign: TextAlign.center,
                           style: TextStyle(
                             fontSize: isSmallScreen ? 13 : 14,
@@ -103,8 +103,8 @@ class OnboardingStepsScreen extends StatelessWidget {
                           children: [
                             _buildStepCard(
                               icon: Icons.touch_app_rounded,
-                              title: "Choose a Template",
-                              subtitle: "Choose a design for your\noccasion",
+                              title: lang.chooseTemplate,
+                              subtitle: lang.chooseTemplateSubtitle,
                               color: const Color(0xFFF94C66),
                               bgColor: const Color(0xFFFFF1F2),
                               isSmallScreen: isSmallScreen,
@@ -112,8 +112,8 @@ class OnboardingStepsScreen extends StatelessWidget {
                             SizedBox(height: isSmallScreen ? 12 : 18),
                             _buildStepCard(
                               icon: Icons.edit_document,
-                              title: "Customize Your Card",
-                              subtitle: "Edit text and add your details",
+                              title: lang.customizeCard,
+                              subtitle: lang.customizeCardSubtitle,
                               color: const Color(0xFFFFA726),
                               bgColor: const Color(0xFFFFF8E1),
                               isSmallScreen: isSmallScreen,
@@ -121,8 +121,8 @@ class OnboardingStepsScreen extends StatelessWidget {
                             SizedBox(height: isSmallScreen ? 12 : 18),
                             _buildStepCard(
                               icon: Icons.share_rounded,
-                              title: "Download & Share",
-                              subtitle: "Download and share your\ninvitation easily",
+                              title: lang.downloadShare,
+                              subtitle: lang.downloadShareSubtitle,
                               color: const Color(0xFF26A69A),
                               bgColor: const Color(0xFFE0F2F1),
                               isSmallScreen: isSmallScreen,
@@ -161,7 +161,7 @@ class OnboardingStepsScreen extends StatelessWidget {
                               elevation: 0,
                             ),
                             child: Text(
-                              "Next",
+                              lang.next,
                               style: TextStyle(
                                 fontSize: isSmallScreen ? 16 : 18,
                                 fontWeight: FontWeight.w800,

@@ -4,6 +4,10 @@ class SubscriptionManager {
   static bool isSubscriptionValid(Subscription sub) {
     if (!sub.isActive) return false;
 
+    if (sub.planType.toLowerCase().contains('lifetime')) {
+      return true;
+    }
+
     if (sub.expiryDate.isBefore(DateTime.now())) {
       return false;
     }

@@ -1,16 +1,18 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_firestore/cloud_firestore.dart'; // Kept for Timestamp type parsing fallback
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:http/http.dart' as http;
+import '../config/api_config.dart';
 import '../services/firestore_service.dart';
 import '../models/subscription.dart';
 import '../models/subscription_plan.dart';
 import '../models/template_model.dart';
 import '../services/subscription_manager.dart';
 
-class SubscriptionProvider extends ChangeNotifier {
+class SubscriptionProvider extends ChangeNotifier with WidgetsBindingObserver {
   final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   
   Subscription _subscription = Subscription.none();
   List<String> _purchasedTemplates = [];
@@ -18,32 +20,51 @@ class SubscriptionProvider extends ChangeNotifier {
   bool _isLoading = false;
   
   StreamSubscription? _authSubscription;
-  StreamSubscription? _plansSubscription;
-  StreamSubscription? _userSubSubscription;
   Timer? _expiryTimer;
 
   SubscriptionProvider() {
     _init();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      debugPrint("SubscriptionProvider: App resumed, fetching subscription status");
+      fetchSubscriptionStatus();
+    }
   }
 
   Subscription get subscription => _subscription;
-  List<String> _history = [];
   List<String> get purchasedTemplates => _purchasedTemplates;
   List<SubscriptionPlanModel> get plans => _plans;
   bool get isLoading => _isLoading;
   bool get isSubscribed => SubscriptionManager.isSubscriptionValid(_subscription);
 
   bool isTemplatePurchased(String templateId) {
-    return _purchasedTemplates.contains(templateId);
+    final searchId = templateId.toLowerCase().trim();
+    return _purchasedTemplates.any((id) => id.toLowerCase().trim() == searchId);
   }
 
   bool isTemplateUnlocked(TemplateModel template) {
+    // Non-premium templates are always unlocked
     if (!template.isPremium) return true;
+    
+    // Purchased templates are always unlocked (regardless of admin validation status)
     if (isTemplatePurchased(template.id)) return true;
+    
+    // For subscription-based unlocks, template must be active (validated by admin)
+    if (!template.isActive) return false;
     
     if (!isSubscribed) return false;
 
-    // 1. Check legacy plan inclusions
+    // 1. Check for lifetime plan - unlocks all templates
+    if (_subscription.planType == "lifetime" || 
+        _subscription.planType.toLowerCase().contains('lifetime')) {
+      return true;
+    }
+
+    // 2. Check legacy plan inclusions
     if (_subscription.planType == "monthly" && template.includedInMonthlyPlan) {
       return true;
     }
@@ -51,7 +72,7 @@ class SubscriptionProvider extends ChangeNotifier {
       return true;
     }
     
-    // 2. Check dynamic Firestore plan configurations
+    // 2. Check dynamic plan configurations
     final activePlans = _plans.where((p) => p.id == _subscription.planType);
     if (activePlans.isNotEmpty) {
       final activePlan = activePlans.first;
@@ -62,14 +83,17 @@ class SubscriptionProvider extends ChangeNotifier {
         if ((activePlan.durationType == 'yearly' || activePlan.id == 'yearly') && template.includedInYearlyPlan) {
           return true;
         }
-        if (activePlan.includedTemplateIds.contains(template.id) ||
+        if (activePlan.includedTemplateIds.any((id) => id.toLowerCase().trim() == template.id.toLowerCase().trim()) ||
             activePlan.includedCategories.contains(template.categoryId)) {
           return true;
         }
       }
     } else {
-      // Fallback: parse planType name to see if it indicates monthly or yearly
+      // Fallback: parse planType name to see if it indicates monthly, yearly, or lifetime
       final planTypeLower = _subscription.planType.toLowerCase();
+      if (planTypeLower.contains('lifetime')) {
+        return true;
+      }
       if (planTypeLower.contains('monthly') || planTypeLower.contains('month')) {
         if (template.includedInMonthlyPlan) return true;
       }
@@ -81,122 +105,11 @@ class SubscriptionProvider extends ChangeNotifier {
     return false;
   }
 
-  void _updateSubscriptionFromDocs(List<QueryDocumentSnapshot<Map<String, dynamic>>> docsSnapshot, String resolvedUid) {
-    if (docsSnapshot.isNotEmpty) {
-      final docs = docsSnapshot.map((doc) => {
-        'id': doc.id,
-        ...doc.data()
-      }).toList();
-
-      // Sort by startDate descending (latest first)
-      docs.sort((a, b) {
-        final aDate = _parseDate(a['startDate'] ?? a['createdAt']);
-        final bDate = _parseDate(b['startDate'] ?? b['createdAt']);
-        return bDate.compareTo(aDate);
-      });
-
-      var latest = docs[0];
-      final DateTime now = DateTime.now();
-      final DateTime expiry = _parseDate(latest['expiryDate']);
-
-      // Check if expired and perform auto-renewal if applicable
-      if (expiry.isBefore(now)) {
-        final String status = latest['status'] ?? 'active';
-        final bool autoRenew = latest['autoRenew'] ?? true;
-
-        if ((status == 'active' || status == 'trial') && autoRenew) {
-          // Auto-renew subscription
-          _firestore.collection("user_subscriptions").doc(latest['id']).update({
-            'isActive': false,
-            'status': 'expired',
-            'updatedAt': now.toIso8601String(),
-          }).then((_) {
-            int durationDays = 30;
-            double price = 99.0;
-            if (latest['planType'] == 'yearly') {
-              durationDays = 365;
-              price = 499.0;
-            }
-            final newExpiry = now.add(Duration(days: durationDays));
-
-            _firestore.collection("user_subscriptions").add({
-              'userId': resolvedUid,
-              'planType': latest['planType'],
-              'status': 'active',
-              'isActive': true,
-              'startDate': now.toIso8601String(),
-              'expiryDate': newExpiry.toIso8601String(),
-              'amountPaid': price,
-              'autoRenew': true,
-              'createdAt': now.toIso8601String(),
-            });
-
-            _firestore.collection("transactions").add({
-              'userId': resolvedUid,
-              'type': 'subscription',
-              'amount': price,
-              'planId': latest['planType'],
-              'status': 'success',
-              'timestamp': now.toIso8601String(),
-              'details': 'Auto-renewal subscription check',
-            });
-          });
-          return;
-        } else {
-          // Cancelled or no autoRenew: set status to expired
-          if (latest['isActive'] == true || latest['status'] != 'expired') {
-            _firestore.collection("user_subscriptions").doc(latest['id']).update({
-              'isActive': false,
-              'status': 'expired',
-              'updatedAt': now.toIso8601String(),
-            });
-            latest['isActive'] = false;
-            latest['status'] = 'expired';
-          }
-        }
-      }
-
-      // Set state
-      _subscription = Subscription(
-        planType: latest['planType'] ?? 'none',
-        isActive: latest['isActive'] ?? false,
-        expiryDate: expiry,
-        autoRenew: latest['autoRenew'] ?? true,
-        status: latest['status'] ?? 'active',
-      );
-
-      // Fetch user subscription records and combine template list
-      final Set<String> allPurchased = {};
-      for (final doc in docsSnapshot) {
-        final data = doc.data();
-        final templates = data['purchasedTemplates'];
-        if (templates is List) {
-          allPurchased.addAll(templates.map((e) => e.toString()));
-        }
-      }
-      _purchasedTemplates = allPurchased.toList();
-    } else {
-      _subscription = Subscription.none();
-      _purchasedTemplates = [];
-    }
-    _isLoading = false;
-    notifyListeners();
-  }
-
   void _init() {
     // Listen to resolved UID stream
     _authSubscription = FirestoreService().resolvedUidStream.listen((uid) async {
-      _userSubSubscription?.cancel();
       if (uid != null) {
-        _userSubSubscription = _firestore
-            .collection("user_subscriptions")
-            .where("userId", isEqualTo: uid)
-            .snapshots()
-            .listen((snapshot) {
-          _updateSubscriptionFromDocs(snapshot.docs, uid);
-        }, onError: (e) {
-          debugPrint("Error listening to user subscriptions: $e");
-        });
+        await fetchSubscriptionStatus();
       } else {
         _subscription = Subscription.none();
         _purchasedTemplates = [];
@@ -206,35 +119,10 @@ class SubscriptionProvider extends ChangeNotifier {
 
     final initialUid = FirestoreService().resolvedUid;
     if (initialUid != null) {
-      _userSubSubscription?.cancel();
-      _userSubSubscription = _firestore
-          .collection("user_subscriptions")
-          .where("userId", isEqualTo: initialUid)
-          .snapshots()
-          .listen((snapshot) {
-        _updateSubscriptionFromDocs(snapshot.docs, initialUid);
-      }, onError: (e) {
-        debugPrint("Error listening to user subscriptions: $e");
-      });
+      fetchSubscriptionStatus();
     }
 
-    // Listen to active subscription plans from Firestore
-    try {
-      _plansSubscription = _firestore
-          .collection("subscriptions")
-          .snapshots()
-          .listen((snapshot) {
-        _plans = snapshot.docs
-            .map((doc) => SubscriptionPlanModel.fromJson(doc.data(), doc.id))
-            .where((p) => p.isActive)
-            .toList();
-        notifyListeners();
-      }, onError: (e) {
-        debugPrint("Error listening to subscriptions: $e");
-      });
-    } catch (e) {
-      debugPrint("Error starting subscription plans listener: $e");
-    }
+    fetchPlans();
 
     // Start periodic 10-minute expiry validation
     _expiryTimer = Timer.periodic(const Duration(minutes: 10), (timer) {
@@ -260,129 +148,81 @@ class SubscriptionProvider extends ChangeNotifier {
     final resolvedUid = FirestoreService().resolvedUid;
     if (resolvedUid == null) return false;
     try {
-      final querySnapshot = await _firestore
-          .collection("user_subscriptions")
-          .where("userId", isEqualTo: resolvedUid)
-          .get();
-      return querySnapshot.docs.isEmpty;
+      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/user-subscriptions/$resolvedUid'));
+      if (response.statusCode == 200) {
+        final map = jsonDecode(response.body) as Map<String, dynamic>;
+        // If planType is none or not found, user is eligible for trial
+        return map['planType'] == null || map['planType'] == 'none';
+      }
     } catch (e) {
       debugPrint("Error checking trial eligibility: $e");
-      return false;
+    }
+    return false;
+  }
+
+  /// Fetches subscription plans from Express API
+  Future<void> fetchPlans() async {
+    try {
+      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/subscriptions'));
+      if (response.statusCode == 200) {
+        final List<dynamic> list = jsonDecode(response.body);
+        _plans = list
+            .map((data) => SubscriptionPlanModel.fromJson(Map<String, dynamic>.from(data), data['id'] ?? ''))
+            .where((p) => p.isActive)
+            .toList();
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint("Error fetching plans from API: $e");
     }
   }
 
-  /// Fetches subscription status from Firestore `user_subscriptions` collection
+  /// Fetches subscription status from Express API
   Future<void> fetchSubscriptionStatus() async {
     final resolvedUid = FirestoreService().resolvedUid;
-    if (resolvedUid == null) return;
+    if (resolvedUid == null) {
+      debugPrint("fetchSubscriptionStatus: No resolved UID found");
+      return;
+    }
 
     _isLoading = true;
     notifyListeners();
 
     try {
-      final querySnapshot = await _firestore
-          .collection("user_subscriptions")
-          .where("userId", isEqualTo: resolvedUid)
-          .get();
-
-      if (querySnapshot.docs.isNotEmpty) {
-        final docs = querySnapshot.docs.map((doc) => {
-          'id': doc.id,
-          ...doc.data()
-        }).toList();
-
-        // Sort by startDate descending (latest first)
-        docs.sort((a, b) {
-          final aDate = _parseDate(a['startDate'] ?? a['createdAt']);
-          final bDate = _parseDate(b['startDate'] ?? b['createdAt']);
-          return bDate.compareTo(aDate);
-        });
-
-        var latest = docs[0];
-        final DateTime now = DateTime.now();
-        final DateTime expiry = _parseDate(latest['expiryDate']);
-
-        // Check if expired and perform auto-renewal if applicable
-        if (expiry.isBefore(now)) {
-          final String status = latest['status'] ?? 'active';
-          final bool autoRenew = latest['autoRenew'] ?? true;
-
-          if ((status == 'active' || status == 'trial') && autoRenew) {
-            // Auto-renew subscription
-            await _firestore.collection("user_subscriptions").doc(latest['id']).update({
-              'isActive': false,
-              'status': 'expired',
-              'updatedAt': now.toIso8601String(),
-            });
-
-            int durationDays = 30;
-            double price = 99.0;
-            if (latest['planType'] == 'yearly') {
-              durationDays = 365;
-              price = 499.0;
-            }
-            final newExpiry = now.add(Duration(days: durationDays));
-
-            await _firestore.collection("user_subscriptions").add({
-              'userId': resolvedUid,
-              'planType': latest['planType'],
-              'status': 'active',
-              'isActive': true,
-              'startDate': now.toIso8601String(),
-              'expiryDate': newExpiry.toIso8601String(),
-              'amountPaid': price,
-              'autoRenew': true,
-              'createdAt': now.toIso8601String(),
-            });
-
-            await _firestore.collection("transactions").add({
-              'userId': resolvedUid,
-              'type': 'subscription',
-              'amount': price,
-              'planId': latest['planType'],
-              'status': 'success',
-              'timestamp': now.toIso8601String(),
-              'details': 'Auto-renewal subscription check',
-            });
-
-            await fetchSubscriptionStatus();
-            return;
-          } else {
-            // Cancelled or no autoRenew: set status to expired
-            if (latest['isActive'] == true || latest['status'] != 'expired') {
-              await _firestore.collection("user_subscriptions").doc(latest['id']).update({
-                'isActive': false,
-                'status': 'expired',
-                'updatedAt': now.toIso8601String(),
-              });
-              latest['isActive'] = false;
-              latest['status'] = 'expired';
-            }
-          }
+      debugPrint("fetchSubscriptionStatus: Fetching for user $resolvedUid");
+      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/user-subscriptions/$resolvedUid'));
+      debugPrint("fetchSubscriptionStatus: Response status code: ${response.statusCode}");
+      debugPrint("fetchSubscriptionStatus: Response body: ${response.body}");
+      
+      if (response.statusCode == 200) {
+        final map = jsonDecode(response.body) as Map<String, dynamic>;
+        debugPrint("fetchSubscriptionStatus: Parsed data - planType: ${map['planType']}, purchasedTemplates: ${map['purchasedTemplates']}");
+        
+        if (map['planType'] != null && map['planType'] != 'none') {
+          _subscription = Subscription(
+            planType: map['planType'] ?? 'none',
+            isActive: map['isActive'] == true,
+            expiryDate: _parseDate(map['expiryDate']),
+            autoRenew: map['autoRenew'] != false,
+            status: map['status'] ?? 'active',
+          );
+        } else {
+          _subscription = Subscription.none();
+          debugPrint("fetchSubscriptionStatus: No active subscription planType found");
         }
 
-        // Set state
-        _subscription = Subscription(
-          planType: latest['planType'] ?? 'none',
-          isActive: latest['isActive'] ?? false,
-          expiryDate: expiry,
-          autoRenew: latest['autoRenew'] ?? true,
-          status: latest['status'] ?? 'active',
-        );
-
-        // Fetch user subscription records and combine template list
-        final Set<String> allPurchased = {};
-        for (final doc in querySnapshot.docs) {
-          final data = doc.data();
-          final templates = data['purchasedTemplates'];
-          if (templates is List) {
-            allPurchased.addAll(templates.map((e) => e.toString()));
-          }
+        final templates = map['purchasedTemplates'];
+        if (templates is List) {
+          _purchasedTemplates = templates.map((e) => e.toString()).toList();
+          debugPrint("fetchSubscriptionStatus: Updated purchased templates: $_purchasedTemplates");
+        } else {
+          _purchasedTemplates = [];
+          debugPrint("fetchSubscriptionStatus: No purchased templates list found in response");
         }
-        _purchasedTemplates = allPurchased.toList();
       } else {
         _subscription = Subscription.none();
         _purchasedTemplates = [];
+        debugPrint("fetchSubscriptionStatus: API returned non-200 status");
       }
     } catch (e) {
       debugPrint("Error fetching subscription status: $e");
@@ -403,43 +243,8 @@ class SubscriptionProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final querySnapshot = await _firestore
-          .collection("user_subscriptions")
-          .where("userId", isEqualTo: resolvedUid)
-          .get();
-
-      if (querySnapshot.docs.isEmpty) return false;
-
-      final docs = querySnapshot.docs.map((doc) => {
-        'id': doc.id,
-        ...doc.data()
-      }).toList();
-
-      docs.sort((a, b) {
-        final aDate = _parseDate(a['startDate'] ?? a['createdAt']);
-        final bDate = _parseDate(b['startDate'] ?? b['createdAt']);
-        return bDate.compareTo(aDate);
-      });
-
-      final latest = docs[0];
-      if (latest['isActive'] == true && latest['status'] != 'cancelled') {
-        final now = DateTime.now();
-        await _firestore.collection("user_subscriptions").doc(latest['id']).update({
-          'status': 'cancelled',
-          'autoRenew': false,
-          'updatedAt': now.toIso8601String(),
-        });
-
-        await _firestore.collection("transactions").add({
-          'userId': resolvedUid,
-          'type': 'subscription',
-          'amount': 0.0,
-          'planId': latest['planType'],
-          'status': 'success',
-          'timestamp': now.toIso8601String(),
-          'details': 'Subscription auto-renew cancelled by user',
-        });
-
+      final response = await http.post(Uri.parse('${ApiConfig.baseUrl}/api/app/user-subscriptions/$resolvedUid/cancel'));
+      if (response.statusCode == 200) {
         await fetchSubscriptionStatus();
         return true;
       }
@@ -462,43 +267,8 @@ class SubscriptionProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final querySnapshot = await _firestore
-          .collection("user_subscriptions")
-          .where("userId", isEqualTo: resolvedUid)
-          .get();
-
-      if (querySnapshot.docs.isEmpty) return false;
-
-      final docs = querySnapshot.docs.map((doc) => {
-        'id': doc.id,
-        ...doc.data()
-      }).toList();
-
-      docs.sort((a, b) {
-        final aDate = _parseDate(a['startDate'] ?? a['createdAt']);
-        final bDate = _parseDate(b['startDate'] ?? b['createdAt']);
-        return bDate.compareTo(aDate);
-      });
-
-      final latest = docs[0];
-      if (latest['isActive'] == true && latest['status'] == 'cancelled') {
-        final now = DateTime.now();
-        await _firestore.collection("user_subscriptions").doc(latest['id']).update({
-          'status': 'active',
-          'autoRenew': true,
-          'updatedAt': now.toIso8601String(),
-        });
-
-        await _firestore.collection("transactions").add({
-          'userId': resolvedUid,
-          'type': 'subscription',
-          'amount': 0.0,
-          'planId': latest['planType'],
-          'status': 'success',
-          'timestamp': now.toIso8601String(),
-          'details': 'Subscription auto-renew reactivated by user',
-        });
-
+      final response = await http.post(Uri.parse('${ApiConfig.baseUrl}/api/app/user-subscriptions/$resolvedUid/reactivate'));
+      if (response.statusCode == 200) {
         await fetchSubscriptionStatus();
         return true;
       }
@@ -512,7 +282,7 @@ class SubscriptionProvider extends ChangeNotifier {
     }
   }
 
-  /// Executes Mock Payment Gateway checkout and logs transaction
+  /// Executes Mock Purchase simulation
   Future<bool> executeMockPurchase(String planType, double price, bool isTrial) async {
     final resolvedUid = FirestoreService().resolvedUid;
     if (resolvedUid == null) return false;
@@ -521,81 +291,24 @@ class SubscriptionProvider extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final now = DateTime.now();
-      
-      // Deactivate any existing active subscriptions first
-      final querySnapshot = await _firestore
-          .collection("user_subscriptions")
-          .where("userId", isEqualTo: resolvedUid)
-          .get();
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/api/app/user-subscriptions/purchase'),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'userId': resolvedUid,
+          'planType': planType,
+          'price': price,
+          'isTrial': isTrial,
+        }),
+      );
 
-      for (final doc in querySnapshot.docs) {
-        if (doc.data()['isActive'] == true) {
-          await doc.reference.update({
-            'isActive': false,
-            'status': 'expired',
-            'updatedAt': now.toIso8601String(),
-          });
-        }
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        await fetchSubscriptionStatus();
+        return true;
       }
-
-      DateTime expiry;
-      String status;
-      double finalPrice;
-
-      if (isTrial) {
-        expiry = now.add(const Duration(days: 3));
-        status = 'trial';
-        finalPrice = 0.0;
-      } else {
-        status = 'active';
-        finalPrice = price;
-        int durationDays = 30;
-        if (planType == 'yearly') {
-          durationDays = 365;
-        } else {
-          final plan = _plans.firstWhere(
-            (p) => p.id == planType, 
-            orElse: () => SubscriptionPlanModel(
-              id: planType, 
-              name: planType, 
-              price: price, 
-              description: '', 
-              isActive: true, 
-              includedCategories: [], 
-              includedTemplateIds: []
-            )
-          );
-          durationDays = plan.durationDays;
-        }
-        expiry = now.add(Duration(days: durationDays));
-      }
-
-      await _firestore.collection("user_subscriptions").add({
-        'userId': resolvedUid,
-        'planType': planType,
-        'status': status,
-        'isActive': true,
-        'startDate': now.toIso8601String(),
-        'expiryDate': expiry.toIso8601String(),
-        'amountPaid': finalPrice,
-        'autoRenew': true,
-        'createdAt': now.toIso8601String(),
-        'updatedAt': now.toIso8601String(),
-      });
-
-      await _firestore.collection("transactions").add({
-        'userId': resolvedUid,
-        'type': 'subscription',
-        'amount': finalPrice,
-        'planId': planType,
-        'status': 'success',
-        'timestamp': now.toIso8601String(),
-        'details': isTrial ? '3-day free trial activated' : 'Mock payment gateway checkout successful',
-      });
-
-      await fetchSubscriptionStatus();
-      return true;
+      return false;
     } catch (e) {
       debugPrint("Error executing purchase: $e");
       return false;
@@ -608,77 +321,39 @@ class SubscriptionProvider extends ChangeNotifier {
   /// Registers an individual template lifetime purchase
   Future<bool> purchaseTemplate(String templateId, {double price = 49.0}) async {
     final resolvedUid = FirestoreService().resolvedUid;
-    if (resolvedUid == null) return false;
+    if (resolvedUid == null) {
+      debugPrint("purchaseTemplate: No resolved UID found");
+      return false;
+    }
 
     _isLoading = true;
     notifyListeners();
 
     try {
-      final querySnapshot = await _firestore
-          .collection("user_subscriptions")
-          .where("userId", isEqualTo: resolvedUid)
-          .get();
-
-      DocumentReference docRef;
-      List<String> currentPurchased = [];
-
-      if (querySnapshot.docs.isNotEmpty) {
-        // Retrieve the latest doc of the user to append purchases to it
-        final docs = querySnapshot.docs.map((doc) => {
-          'id': doc.id,
-          ...doc.data()
-        }).toList();
-
-        docs.sort((a, b) {
-          final aDate = _parseDate(a['startDate'] ?? a['createdAt']);
-          final bDate = _parseDate(b['startDate'] ?? b['createdAt']);
-          return bDate.compareTo(aDate);
-        });
-
-        final latestId = docs[0]['id'];
-        docRef = _firestore.collection("user_subscriptions").doc(latestId);
-
-        final templates = docs[0]['purchasedTemplates'];
-        if (templates is List) {
-          currentPurchased = templates.map((e) => e.toString()).toList();
-        }
-      } else {
-        // Create a basic blank document
-        docRef = await _firestore.collection("user_subscriptions").add({
+      debugPrint("purchaseTemplate: Purchasing template $templateId for user $resolvedUid");
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/api/app/user-subscriptions/purchase-template'),
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
           'userId': resolvedUid,
-          'planType': 'none',
-          'status': 'expired',
-          'isActive': false,
-          'startDate': DateTime.now().toIso8601String(),
-          'expiryDate': DateTime.fromMillisecondsSinceEpoch(0).toIso8601String(),
-          'amountPaid': 0.0,
-          'autoRenew': false,
-          'createdAt': DateTime.now().toIso8601String(),
-        });
+          'templateId': templateId,
+          'price': price,
+        }),
+      );
+
+      debugPrint("purchaseTemplate: Response status code: ${response.statusCode}");
+      debugPrint("purchaseTemplate: Response body: ${response.body}");
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        debugPrint("purchaseTemplate: Purchase successful, fetching subscription status");
+        await fetchSubscriptionStatus();
+        debugPrint("purchaseTemplate: Current purchased templates: $_purchasedTemplates");
+        return true;
       }
-
-      if (!currentPurchased.contains(templateId)) {
-        currentPurchased.add(templateId);
-      }
-
-      await docRef.set({
-        'purchasedTemplates': currentPurchased,
-      }, SetOptions(merge: true));
-
-      // Log transaction
-      await _firestore.collection("transactions").add({
-        'userId': resolvedUid,
-        'type': 'single_purchase',
-        'amount': price,
-        'planId': templateId,
-        'status': 'success',
-        'timestamp': DateTime.now().toIso8601String(),
-        'details': 'Lifetime template purchase',
-      });
-
-      _purchasedTemplates = currentPurchased;
-      await fetchSubscriptionStatus();
-      return true;
+      debugPrint("purchaseTemplate: Purchase failed with status ${response.statusCode}");
+      return false;
     } catch (e) {
       debugPrint("Error purchasing template: $e");
       return false;
@@ -690,9 +365,8 @@ class SubscriptionProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _authSubscription?.cancel();
-    _plansSubscription?.cancel();
-    _userSubSubscription?.cancel();
     _expiryTimer?.cancel();
     super.dispose();
   }

@@ -8,12 +8,16 @@ import 'package:crypto/crypto.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import '../../providers/user_provider.dart';
+import '../../providers/language_provider.dart';
 import '../home/home_screen.dart';
 import '../../widgets/top_notification.dart';
 import '../../services/auth_service.dart';
 import 'otp_verification_screen.dart';
+import 'complete_profile_screen.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../../services/email_auth_service.dart';
+import '../../services/whatsapp_otp_service.dart';
+import '../../utils/image_resolver.dart';
 
 class LoginScreen extends StatefulWidget {
   final bool showWelcomeBack;
@@ -37,29 +41,50 @@ class _LoginScreenState extends State<LoginScreen> {
             child: CircularProgressIndicator(color: Color(0xFFF94C66))),
       );
 
-      AuthService.sendOtp(
-        phone: formattedPhone,
-        onCodeSent: (verificationId) {
-          Navigator.pop(context); // Remove loading
+      // Try WhatsApp OTP first, fall back to Firebase SMS if backend is not available
+      WhatsappOtpService.sendOtpToWhatsapp(formattedPhone).then((result) {
+        Navigator.pop(context); // Remove loading
+        
+        if (result['success']) {
+          final otp = result['otp'];
           Navigator.push(
             context,
             MaterialPageRoute(
               builder: (_) => OtpVerificationScreen(
                 phone: formattedPhone,
-                verificationId: verificationId,
+                isWhatsappOtp: true,
               ),
             ),
           );
           TopNotification.show(context,
-              message: "OTP sent to $formattedPhone",
+              message: "OTP sent to WhatsApp for $formattedPhone. [Test Code: $otp]",
               type: NotificationType.success);
-        },
-        onFailed: (error) {
-          Navigator.pop(context); // Remove loading
-          TopNotification.show(context,
-              message: error, type: NotificationType.error);
-        },
-      );
+        } else {
+          // Fall back to Firebase SMS if WhatsApp OTP fails
+          AuthService.sendOtp(
+            phone: formattedPhone,
+            onCodeSent: (verificationId) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => OtpVerificationScreen(
+                    phone: formattedPhone,
+                    verificationId: verificationId,
+                    isWhatsappOtp: false,
+                  ),
+                ),
+              );
+              TopNotification.show(context,
+                  message: "OTP sent to $formattedPhone",
+                  type: NotificationType.success);
+            },
+            onFailed: (error) {
+              TopNotification.show(context,
+                  message: error, type: NotificationType.error);
+            },
+          );
+        }
+      });
     } else {
       TopNotification.show(context,
           message: 'Please enter a valid 10-digit number',
@@ -107,14 +132,11 @@ class _LoginScreenState extends State<LoginScreen> {
         idToken: googleAuth.idToken,
       );
 
-      final userProvider = context.read<UserProvider>();
-      // Mark as not OTP verified BEFORE logging in
-      userProvider.setSocialOtpVerified(false);
-
       final UserCredential userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
       final User? firebaseUser = userCredential.user;
 
       if (firebaseUser != null) {
+        final userProvider = context.read<UserProvider>();
         final name = firebaseUser.displayName ?? 'Google User';
         final email = firebaseUser.email ?? '';
 
@@ -127,37 +149,36 @@ class _LoginScreenState extends State<LoginScreen> {
           provider: 'google',
         );
 
-        // Generate and send OTP
-        final otp = EmailAuthService.generateOtp();
-        await EmailAuthService.sendOtp(email, otp);
+        // No OTP required for Google login - token is already validated by Firebase
+        userProvider.setSocialOtpVerified(true);
 
         if (mounted) {
           Navigator.pop(context); // Pop loading spinner
 
           TopNotification.show(
             context,
-            message: "OTP sent to $email. [Test Code: $otp]",
+            message: "Google Sign-In successful",
             type: NotificationType.success,
           );
 
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => OtpVerificationScreen(
-                email: email,
-                emailOtp: otp,
-                name: name,
-              ),
-            ),
-          );
+          // Navigate directly to home or profile completion
+          await userProvider.fetchProfileFromCloud();
+          if (userProvider.isProfileComplete) {
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(builder: (_) => const HomeScreen()),
+              (route) => false,
+            );
+          } else {
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(builder: (_) => const CompleteProfileScreen()),
+              (route) => false,
+            );
+          }
         }
-      } else {
-        userProvider.setSocialOtpVerified(true);
-        if (mounted) Navigator.pop(context);
       }
     } catch (e) {
-      final userProvider = context.read<UserProvider>();
-      userProvider.setSocialOtpVerified(true);
       if (mounted) {
         Navigator.pop(context); // Pop loading spinner
         TopNotification.show(
@@ -204,14 +225,11 @@ class _LoginScreenState extends State<LoginScreen> {
         rawNonce: rawNonce,
       );
 
-      final userProvider = context.read<UserProvider>();
-      // Mark as not OTP verified BEFORE logging in
-      userProvider.setSocialOtpVerified(false);
-
       final UserCredential userCredential = await FirebaseAuth.instance.signInWithCredential(oauthCredential);
       final User? firebaseUser = userCredential.user;
 
       if (firebaseUser != null) {
+        final userProvider = context.read<UserProvider>();
         final name = [
           appleCredential.givenName,
           appleCredential.familyName
@@ -227,37 +245,36 @@ class _LoginScreenState extends State<LoginScreen> {
           provider: 'apple',
         );
 
-        // Generate and send OTP
-        final otp = EmailAuthService.generateOtp();
-        await EmailAuthService.sendOtp(email, otp);
+        // No OTP required for Apple login - token is already validated by Firebase
+        userProvider.setSocialOtpVerified(true);
 
         if (mounted) {
           Navigator.pop(context); // Pop loading spinner
 
           TopNotification.show(
             context,
-            message: "OTP sent to $email. [Test Code: $otp]",
+            message: "Apple Sign-In successful",
             type: NotificationType.success,
           );
 
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => OtpVerificationScreen(
-                email: email,
-                emailOtp: otp,
-                name: finalName,
-              ),
-            ),
-          );
+          // Navigate directly to home or profile completion
+          await userProvider.fetchProfileFromCloud();
+          if (userProvider.isProfileComplete) {
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(builder: (_) => const HomeScreen()),
+              (route) => false,
+            );
+          } else {
+            Navigator.pushAndRemoveUntil(
+              context,
+              MaterialPageRoute(builder: (_) => const CompleteProfileScreen()),
+              (route) => false,
+            );
+          }
         }
-      } else {
-        userProvider.setSocialOtpVerified(true);
-        if (mounted) Navigator.pop(context);
       }
     } catch (e) {
-      final userProvider = context.read<UserProvider>();
-      userProvider.setSocialOtpVerified(true);
       if (mounted) {
         Navigator.pop(context); // Pop loading spinner
         TopNotification.show(
@@ -287,6 +304,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final user = context.watch<UserProvider>();
+    final lang = context.watch<LanguageProvider>();
     final recentAccounts = user.recentAccounts;
     final isReturningUser = widget.showWelcomeBack && recentAccounts.isNotEmpty;
 
@@ -383,7 +401,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
               // 3. Title & Subtitle
               Text(
-                isReturningUser ? "Welcome Back" : "Login or Signup",
+                isReturningUser ? lang.welcomeBack : lang.loginOrSignup,
                 style: const TextStyle(
                     fontSize: 26,
                     fontWeight: FontWeight.w900,
@@ -461,16 +479,19 @@ class _LoginScreenState extends State<LoginScreen> {
                                   shape: BoxShape.circle,
                                 ),
                                 child: ClipOval(
-                                  child: account.profileImagePath != null
+                                  child: account.profileImagePath != null &&
+                                          account.profileImagePath!.isNotEmpty
                                       ? (account.profileImagePath!.startsWith('http')
                                           ? Image.network(
-                                              account.profileImagePath!,
+                                              resolveImageUrl(account.profileImagePath!),
                                               fit: BoxFit.cover,
+                                              key: ValueKey(account.profileImagePath!),
                                             )
                                           : (File(account.profileImagePath!).existsSync()
                                               ? Image.file(
                                                   File(account.profileImagePath!),
                                                   fit: BoxFit.cover,
+                                                  key: ValueKey(account.profileImagePath!),
                                                 )
                                               : Container(
                                                   color: const Color(0xFFF94C66).withOpacity(0.1),
@@ -544,7 +565,7 @@ class _LoginScreenState extends State<LoginScreen> {
                                         .read<UserProvider>()
                                         .removeAccount(account);
                                     TopNotification.show(context,
-                                        message: "Account removed",
+                                        message: lang.accountRemoved,
                                         type: NotificationType.info);
                                   }
                                 },
@@ -719,12 +740,12 @@ class _LoginScreenState extends State<LoginScreen> {
                               fontSize: 18, fontWeight: FontWeight.w800))
                       : Row(
                           mainAxisAlignment: MainAxisAlignment.center,
-                          children: const [
-                            Text("Send OTP",
-                                style: TextStyle(
+                          children: [
+                            Text(lang.sendOtp,
+                                style: const TextStyle(
                                     fontSize: 18, fontWeight: FontWeight.w800)),
-                            SizedBox(width: 10),
-                            Icon(Icons.arrow_forward_rounded, size: 22),
+                            const SizedBox(width: 10),
+                            const Icon(Icons.arrow_forward_rounded, size: 22),
                           ],
                         ),
                 ),

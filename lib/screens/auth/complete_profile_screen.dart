@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../providers/user_provider.dart';
+import '../../providers/language_provider.dart';
 import '../../services/auth_service.dart';
 import '../../widgets/top_notification.dart';
 import '../home/home_screen.dart';
@@ -58,7 +59,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
     _isPhoneReadOnly = initialPhone.isNotEmpty && initialPhone.replaceAll(RegExp(r'\D'), '').length >= 10;
   }
 
-  void _onComplete() {
+  void _onComplete() async {
     final name = _nameController.text.trim();
     final email = _emailController.text.trim();
     final rawPhone = _phoneController.text.trim().replaceAll(RegExp(r'\D'), '');
@@ -101,7 +102,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
 
     // SAVE TO PROVIDER (handles Cloud Firestore saving and background sync/merge)
     try {
-      context.read<UserProvider>().updateProfile(
+      await context.read<UserProvider>().updateProfile(
         name: name,
         phone: formattedPhone,
         email: email,
@@ -118,7 +119,8 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
       TopNotification.show(context, message: "Profile completed successfully!", type: NotificationType.success);
     } catch (e) {
       Navigator.pop(context); // Close loader
-      TopNotification.show(context, message: "Failed to complete profile: $e", type: NotificationType.error);
+      final cleanMsg = e.toString().replaceAll('Exception: ', '').replaceAll('Exception', '');
+      TopNotification.show(context, message: cleanMsg, type: NotificationType.error);
     }
   }
 
@@ -132,6 +134,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = context.watch<LanguageProvider>();
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -209,7 +212,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
               ),
               const SizedBox(height: 40),
               
-              _buildLabel("Phone Number"),
+              _buildLabel(lang.phoneNumber),
               if (_isPhoneReadOnly)
                 Container(
                   height: 56,
@@ -277,11 +280,11 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                 ),
               const SizedBox(height: 20),
               
-              _buildLabel("Full Name"),
+              _buildLabel(lang.fullName),
               _buildTextField(_nameController, "Enter your full name", TextInputType.name),
               const SizedBox(height: 20),
               
-              _buildLabel("Email Address"),
+              _buildLabel(lang.emailAddress),
               _buildTextField(_emailController, "Enter your Email Address", TextInputType.emailAddress),
               const SizedBox(height: 24),
               

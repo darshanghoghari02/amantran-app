@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/template_model.dart';
 import '../../models/page_model.dart';
+import '../../widgets/translated_text.dart';
 
 import '../profile/invitation_language_screen.dart';
 import '../../providers/language_provider.dart';
@@ -42,6 +43,7 @@ class _TemplateDetailScreenState extends State<TemplateDetailScreen> {
   Future<void> _loadPages() async {
     try {
       final appData = context.read<AppDataProvider>();
+      appData.refreshTemplateDetails(widget.template.id);
       final pagesList = await appData.getTemplatePages(widget.template.id);
       if (mounted) {
         setState(() {
@@ -68,6 +70,7 @@ class _TemplateDetailScreenState extends State<TemplateDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final lang = context.watch<LanguageProvider>();
+    final template = context.watch<AppDataProvider>().getTemplateById(widget.template.id) ?? widget.template;
     final int totalPages = _pages.isNotEmpty ? _pages.length : 1;
 
     return Scaffold(
@@ -102,10 +105,10 @@ class _TemplateDetailScreenState extends State<TemplateDetailScreen> {
                   ),
                   const SizedBox(width: 16),
                   Expanded(
-                    child: Text(
+                    child: TranslatedText(
                       widget.categoryName.isNotEmpty
                           ? widget.categoryName
-                          : "Template Detail",
+                          : lang.templateDetail,
                       style: const TextStyle(
                         fontSize: 18,
                         fontWeight: FontWeight.bold,
@@ -119,14 +122,14 @@ class _TemplateDetailScreenState extends State<TemplateDetailScreen> {
                     onTap: () {
                       final isFav = context
                           .read<FavoritesProvider>()
-                          .isFavorite(widget.template);
+                          .isFavorite(template);
                       context
                           .read<FavoritesProvider>()
-                          .toggleFavorite(widget.template);
+                          .toggleFavorite(template);
                       TopNotification.show(context,
                           message: isFav
-                              ? "Removed from favorites"
-                              : "Added to favorites",
+                              ? lang.removedFromFavorites
+                              : lang.addedToFavorites,
                           type: isFav
                               ? NotificationType.info
                               : NotificationType.success);
@@ -147,13 +150,13 @@ class _TemplateDetailScreenState extends State<TemplateDetailScreen> {
                       child: Icon(
                           context
                                   .watch<FavoritesProvider>()
-                                  .isFavorite(widget.template)
+                                  .isFavorite(template)
                               ? Icons.favorite
                               : Icons.favorite_border,
                           size: 20,
                           color: context
                                   .watch<FavoritesProvider>()
-                                  .isFavorite(widget.template)
+                                  .isFavorite(template)
                               ? const Color(0xFFF94C66)
                               : Colors.black87),
                     ),
@@ -167,13 +170,13 @@ class _TemplateDetailScreenState extends State<TemplateDetailScreen> {
             // Carousel / PageView Loading
             Expanded(
               child: _isLoading
-                  ? const Center(
+                  ? Center(
                       child: Column(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
-                          CircularProgressIndicator(color: Color(0xFFF94C66)),
-                          SizedBox(height: 16),
-                          Text("Loading dynamic page layers...", style: TextStyle(color: Colors.grey, fontSize: 13)),
+                          const CircularProgressIndicator(color: Color(0xFFF94C66)),
+                          const SizedBox(height: 16),
+                          Text(lang.loadingDynamicPages, style: const TextStyle(color: Colors.grey, fontSize: 13)),
                         ],
                       ),
                     )
@@ -194,7 +197,7 @@ class _TemplateDetailScreenState extends State<TemplateDetailScreen> {
                               itemBuilder: (context, index) {
                                 final String backgroundUrl = _pages.isNotEmpty 
                                     ? _pages[index].backgroundImage 
-                                    : widget.template.thumbnail;
+                                    : template.thumbnail;
 
                                 return AnimatedContainer(
                                   duration: const Duration(milliseconds: 300),
@@ -250,10 +253,10 @@ class _TemplateDetailScreenState extends State<TemplateDetailScreen> {
                                 Row(
                                   children: [
                                     Expanded(
-                                      child: Text(
-                                        widget.template.title.isEmpty
-                                            ? "Wedding Template"
-                                            : widget.template.title,
+                                      child: TranslatedText(
+                                        template.title.isEmpty
+                                            ? lang.weddingTemplate
+                                            : template.title,
                                         style: const TextStyle(
                                           fontSize: 20,
                                           fontWeight: FontWeight.bold,
@@ -261,7 +264,7 @@ class _TemplateDetailScreenState extends State<TemplateDetailScreen> {
                                         ),
                                       ),
                                     ),
-                                    if (widget.template.isPremium) ...[
+                                    if (template.isPremium) ...[
                                       const SizedBox(width: 8),
                                       const PremiumBadge(
                                         fontSize: 9.0,
@@ -314,13 +317,13 @@ class _TemplateDetailScreenState extends State<TemplateDetailScreen> {
                   child: ElevatedButton(
                     onPressed: () {
                       final subProvider = context.read<SubscriptionProvider>();
-                      final isUnlocked = subProvider.isTemplateUnlocked(widget.template);
-                      if (widget.template.isPremium && !isUnlocked) {
+                      final isUnlocked = subProvider.isTemplateUnlocked(template);
+                      if (template.isPremium && !isUnlocked) {
                         showModalBottomSheet(
                           context: context,
                           isScrollControlled: true,
                           backgroundColor: Colors.transparent,
-                          builder: (_) => SubscriptionBottomSheet(template: widget.template),
+                          builder: (_) => SubscriptionBottomSheet(template: template),
                         );
                         return;
                       }
@@ -331,7 +334,7 @@ class _TemplateDetailScreenState extends State<TemplateDetailScreen> {
                         MaterialPageRoute(
                           builder: (_) => InvitationLanguageScreen(
                             selectedLanguages: langProvider.invitationLanguages.toList(),
-                            template: widget.template,
+                            template: template,
                             isSingleSelect: true,
                           ),
                         ),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/user_provider.dart';
+import '../../providers/language_provider.dart';
 
 class AccountSuspendedScreen extends StatelessWidget {
   const AccountSuspendedScreen({Key? key}) : super(key: key);
@@ -8,6 +9,7 @@ class AccountSuspendedScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final userProvider = Provider.of<UserProvider>(context, listen: false);
+    final lang = Provider.of<LanguageProvider>(context, listen: false);
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -44,9 +46,9 @@ class AccountSuspendedScreen extends StatelessWidget {
               ),
               const SizedBox(height: 40),
               // Main Heading
-              const Text(
-                "Account Suspended",
-                style: TextStyle(
+              Text(
+                lang.accountSuspended,
+                style: const TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.bold,
                   color: Color(0xFF1E1F22),
@@ -122,9 +124,9 @@ class AccountSuspendedScreen extends StatelessWidget {
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16),
                       ),
-                      title: const Text("Contact Support"),
-                      content: const Text(
-                        "Please email support@amantran.com with your registered account email to request review.",
+                      title: Text(lang.contactSupport),
+                      content: Text(
+                        lang.contactSupportMessage,
                       ),
                       actions: [
                         TextButton(
@@ -135,9 +137,9 @@ class AccountSuspendedScreen extends StatelessWidget {
                     ),
                   );
                 },
-                child: const Text(
-                  "Contact Support",
-                  style: TextStyle(
+                child: Text(
+                  lang.contactSupport,
+                  style: const TextStyle(
                     color: Color(0xFFFF4D6D),
                     fontWeight: FontWeight.bold,
                     fontSize: 15,

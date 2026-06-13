@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:io';
-import 'dart:convert';
 import 'package:provider/provider.dart';
-import 'package:flutter/services.dart' show AssetManifest;
+import '../../widgets/translated_text.dart';
 
 // 🔴 MODELS
 import '../../models/template_model.dart';
@@ -121,6 +120,12 @@ class _HomeScreenState extends State<HomeScreen> {
         color: const Color(0xFFF94C66),
         onRefresh: () async {
           appData.retryInit();
+          if (mounted) {
+            await Future.wait([
+              context.read<DesignsProvider>().refreshDesigns(),
+              context.read<SubscriptionProvider>().fetchSubscriptionStatus(),
+            ]);
+          }
         },
         child: SingleChildScrollView(
           physics: const AlwaysScrollableScrollPhysics(),
@@ -171,14 +176,45 @@ class _HomeScreenState extends State<HomeScreen> {
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: Colors.grey,
-                          image: DecorationImage(
-                            image: user.profileImagePath != null
-                                ? (user.profileImagePath!.startsWith('http')
-                                    ? NetworkImage(user.profileImagePath!) as ImageProvider
-                                    : FileImage(File(user.profileImagePath!)) as ImageProvider)
-                                : const AssetImage('assets/images/banner_image.png'),
-                            fit: BoxFit.cover,
-                          ),
+                        ),
+                        child: ClipOval(
+                          child: user.profileImagePath != null && user.profileImagePath!.isNotEmpty
+                              ? (user.profileImagePath!.startsWith('http')
+                                  ? Image.network(
+                                      resolveImageUrl(user.profileImagePath!),
+                                      fit: BoxFit.cover,
+                                      key: ValueKey(user.profileImagePath!),
+                                      errorBuilder: (context, error, stackTrace) {
+                                        print('Error loading profile image: $error');
+                                        return Image.asset(
+                                          'assets/images/banner_image.png',
+                                          fit: BoxFit.cover,
+                                        );
+                                      },
+                                      loadingBuilder: (context, child, loadingProgress) {
+                                        if (loadingProgress == null) return child;
+                                        return const Center(
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Color(0xFFF94C66),
+                                          ),
+                                        );
+                                      },
+                                    )
+                                  : (File(user.profileImagePath!).existsSync()
+                                      ? Image.file(
+                                          File(user.profileImagePath!),
+                                          fit: BoxFit.cover,
+                                          key: ValueKey(user.profileImagePath!),
+                                        )
+                                      : Image.asset(
+                                          'assets/images/banner_image.png',
+                                          fit: BoxFit.cover,
+                                        )))
+                              : Image.asset(
+                                  'assets/images/banner_image.png',
+                                  fit: BoxFit.cover,
+                                ),
                         ),
                       ),
                     ),
@@ -454,6 +490,9 @@ class _HomeScreenState extends State<HomeScreen> {
           Navigator.push(context, MaterialPageRoute(builder: (_) => const GuestScreen()));
         } else {
           setState(() => _selectedIndex = index);
+          if (index == 1 && mounted) {
+            context.read<DesignsProvider>().refreshDesigns();
+          }
         }
       },
       behavior: HitTestBehavior.opaque,
@@ -514,32 +553,33 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87)),
-              GestureDetector(
-                onTap: () async {
-                   final targetIndex = await Navigator.push<int>(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => TemplateScreen(
-                        title: title,
-                        templates: items,
+              TranslatedText(title, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87)),
+              if (items.length > 2)
+                GestureDetector(
+                  onTap: () async {
+                     final targetIndex = await Navigator.push<int>(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => TemplateScreen(
+                          title: title,
+                          templates: items,
+                        ),
                       ),
-                    ),
-                  );
-                  if (targetIndex != null && mounted) {
-                    setState(() {
-                      _selectedIndex = targetIndex;
-                    });
-                  }
-                },
-                child: Row(
-                  children: [
-                    Text(lang.seeAll, style: const TextStyle(color: Color(0xFFF94C66), fontSize: 13, fontWeight: FontWeight.w600)),
-                    const SizedBox(width: 4),
-                    const Icon(Icons.arrow_circle_right, color: Color(0xFFF94C66), size: 18),
-                  ],
+                    );
+                    if (targetIndex != null && mounted) {
+                      setState(() {
+                        _selectedIndex = targetIndex;
+                      });
+                    }
+                  },
+                  child: Row(
+                    children: [
+                      Text(lang.seeAll, style: const TextStyle(color: Color(0xFFF94C66), fontSize: 13, fontWeight: FontWeight.w600)),
+                      const SizedBox(width: 4),
+                      const Icon(Icons.arrow_circle_right, color: Color(0xFFF94C66), size: 18),
+                    ],
+                  ),
                 ),
-              ),
             ],
           ),
         ),
@@ -675,7 +715,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           const SizedBox(height: 8),
-          Text(
+          TranslatedText(
             name,
             style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.black87),
             maxLines: 1,
@@ -725,20 +765,21 @@ class _HomeScreenState extends State<HomeScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87)),
-              GestureDetector(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => AllDesignsScreen(title: title, isDrafts: true),
-                    ),
-                  );
-                },
-                child: Text(
-                  lp.seeAll,
-                  style: const TextStyle(color: Color(0xFFF94C66), fontSize: 13, fontWeight: FontWeight.w600),
+              if (items.length > 2)
+                GestureDetector(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => AllDesignsScreen(title: title, isDrafts: true),
+                      ),
+                    );
+                  },
+                  child: Text(
+                    lp.seeAll,
+                    style: const TextStyle(color: Color(0xFFF94C66), fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
                 ),
-              ),
             ],
           ),
         ),
@@ -787,20 +828,21 @@ class _HomeScreenState extends State<HomeScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(title, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87)),
-              GestureDetector(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => AllDesignsScreen(title: title, isDrafts: false),
-                    ),
-                  );
-                },
-                child: Text(
-                  lp.seeAll,
-                  style: const TextStyle(color: Color(0xFFF94C66), fontSize: 13, fontWeight: FontWeight.w600),
+              if (items.length > 2)
+                GestureDetector(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => AllDesignsScreen(title: title, isDrafts: false),
+                      ),
+                    );
+                  },
+                  child: Text(
+                    lp.seeAll,
+                    style: const TextStyle(color: Color(0xFFF94C66), fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
                 ),
-              ),
             ],
           ),
         ),

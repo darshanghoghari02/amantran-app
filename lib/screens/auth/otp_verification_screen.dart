@@ -10,6 +10,7 @@ import 'package:provider/provider.dart';
 import '../home/home_screen.dart';
 
 import '../../services/email_auth_service.dart';
+import '../../services/whatsapp_otp_service.dart';
 
 class OtpVerificationScreen extends StatefulWidget {
   final String? phone;
@@ -17,6 +18,7 @@ class OtpVerificationScreen extends StatefulWidget {
   final String? email;
   final String? emailOtp;
   final String? name;
+  final bool isWhatsappOtp;
 
   const OtpVerificationScreen({
     Key? key,
@@ -25,6 +27,7 @@ class OtpVerificationScreen extends StatefulWidget {
     this.email,
     this.emailOtp,
     this.name,
+    this.isWhatsappOtp = false,
   }) : super(key: key);
 
   @override
@@ -75,7 +78,12 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
       bool success = false;
       if (widget.email != null) {
         success = (otp == widget.emailOtp);
+      } else if (widget.isWhatsappOtp) {
+        // Verify OTP via backend API for WhatsApp
+        final result = await WhatsappOtpService.verifyOtp(widget.phone!, otp);
+        success = result['success'] ?? false;
       } else {
+        // Firebase SMS OTP verification (legacy)
         success = await AuthService.verifyOtp(
           verificationId: widget.verificationId!,
           smsCode: otp,
@@ -86,20 +94,23 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
 
       if (success) {
         final userProvider = context.read<UserProvider>();
-        if (widget.email != null) {
-          await userProvider.fetchProfileFromCloud();
-          final existingPhone = userProvider.phone;
-          final existingName = userProvider.name;
-          userProvider.updateProfile(
-            name: existingName.isNotEmpty ? existingName : (widget.name ?? "User"),
-            phone: (existingPhone.isNotEmpty && existingPhone != "+91 00000 00000" && existingPhone != "+910000000000")
-                ? existingPhone
-                : (widget.phone ?? ""),
-            email: widget.email!,
-          );
-        } else {
-          await userProvider.fetchProfileFromCloud();
+        await userProvider.fetchProfileFromCloud(phone: widget.phone);
+        
+        // Only update profile if it's incomplete
+        if (!userProvider.isProfileComplete) {
+          if (widget.email != null) {
+            final existingPhone = userProvider.phone;
+            final existingName = userProvider.name;
+            await userProvider.updateProfile(
+              name: existingName.isNotEmpty ? existingName : (widget.name ?? "User"),
+              phone: (existingPhone.isNotEmpty && existingPhone != "+91 00000 00000" && existingPhone != "+910000000000")
+                  ? existingPhone
+                  : (widget.phone ?? ""),
+              email: widget.email!,
+            );
+          }
         }
+        
         userProvider.setSocialOtpVerified(true);
         
         if (mounted) {
@@ -138,6 +149,15 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
           _startResendTimer(60); 
         } else {
           TopNotification.show(context, message: "Failed to resend OTP", type: NotificationType.error);
+        }
+      });
+    } else if (widget.isWhatsappOtp) {
+      WhatsappOtpService.sendOtpToWhatsapp(widget.phone!).then((result) {
+        if (result['success']) {
+          TopNotification.show(context, message: "OTP re-sent to WhatsApp successfully", type: NotificationType.success);
+          _startResendTimer(60); 
+        } else {
+          TopNotification.show(context, message: result['error'] ?? "Failed to resend OTP", type: NotificationType.error);
         }
       });
     } else {
@@ -209,7 +229,9 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
               const SizedBox(height: 30),
               
               Text(
-                widget.email != null ? "We just sent an Email" : "We just sent an SMS",
+                widget.email != null 
+                    ? "We just sent an Email" 
+                    : (widget.isWhatsappOtp ? "We just sent a WhatsApp message" : "We just sent an SMS"),
                 style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Color(0xFF1A1A1A), letterSpacing: -0.5),
               ),
               const SizedBox(height: 8),
