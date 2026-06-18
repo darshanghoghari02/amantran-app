@@ -1,16 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'complete_profile_screen.dart';
 
 import 'dart:async';
 import '../../services/auth_service.dart';
 import '../../widgets/top_notification.dart';
 import '../../providers/user_provider.dart';
 import 'package:provider/provider.dart';
-import '../home/home_screen.dart';
 
 import '../../services/email_auth_service.dart';
 import '../../services/whatsapp_otp_service.dart';
+import '../../providers/language_provider.dart';
+import '../onboarding/onboarding_app_lang_screen.dart';
 
 class OtpVerificationScreen extends StatefulWidget {
   final String? phone;
@@ -76,12 +76,14 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
       setState(() => _isLoading = true);
       
       bool success = false;
+      String? token;
       if (widget.email != null) {
         success = (otp == widget.emailOtp);
       } else if (widget.isWhatsappOtp) {
         // Verify OTP via backend API for WhatsApp
         final result = await WhatsappOtpService.verifyOtp(widget.phone!, otp);
         success = result['success'] ?? false;
+        token = result['token'];
       } else {
         // Firebase SMS OTP verification (legacy)
         success = await AuthService.verifyOtp(
@@ -94,6 +96,17 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
 
       if (success) {
         final userProvider = context.read<UserProvider>();
+        
+        // Store JWT token if provided by backend
+        if (token != null && token.isNotEmpty) {
+          await userProvider.setAuthToken(token);
+        }
+        
+        // Persist phone number so login survives app close / hot restart
+        if (widget.phone != null && widget.phone!.isNotEmpty) {
+          await userProvider.storeUserPhone(widget.phone!);
+        }
+        
         await userProvider.fetchProfileFromCloud(phone: widget.phone);
         
         // Only update profile if it's incomplete
@@ -114,20 +127,21 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
         userProvider.setSocialOtpVerified(true);
         
         if (mounted) {
-          if (userProvider.isProfileComplete) {
-            Navigator.pushAndRemoveUntil(
-              context,
-              MaterialPageRoute(builder: (_) => const HomeScreen()),
-              (route) => false,
-            );
-          } else {
-            Navigator.pushAndRemoveUntil(
-              context,
-              MaterialPageRoute(builder: (_) => const CompleteProfileScreen()),
-              (route) => false,
-            );
+          // Check profile completion again after potential updates
+          await userProvider.fetchProfileFromCloud(phone: widget.phone);
+          
+          if (mounted) {
+            if (userProvider.isProfileComplete) {
+              Navigator.popUntil(context, (route) => route.isFirst);
+              TopNotification.show(context, message: "Welcome!", type: NotificationType.success);
+            } else {
+              Navigator.pushAndRemoveUntil(
+                context,
+                MaterialPageRoute(builder: (_) => const OnboardingAppLangScreen()),
+                (route) => route.isFirst,
+              );
+            }
           }
-          TopNotification.show(context, message: "Welcome!", type: NotificationType.success);
         }
       } else {
         TopNotification.show(context, message: 'Invalid OTP. Please try again.', type: NotificationType.error);
@@ -182,6 +196,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = context.watch<LanguageProvider>();
     return Scaffold(
       backgroundColor: Colors.white,
       appBar: AppBar(
@@ -230,22 +245,22 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
               
               Text(
                 widget.email != null 
-                    ? "We just sent an Email" 
-                    : (widget.isWhatsappOtp ? "We just sent a WhatsApp message" : "We just sent an SMS"),
+                    ? lang.weSentAnEmail 
+                    : (widget.isWhatsappOtp ? lang.weSentAWhatsappMessage : lang.weSentAnSms),
                 style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: Color(0xFF1A1A1A), letterSpacing: -0.5),
               ),
               const SizedBox(height: 8),
               Text(
                 widget.email != null
-                    ? "Enter the code sent to ${widget.email}"
-                    : "Enter the code sent to ${widget.phone!.replaceRange(4, 10, '*** *** ')}",
+                    ? lang.enterCodeSentTo(widget.email!)
+                    : lang.enterCodeSentTo(widget.phone!.replaceRange(4, 10, '*** *** ')),
                 style: const TextStyle(fontSize: 14, color: Colors.black45, fontWeight: FontWeight.w500),
               ),
               const SizedBox(height: 40),
               
-              const Text(
-                "Verification Code",
-                style: TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF1A1A1A)),
+              Text(
+                lang.verificationCode,
+                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w800, color: Color(0xFF1A1A1A)),
               ),
               const SizedBox(height: 16),
               
@@ -266,13 +281,13 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    _secondsRemaining > 0 ? "Resend in ${_formatTimer(_secondsRemaining)}" : "Ready to resend", 
+                    _secondsRemaining > 0 ? lang.resendIn(_formatTimer(_secondsRemaining)) : lang.readyToResend, 
                     style: const TextStyle(fontSize: 12, color: Colors.black38, fontWeight: FontWeight.w500)
                   ),
                   GestureDetector(
                     onTap: () => Navigator.pop(context),
-                    child: const Text("Already have an account? Log in", 
-                      style: TextStyle(fontSize: 12, color: Color(0xFF00A3FF), fontWeight: FontWeight.w800)),
+                    child: Text(lang.alreadyHaveAccountLogin, 
+                      style: const TextStyle(fontSize: 12, color: Color(0xFF00A3FF), fontWeight: FontWeight.w800)),
                   ),
                 ],
               ),
@@ -282,7 +297,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                 child: TextButton(
                   onPressed: _secondsRemaining > 0 ? null : _handleResend,
                   child: Text(
-                    "Didn't receive code?", 
+                    lang.didntReceiveCode, 
                     style: TextStyle(
                       color: _secondsRemaining > 0 ? Colors.black26 : const Color(0xFF1A1A1A), 
                       fontWeight: FontWeight.w800, 
@@ -314,10 +329,10 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                     ? const CircularProgressIndicator(color: Colors.white)
                     : Row(
                         mainAxisAlignment: MainAxisAlignment.center,
-                        children: const [
-                          Text("Verify & Continue", style: TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
-                          SizedBox(width: 10),
-                          Icon(Icons.arrow_forward_rounded, size: 22),
+                        children: [
+                          Text(lang.verifyAndContinue, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w800)),
+                          const SizedBox(width: 10),
+                          const Icon(Icons.arrow_forward_rounded, size: 22),
                         ],
                       ),
                 ),

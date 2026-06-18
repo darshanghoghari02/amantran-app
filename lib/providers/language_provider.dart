@@ -18,6 +18,7 @@ class LanguageProvider extends ChangeNotifier {
 
   final UserRepository _userRepository = UserRepository();
   StreamSubscription? _authSubscription;
+  bool _hiveLoaded = false;
 
   String _currentLanguage = 'English';
   String get currentLanguage => _currentLanguage;
@@ -84,6 +85,12 @@ class LanguageProvider extends ChangeNotifier {
         if (savedLangs != null && savedLangs.isNotEmpty) {
           _invitationLanguages = Set<String>.from(savedLangs.cast<String>());
         }
+        
+        // Keep Hive locally in sync with loaded cloud settings
+        await _saveToHive(_keyAppLang, _currentLanguage);
+        await _saveToHive(_keyInvLang, _activeInvitationLanguage);
+        await _saveToHive(_keyInvLangsList, _invitationLanguages.toList());
+        
         notifyListeners();
       }
     } catch (e) {
@@ -92,6 +99,7 @@ class LanguageProvider extends ChangeNotifier {
   }
 
   Future<void> _saveSettingsToCloud() async {
+    if (!_hiveLoaded) return; // Block saving default values if Hive has not loaded yet
     if (FirestoreService().resolvedUid != null) {
       try {
         await _userRepository.saveSettings({
@@ -116,6 +124,7 @@ class LanguageProvider extends ChangeNotifier {
     if (savedLangs != null && savedLangs.isNotEmpty) {
       _invitationLanguages = Set<String>.from(savedLangs.cast<String>());
     }
+    _hiveLoaded = true;
     notifyListeners();
   }
 
@@ -488,7 +497,7 @@ class LanguageProvider extends ChangeNotifier {
   String get personalInformation => _t({
         'English': 'Personal Information',
         'Gujarati': 'વ્યક્તિગત માહિતી',
-        'Hindi': 'व्यक्तिगत जाणકારી',
+        'Hindi': 'व्यक्तिगत जानकारी',
         'Marathi': 'वैयक्तिक माहिती',
         'Punjabi': 'ਨਿੱજી ਜਾਣਕਾਰੀ',
         'Urdu': 'ذاتی معلومات',
@@ -618,7 +627,7 @@ class LanguageProvider extends ChangeNotifier {
   String get previous => _t({
         'English': 'Previous',
         'Gujarati': 'પાછળ',
-        'Hindi': 'पिछલા',
+        'Hindi': 'पिछला',
         'Marathi': 'मागील',
         'Punjabi': 'ਪਿਛਲਾ',
         'Urdu': 'اگلا',
@@ -662,10 +671,55 @@ class LanguageProvider extends ChangeNotifier {
   String get cancel => _t({
         'English': 'Cancel',
         'Gujarati': 'રદ કરો',
-        'Hindi': 'રદ કરા',
+        'Hindi': 'रद्द करें',
         'Marathi': 'रद्द करा',
         'Punjabi': 'ਰੱਦ ਕਰੋ',
         'Urdu': 'منسوخ کریں'
+      });
+
+  String get edit => _t({
+        'English': 'Edit',
+        'Gujarati': 'સુધારો',
+        'Hindi': 'एडिट',
+        'Marathi': 'संपादन',
+        'Punjabi': 'ਸੋਧੋ',
+        'Urdu': 'ترمیم',
+      });
+
+  String get format => _t({
+        'English': 'Format',
+        'Gujarati': 'ફોર્મેટ',
+        'Hindi': 'फॉर्मेट',
+        'Marathi': 'स्वरूप',
+        'Punjabi': 'ਫਾਰਮੈਟ',
+        'Urdu': 'فارمیٹ',
+      });
+
+  String get rotate => _t({
+        'English': 'Rotate',
+        'Gujarati': 'ફેરવો',
+        'Hindi': 'घुमाएं',
+        'Marathi': 'फिरवा',
+        'Punjabi': 'ਘੁਮਾਓ',
+        'Urdu': 'گھمائیں',
+      });
+
+  String get color => _t({
+        'English': 'Color',
+        'Gujarati': 'રંગ',
+        'Hindi': 'रंग',
+        'Marathi': 'रंग',
+        'Punjabi': 'ਰੰਗ',
+        'Urdu': 'رنگ',
+      });
+
+  String get opacity => _t({
+        'English': 'Opacity',
+        'Gujarati': 'પારદર્શકતા',
+        'Hindi': 'पारदर्शिता',
+        'Marathi': 'अपारदर्शकता',
+        'Punjabi': 'ਧੁੰਦਲਾਪਨ',
+        'Urdu': 'دھندلاپن',
       });
 
   // ─────────────────────────────────────────────────────────────
@@ -870,6 +924,22 @@ class LanguageProvider extends ChangeNotifier {
         'Marathi': 'आम्हाला तुमचा अभिप्राय आवडेल.',
         'Punjabi': 'ਅਸੀਂ ਤੁਹਾਡੀ ਫੀਡਬੈਕ ਸੁਣਨਾ ਚਾਹੁੰਦੇ ਹਾਂ।',
         'Urdu': 'ہم آپ کی رائے جاننا چاہیں گے۔'
+      });
+  String get loginRequired => _t({
+        'English': 'Please login to rate the app',
+        'Gujarati': 'કૃપા કરીને રેટિંગ આપવા માટે લોગિન કરો',
+        'Hindi': 'कृपया रेटिंग देने के लिए लॉग इन करें',
+        'Marathi': 'कृपया रेटिंग देण्यासाठी लॉग इन करा',
+        'Punjabi': 'ਕਿਰਪਾ ਕਰਕੇ ਰੇਟਿੰਗ ਦੇਣ ਲਈ ਲੌਗਇਨ ਕਰੋ',
+        'Urdu': 'براہ کرم درجہ بندی کرنے کے لیے لاگ ان کریں'
+      });
+  String get errorOccurred => _t({
+        'English': 'An error occurred. Please try again.',
+        'Gujarati': 'ભૂલ આવી. ફરી પ્રયાસ કરો.',
+        'Hindi': 'त्रुटि हुई। कृपया पुनः प्रयास करें।',
+        'Marathi': 'त्रुटी आली. कृपया पुन्हा प्रयत्न करा.',
+        'Punjabi': 'ਗਲਤੀ ਹੋਈ। ਕਿਰਪਾ ਕਰਕੇ ਦੁਬਾਰา ਕੋਸ਼ਿਸ਼ ਕਰੋ।',
+        'Urdu': 'خرابی پیش آگئی۔ براہ کرم دوبارہ کوشش کریں۔'
       });
   String get alreadyRated => _t({
         'English': 'You have already submitted a rating.',
@@ -1217,14 +1287,6 @@ class LanguageProvider extends ChangeNotifier {
         'Punjabi': 'ਸਫ਼ਾ $current / $total ਸੁਰੱਖਿਅਤ ਕੀਤਾ ਜਾ ਰਿਹਾ ਹੈ...',
         'Urdu': 'صفحہ $current / $total محفوظ ہو رہا ہے...'
       });
-  String get edit => _t({
-        'English': 'Edit',
-        'Gujarati': 'સંપાદિત કરો',
-        'Hindi': 'एडिट करें',
-        'Marathi': 'संपादित करा',
-        'Punjabi': 'ਸੋਧੋ',
-        'Urdu': 'ترمیم کریں'
-      });
   String get shareWith => _t({
         'English': 'Share with',
         'Gujarati': 'શેર કરો',
@@ -1339,12 +1401,29 @@ class LanguageProvider extends ChangeNotifier {
         'Punjabi': 'ਵੇખ્યા ગયા',
         'Urdu': 'دیکھا گیا'
       });
+  String get accountSuspended => _t({
+        'English': 'Account Suspended',
+        'Gujarati': 'એકાઉન્ટ સ્થગિત કરવામાં આવ્યું',
+        'Hindi': 'खाता निलंबित',
+        'Marathi': 'खाते निलंबित केले',
+        'Punjabi': 'ਖਾਤਾ ਮੁਅੱਤਲ ਕੀਤਾ ਗਿਆ',
+        'Urdu': 'اکاؤنٹ معطل کر دیا گیا'
+      });
+
+  String get addText => _t({
+        'English': 'Add Text',
+        'Gujarati': 'લખાણ ઉમેરો',
+        'Hindi': 'टेक्स्ट जोड़ें',
+        'Marathi': 'टेक्स्ट जोडा',
+        'Punjabi': 'ਟੈਕਸਟ ਜੋੜੋ',
+        'Urdu': 'تحریر شامل کریں'
+      });
   String get noGuestsMatch => _t({
         'English': 'No guests match your search',
         'Gujarati': 'તમારી શોધ સાથે કોઈ મહેમાન મળતા નથી',
         'Hindi': 'आपकी खोज से कोई अतिथि मेल नहीं खाता',
         'Marathi': 'तुमच्या शोधाशी कोणतेही पाहुणे जुळत नाहीत',
-        'Punjabi': 'ਤੁਹਾਡੀ ਖੋਜ ਨਾਲ કોઈ ਮਹਿਮਾਨ ਨਹੀਂ ਮਿਲਦਾ',
+        'Punjabi': 'ਤੁہائی ਖੋਜ ਨਾਲ ਕੋਈ ਮਹਿਮਾਨ ਨਹੀਂ ਮਿਲਦਾ',
         'Urdu': 'آپ کی تلاش سے کوئی مہمان مطابقت نہیں رکھتا'
       });
   String get addManually => _t({
@@ -1709,23 +1788,213 @@ class LanguageProvider extends ChangeNotifier {
         'Urdu': 'اکاؤنٹ کی حیثیت'
   });
 
-  String get accountSuspended => _t({
-        'English': 'Account Suspended',
-        'Gujarati': 'એકાઉન્ટ સ્થગિત કરવામાં આવ્યું',
-        'Hindi': 'खाता निलंबित',
-        'Marathi': 'खाते निलंबित केले',
-        'Punjabi': 'ਖਾਤਾ ਮੁਅੱਤਲ ਕੀਤਾ ਗਿਆ',
-        'Urdu': 'اکاؤنٹ معطل کر دیا گیا'
-  });
 
-  String get addText => _t({
-        'English': 'Add Text',
-        'Gujarati': 'લખાણ ઉમેરો',
-        'Hindi': 'टेक्स्ट जोड़ें',
-        'Marathi': 'टेक्स्ट जोडा',
-        'Punjabi': 'ਟੈਕਸਟ ਜੋੜੋ',
-        'Urdu': 'تحریر شامل کریں'
-  });
+  String get signInToContinue => _t({
+        'English': 'Sign in to continue creating beautiful\ninvitations',
+        'Gujarati': 'સુંદર આમંત્રણો બનાવવાનું ચાલુ રાખવા માટે સાઇન ઇન કરો',
+        'Hindi': 'सुंदर निमंत्रण बनाना जारी रखने के लिए साइन इन करें',
+        'Marathi': 'सुंदर निमंत्रण तयार करणे सुरू રાખવા માટે साइन इन करा',
+        'Punjabi': 'ਸੁੰਦਰ ਸੱਦਾ ਪੱਤਰ ਬਣਾਉਣਾ ਜਾਰੀ ਰੱਖਣ ਲਈ ਸਾਈਨ ਇਨ ਕਰੋ',
+        'Urdu': 'خوبصورت دعوت نامے بنانا جاری رکھنے کے لیے سائن ان کریں'
+      });
+
+  String get chooseYourAccount => _t({
+        'English': 'Choose your account',
+        'Gujarati': 'તમારું એકાઉન્ટ પસંદ કરો',
+        'Hindi': 'अपना खाता चुनें',
+        'Marathi': 'तुमचे खाते निवडा',
+        'Punjabi': 'ਆਪਣਾ ਖਾਤਾ ਚੁਣੋ',
+        'Urdu': 'اپنا اکاؤنٹ منتخب کریں'
+      });
+
+  String get removeAccount => _t({
+        'English': 'Remove Account',
+        'Gujarati': 'એકાઉન્ટ દૂર કરો',
+        'Hindi': 'खाता हटाएं',
+        'Marathi': 'खाते काढा',
+        'Punjabi': 'ਖਾਤਾ ਹਟਾਓ',
+        'Urdu': 'اکاؤنٹ ہٹائیں'
+      });
+
+  String get logInOrSignUp => _t({
+        'English': 'Log in or Sign up',
+        'Gujarati': 'લોગિન અથવા સાઇનઅપ',
+        'Hindi': 'लॉगिन या साइनअप',
+        'Marathi': 'लॉगिन किंवा साइनअप',
+        'Punjabi': 'ਲੌਗਇਨ ਜਾਂ ਸਾਈਨ ਅੱਪ',
+        'Urdu': 'لاگ ان یا سائن اپ'
+      });
+
+  String get enterPhoneNumber => _t({
+        'English': 'Enter Your Phone Number',
+        'Gujarati': 'તમારો ફોન નંબર દાખલ કરો',
+        'Hindi': 'अपना फोन नंबर दर्ज करें',
+        'Marathi': 'तुमचा फोन नंबर प्रविष्ट करा',
+        'Punjabi': 'ਆਪਣਾ ਫੋਨ ਨੰਬਰ ਦਰਜ ਕਰੋ',
+        'Urdu': 'اپنا فون نمبر درج کریں'
+      });
+
+  String get enter10DigitNumber => _t({
+        'English': 'Enter 10-digit number',
+        'Gujarati': '૧૦-આંકડાનો નંબર દાખલ કરો',
+        'Hindi': '१०-अंकीय नंबर दर्ज करें',
+        'Marathi': '१०-अंकी क्रमांक प्रविष्ट करा',
+        'Punjabi': '10-ਅੰਕਾਂ ਦਾ ਨੰਬਰ ਦਰਜ ਕਰੋ',
+        'Urdu': '10 ہندسوں کا نمبر درج کریں'
+      });
+
+  String get weWillSendVerificationCode => _t({
+        'English': "We'll send a code to verify your account",
+        'Gujarati': 'અમે તમારા એકાઉન્ટની ચકાસણી કરવા માટે કોડ મોકલીશું',
+        'Hindi': 'हम आपके खाते को सत्यापित करने के लिए एक कोड भेजेंगे',
+        'Marathi': 'आम्ही तुमचे खाते सत्यापित करण्यासाठी कोड पाठवू',
+        'Punjabi': 'ਅਸੀਂ ਤੁਹਾਡੇ ਖਾਤੇ ਦੀ ਪੁਸ਼ਟੀ ਕਰਨ ਲਈ ਇੱਕ ਕੋਡ ਭੇਜਾਂਗੇ',
+        'Urdu': 'ہم آپ کے اکاؤنٹ کی تصدیق کے لیے ایک کوڈ بھیجیں گے'
+      });
+
+  String get secureAndPrivate => _t({
+        'English': 'Secure & Private',
+        'Gujarati': 'સુરક્ષિત અને ખાનગી',
+        'Hindi': 'सुरक्षित और निजी',
+        'Marathi': 'सुरक्षित आणि खाजगी',
+        'Punjabi': 'ਸੁਰੱਖਿਅਤ ਅਤੇ ਨਿੱਜੀ',
+        'Urdu': 'محفوظ اور نجی'
+      });
+
+  String get phoneEncryptionDisclaimer => _t({
+        'English': 'Your phone number is encrypted and used only for verification.',
+        'Gujarati': 'તમારો ફોન નંબર એન્ક્રિપ્ટ થયેલ છે અને તેનો ઉપયોગ ફક્ત ચકાસણી માટે થાય છે.',
+        'Hindi': 'आपका फोन नंबर एन्क्रिप्टेड है और इसका उपयोग केवल सत्यापन के लिए किया जाता है।',
+        'Marathi': 'तुमचा फोन नंबर एनक्रिप्ट केलेला आहे आणि फक्त पडताळणीसाठी वापरला जातो.',
+        'Punjabi': 'ਤੁਹਾਡਾ ਫੋਨ ਨੰਬਰ ਐਨਕ੍ਰਿਪਟਡ ਹੈ ਅਤੇ ਸਿਰਫ ਪੁਸ਼ਟੀਕਰਨ ਲਈ ਵਰਤਿਆ ਜਾਂਦਾ ਹੈ।',
+        'Urdu': 'آپ کا فون نمبر انکرپٹڈ ہے اور صرف تصدیق کے لیے استعمال ہوتا ہے۔'
+      });
+
+  String get continueButton => _t({
+        'English': 'Continue',
+        'Gujarati': 'ચાલુ રાખો',
+        'Hindi': 'जारी रखें',
+        'Marathi': 'सुरू ठेवा',
+        'Punjabi': 'ਜਾਰੀ ਰੱਖੋ',
+        'Urdu': 'جاری رکھیں'
+      });
+
+  String get orLoginWith => _t({
+        'English': 'Or login with',
+        'Gujarati': 'અથવા આનાથી લોગિન કરો',
+        'Hindi': 'या इसके साथ लॉगिन करें',
+        'Marathi': 'किंवा याद्वारे लॉगिन करा',
+        'Punjabi': 'ਜਾਂ ਇਸ ਨਾਲ ਲੌਗਇਨ ਕਰੋ',
+        'Urdu': 'یا لاگ ان کریں'
+      });
+
+  String get returningUserDisclaimer => _t({
+        'English': 'By continuing, you agree to our Terms of Service, Privacy Policy, and Content Policy.',
+        'Gujarati': 'આગળ વધીને, તમે અમારી સેવાની શરતો, ગોપનીયતા નીતિ અને સામગ્રી નીતિ સાથે સંમત થાઓ છો.',
+        'Hindi': 'आगे बढ़कर, आप हमारी सेवा की शर्तों, गोपनीयता नीति और सामग्री नीति से सहमत होते हैं।',
+        'Marathi': 'सुरू ठेवून, आपण आमच्या सेवा अटी, गोपनीयता धोरण आणि सामग्री धोरणाशी सहमत आहात.',
+        'Punjabi': 'ਜਾਰੀ ਰੱਖ ਕੇ, ਤੁਸੀਂ ਸਾਡੀ ਸੇਵਾ ਦੀਆਂ ਸ਼ਰਤਾਂ, ਗੋਪਨੀਯਤਾ નીતિ ਅਤੇ ਵਿਸ਼ਾ-ਵਸਤੂ ਨੀਤੀ ਨਾਲ ਸਹਿਮਤ ਹੁੰਦੇ ਹੋ।',
+        'Urdu': 'جاری رکھ کر، آپ ہماری سروس کی شرائط، رازداری کی پالیسی اور مواد کی پالیسی سے اتفاق کرتے ہیں۔'
+      });
+
+  String get newUserDisclaimer => _t({
+        'English': 'By proceeding, you agree to receive SMS messages for verification. Standard rates may apply.',
+        'Gujarati': 'આગળ વધીને, તમે ચકાસણી માટે એસએમએસ સંદેશા પ્રાપ્ત કરવા માટે સંમત થાઓ છો. સામાન્ય દર લાગુ થઈ શકે છે.',
+        'Hindi': 'आगे बढ़कर, आप सत्यापन के लिए एसएमएस संदेश प्राप्त करने के लिए सहमत होते हैं। सामान्य दरें लागू हो सकती हैं।',
+        'Marathi': 'पुढे चालू ठेवून, आपण पडताळणीसाठी एसएमएस संदेश प्राप्त करण्यास सहमत आहात. सामान्य दर लागू होऊ शकतात.',
+        'Punjabi': 'ਅੱਗੇ ਵਧ ਕੇ, ਤੁਸੀਂ ਪੁਸ਼ਟੀਕਰਨ ਲਈ ਐਸਐਮਐਸ ਸੰਦੇਸ਼ ਪ੍ਰਾਪਤ ਕਰਨ ਲਈ ਸਹਿਮਤ ਹੁੰਦੇ ਹੋ। ਆਮ ਦਰਾਂ ਲਾਗੂ ਹੋ ਸਕਦੀਆਂ ਹਨ।',
+        'Urdu': 'آگے بڑھ کر، آپ تصدیق کے لیے ایس ایم ایس پیغامات موصول کرنے سے اتفاق کرتے ہیں۔ عام چارجز لاگو ہو سکتے ہیں۔'
+      });
+
+  String get weSentAnEmail => _t({
+        'English': 'We just sent an Email',
+        'Gujarati': 'અમે હમણાં જ ઈમેલ મોકલ્યો છે',
+        'Hindi': 'हमने अभी एक ईमेल भेजा है',
+        'Marathi': 'आम्ही नुकताच एक ईमेल पाठवला आहे',
+        'Punjabi': 'ਅਸੀਂ ਹੁਣੇ ਹੀ ਇੱਕ ਈਮੇਲ ਭੇਜੀ ਹੈ',
+        'Urdu': 'ہم نے ابھی ایک ای میل بھیجی ہے'
+      });
+
+  String get weSentAWhatsappMessage => _t({
+        'English': 'We just sent a WhatsApp message',
+        'Gujarati': 'અમે હમણાં જ એક વોટ્સએપ સંદેશ મોકલ્યો છે',
+        'Hindi': 'हमने अभी एक व्हाट्सएप संदेश भेजा है',
+        'Marathi': 'आम्ही नुकताच एक व्हॉट्सॲप संदेश पाठवला आहे',
+        'Punjabi': 'ਅਸੀਂ ਹੁਣੇ ਹੀ ਇੱਕ ਵਟਸਐਪ ਸੰਦੇਸ਼ ਭੇਜਿਆ ਹੈ',
+        'Urdu': 'ہم نے ابھی ایک واٹس ایپ پیغام بھیجا ہے'
+      });
+
+  String get weSentAnSms => _t({
+        'English': 'We just sent an SMS',
+        'Gujarati': 'અમે હમણાં જ એક એસએમએસ મોકલ્યો છે',
+        'Hindi': 'हमने अभी एक एसएमएस भेजा है',
+        'Marathi': 'आम्ही नुकताच एक एसएमएस पाठवला आहे',
+        'Punjabi': 'ਅਸੀਂ ਹੁਣੇ ਹੀ ਇੱਕ ਐਸਐਮਐਸ ਭੇਜਿਆ ਹੈ',
+        'Urdu': 'ہم نے ابھی ایک ایس ایم ایس بھیجا ہے'
+      });
+
+  String enterCodeSentTo(String target) => _t({
+        'English': 'Enter the code sent to $target',
+        'Gujarati': 'આના પર મોકલેલો કોડ દાખલ કરો: $target',
+        'Hindi': '$target पर भेजा गया कोड दर्ज करें',
+        'Marathi': '$target वर पाठवलेला कोड प्रविष्ट करा',
+        'Punjabi': '$target ਤੇ ਭੇਜਿਆ ਕੋਡ ਦਰਜ ਕਰੋ',
+        'Urdu': '$target پر بھیجا گیا کوڈ درج کریں'
+      });
+
+  String get verificationCode => _t({
+        'English': 'Verification Code',
+        'Gujarati': 'ચકાસણી કોડ',
+        'Hindi': 'सत्यापन कोड',
+        'Marathi': 'पडताळणी कोड',
+        'Punjabi': 'ਪੁਸ਼ਟੀਕਰਨ ਕੋਡ',
+        'Urdu': 'تصدیقی کوڈ'
+      });
+
+  String resendIn(String timer) => _t({
+        'English': 'Resend in $timer',
+        'Gujarati': '$timer માં ફરી મોકલો',
+        'Hindi': '$timer में पुनः भेजें',
+        'Marathi': '$timer मध्ये पुन्हा पाठवा',
+        'Punjabi': '$timer ਵਿੱਚ ਦੁਬਾਰਾ ਭੇਜੋ',
+        'Urdu': '$timer میں دوبارہ بھیجیں'
+      });
+
+  String get readyToResend => _t({
+        'English': 'Ready to resend',
+        'Gujarati': 'ફરીથી મોકલવા માટે તૈયાર',
+        'Hindi': 'पुनः भेजने के लिए तैयार',
+        'Marathi': 'पुन्हा पाठवण्यासाठी तयार',
+        'Punjabi': 'ਦੁਬਾਰਾ ਭੇਜਣ ਲਈ ਤਿਆਰ',
+        'Urdu': 'دوبارہ بھیجنے کے لیے تیار'
+      });
+
+  String get alreadyHaveAccountLogin => _t({
+        'English': 'Already have an account? Log in',
+        'Gujarati': 'પહેલેથી જ એકાઉન્ટ છે? લોગિન કરો',
+        'Hindi': 'पहले से ही खाता है? लॉग इन करें',
+        'Marathi': 'आधीच खाते आहे का? लॉग इन करा',
+        'Punjabi': 'ਪਹਿਲਾਂ ਹੀ ਖਾਤਾ ਹੈ? ਲੌਗਇਨ ਕਰੋ',
+        'Urdu': 'پہلے سے ہی اکاؤنٹ ہے؟ لاگ ان کریں'
+      });
+
+  String get didntReceiveCode => _t({
+        'English': "Didn't receive code?",
+        'Gujarati': 'કોડ નથી મળ્યો?',
+        'Hindi': 'कोड नहीं मिला?',
+        'Marathi': 'कोड मिळाला नाही?',
+        'Punjabi': 'ਕੋਡ ਨਹੀਂ ਮਿਲਿਆ?',
+        'Urdu': 'کوڈ موصول نہیں ہوا؟'
+      });
+
+  String get verifyAndContinue => _t({
+        'English': 'Verify & Continue',
+        'Gujarati': 'ચકાસો અને આગળ વધો',
+        'Hindi': 'सत्यापित करें और जारी रखें',
+        'Marathi': 'पडताळणी करा आणि सुरू ठेवा',
+        'Punjabi': 'ਤਸਦੀਕ ਕਰੋ ਅਤੇ ਜਾਰੀ ਰੱਖੋ',
+        'Urdu': 'تصدیق کریں اور جاری رکھیں'
+      });
 
   String get amantranPremium => _t({
         'English': 'Amantran Premium',

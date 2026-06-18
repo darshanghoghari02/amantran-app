@@ -256,7 +256,7 @@ class _TemplateDetailScreenState extends State<TemplateDetailScreen> {
                                       child: TranslatedText(
                                         template.title.isEmpty
                                             ? lang.weddingTemplate
-                                            : template.title,
+                                            : template.title.split(' ').map((w) => w.isEmpty ? w : '${w[0].toUpperCase()}${w.substring(1)}').join(' '),
                                         style: const TextStyle(
                                           fontSize: 20,
                                           fontWeight: FontWeight.bold,

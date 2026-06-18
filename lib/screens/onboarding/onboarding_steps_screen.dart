@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/language_provider.dart';
-import '../auth/login_screen.dart';
 
 class OnboardingStepsScreen extends StatelessWidget {
   const OnboardingStepsScreen({Key? key}) : super(key: key);
@@ -34,9 +33,9 @@ class OnboardingStepsScreen extends StatelessWidget {
                           children: [
                             Expanded(child: _buildProgressSegment(isActive: true)),
                             const SizedBox(width: 8),
-                            Expanded(child: _buildProgressSegment(isActive: false)),
+                            Expanded(child: _buildProgressSegment(isActive: true)),
                             const SizedBox(width: 8),
-                            Expanded(child: _buildProgressSegment(isActive: false)),
+                            Expanded(child: _buildProgressSegment(isActive: true)),
                           ],
                         ),
                       ),
@@ -152,7 +151,7 @@ class OnboardingStepsScreen extends StatelessWidget {
                           ),
                           child: ElevatedButton(
                             onPressed: () {
-                              Navigator.push(context, MaterialPageRoute(builder: (_) => const LoginScreen()));
+                              Navigator.popUntil(context, (route) => route.isFirst);
                             },
                             style: ElevatedButton.styleFrom(
                               backgroundColor: const Color(0xFFF94C66),

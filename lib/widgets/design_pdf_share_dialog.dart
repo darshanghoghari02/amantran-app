@@ -165,7 +165,7 @@ class _DesignPdfShareDialogState extends State<DesignPdfShareDialog> {
       if (context == null) return null;
       final boundary = context.findRenderObject() as RenderRepaintBoundary?;
       if (boundary == null) return null;
-      final image = await boundary.toImage(pixelRatio: 1.5);
+      final image = await boundary.toImage(pixelRatio: 1.2);
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       return byteData?.buffer.asUint8List();
     } catch (e) {

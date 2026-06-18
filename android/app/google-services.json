@@ -9,10 +9,15 @@
       "client_info": {
         "mobilesdk_app_id": "1:6374728923:android:fe8c73aad5af32d06598fe",
         "android_client_info": {
-          "package_name": "com.olivepatel.nimantran"
+          "package_name": "com.olive.amantran"
         }
       },
-      "oauth_client": [],
+      "oauth_client": [
+        {
+          "client_id": "6374728923-xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
       "api_key": [
         {
           "current_key": "AIzaSyBN-quVpjUmo-SCoak197M7EDRgYsbc-LU"

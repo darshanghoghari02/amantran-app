@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
 import '../../repositories/user_repository.dart';
+import '../../services/firestore_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'app_language_screen.dart';
 import 'invitation_language_screen.dart';
@@ -13,7 +14,6 @@ import '../../utils/image_resolver.dart';
 import '../../providers/subscription_provider.dart';
 import '../../widgets/rating_dialog.dart';
 import '../../widgets/top_notification.dart';
-import '../../widgets/subscription_bottom_sheet.dart';
 import '../auth/login_screen.dart';
 import 'user_management_screen.dart';
 import 'package:flutter/services.dart';
@@ -265,8 +265,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       icon: Icons.star_border_rounded,
                       title: lang.rateUs,
                       onTap: () async {
-                        final uid = FirebaseAuth.instance.currentUser?.uid ?? '';
-                        if (uid.isEmpty) return;
+                        final uid = FirestoreService().resolvedUid ?? FirebaseAuth.instance.currentUser?.uid ?? '';
+                        if (uid.isEmpty) {
+                          if (context.mounted) {
+                            TopNotification.show(
+                              context,
+                              message: lang.loginRequired,
+                              type: NotificationType.error,
+                            );
+                          }
+                          return;
+                        }
 
                         // Show loading indicator
                         showDialog(
@@ -288,6 +297,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           }
                         } catch (e) {
                           debugPrint("Error checking rating: $e");
+                          if (context.mounted) {
+                            Navigator.pop(context); // Close loading indicator
+                            TopNotification.show(
+                              context,
+                              message: lang.errorOccurred,
+                              type: NotificationType.error,
+                            );
+                          }
+                          return;
                         }
 
                         if (context.mounted) {
@@ -323,13 +341,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               userEmail: userProvider.email,
                               userPhone: userProvider.phone,
                             );
+
+                            if (context.mounted) {
+                              TopNotification.show(context,
+                                  message: lang.thankYouRating);
+                            }
                           } catch (e) {
                             debugPrint("Error saving rating to backend: $e");
-                          }
-
-                          if (context.mounted) {
-                            TopNotification.show(context,
-                                message: lang.thankYouRating);
+                            if (context.mounted) {
+                              TopNotification.show(
+                                context,
+                                message: lang.errorOccurred,
+                                type: NotificationType.error,
+                              );
+                            }
                           }
                         }
                       },
@@ -343,7 +368,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                       onTap: () async {
                         if (Platform.isAndroid) {
                           try {
-                            const channel = MethodChannel('com.olivepatel.nimantran/apk_share');
+                            const channel = MethodChannel('com.olive.amantran/apk_share');
                             final String? apkPath = await channel.invokeMethod<String>('getApkPath');
                             if (apkPath != null && apkPath.isNotEmpty) {
                               final file = File(apkPath);
@@ -453,16 +478,20 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                       const SizedBox(width: 12),
                                       Expanded(
                                         child: ElevatedButton(
-                                          onPressed: () {
-                                            context.read<UserProvider>().logout();
-                                            Navigator.pop(ctx);
-                                            Navigator.pushAndRemoveUntil(
-                                              context,
-                                              MaterialPageRoute(
-                                                  builder: (_) =>
-                                                      const LoginScreen(showWelcomeBack: true)),
-                                              (route) => false,
-                                            );
+                                          onPressed: () async {
+                                            Navigator.pop(ctx); // Close dialog first
+                                            await context.read<UserProvider>().logout();
+                                            if (context.mounted) {
+                                              // Pop all routes down to the reactive root route (now OnboardingIntroScreen)
+                                              Navigator.popUntil(context, (route) => route.isFirst);
+                                              // Push LoginScreen on top
+                                              Navigator.push(
+                                                context,
+                                                MaterialPageRoute(
+                                                    builder: (_) =>
+                                                        const LoginScreen(showWelcomeBack: true)),
+                                              );
+                                            }
                                           },
                                           style: ElevatedButton.styleFrom(
                                             backgroundColor:

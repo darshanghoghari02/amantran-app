@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
-import 'dart:io';
 import 'package:provider/provider.dart';
 import '../../widgets/translated_text.dart';
+import '../../widgets/app_image.dart';
 
 // 🔴 MODELS
 import '../../models/template_model.dart';
@@ -25,7 +25,7 @@ import '../guests/guest_screen.dart';
 import '../../widgets/top_notification.dart';
 import '../../widgets/design_pdf_share_dialog.dart';
 import '../../providers/app_data_provider.dart';
-import '../../utils/image_resolver.dart';
+
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -36,18 +36,19 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
-  String _searchQuery = '';
+  // ValueNotifier isolates search rebuilds — typing no longer rebuilds the whole screen
+  final ValueNotifier<String> _searchQuery = ValueNotifier('');
   final TextEditingController _searchController = TextEditingController();
 
   @override
   void dispose() {
     _searchController.dispose();
+    _searchQuery.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    // Watch here to ensure whole screen rebuilds on change
     final lang = context.watch<LanguageProvider>();
     final user = context.watch<UserProvider>();
     final designsProvider = context.watch<DesignsProvider>();
@@ -114,6 +115,8 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildHomeTab(LanguageProvider lang, UserProvider user, BuildContext context) {
     final appData = context.watch<AppDataProvider>();
     final categories = appData.categories;
+    // Pre-resolve profile image existence off the build thread if it's a local file
+    final profilePath = user.profileImagePath;
     
     return SafeArea(
       child: RefreshIndicator(
@@ -178,43 +181,13 @@ class _HomeScreenState extends State<HomeScreen> {
                           color: Colors.grey,
                         ),
                         child: ClipOval(
-                          child: user.profileImagePath != null && user.profileImagePath!.isNotEmpty
-                              ? (user.profileImagePath!.startsWith('http')
-                                  ? Image.network(
-                                      resolveImageUrl(user.profileImagePath!),
-                                      fit: BoxFit.cover,
-                                      key: ValueKey(user.profileImagePath!),
-                                      errorBuilder: (context, error, stackTrace) {
-                                        print('Error loading profile image: $error');
-                                        return Image.asset(
-                                          'assets/images/banner_image.png',
-                                          fit: BoxFit.cover,
-                                        );
-                                      },
-                                      loadingBuilder: (context, child, loadingProgress) {
-                                        if (loadingProgress == null) return child;
-                                        return const Center(
-                                          child: CircularProgressIndicator(
-                                            strokeWidth: 2,
-                                            color: Color(0xFFF94C66),
-                                          ),
-                                        );
-                                      },
-                                    )
-                                  : (File(user.profileImagePath!).existsSync()
-                                      ? Image.file(
-                                          File(user.profileImagePath!),
-                                          fit: BoxFit.cover,
-                                          key: ValueKey(user.profileImagePath!),
-                                        )
-                                      : Image.asset(
-                                          'assets/images/banner_image.png',
-                                          fit: BoxFit.cover,
-                                        )))
-                              : Image.asset(
-                                  'assets/images/banner_image.png',
-                                  fit: BoxFit.cover,
-                                ),
+                          child: AppImage(
+                            src: (profilePath != null && profilePath.isNotEmpty)
+                                ? profilePath
+                                : 'assets/images/banner_image.png',
+                            fit: BoxFit.cover,
+                            errorWidget: Image.asset('assets/images/banner_image.png', fit: BoxFit.cover),
+                          ),
                         ),
                       ),
                     ),
@@ -264,9 +237,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: TextField(
                     controller: _searchController,
                     onChanged: (value) {
-                      setState(() {
-                        _searchQuery = value;
-                      });
+                      _searchQuery.value = value;
                     },
                     decoration: InputDecoration(
                       hintText: lang.searchHint,
@@ -275,19 +246,18 @@ class _HomeScreenState extends State<HomeScreen> {
                         padding: EdgeInsets.only(left: 12, right: 8),
                         child: Icon(Icons.search, color: Color(0xFFF94C66), size: 24),
                       ),
-                      suffixIcon: _searchQuery.isNotEmpty
-                          ? IconButton(
-                              icon: const Icon(
-                                Icons.close_rounded,
-                                color: Colors.black38,
-                                size: 20,
-                              ),
-                              onPressed: () {
-                                _searchController.clear();
-                                setState(() => _searchQuery = '');
-                              },
-                            )
-                          : null,
+                      suffixIcon: ValueListenableBuilder<String>(
+                        valueListenable: _searchQuery,
+                        builder: (_, q, __) => q.isNotEmpty
+                            ? IconButton(
+                                icon: const Icon(Icons.close_rounded, color: Colors.black38, size: 20),
+                                onPressed: () {
+                                  _searchController.clear();
+                                  _searchQuery.value = '';
+                                },
+                              )
+                            : const SizedBox.shrink(),
+                      ),
                       border: InputBorder.none,
                       contentPadding: const EdgeInsets.symmetric(vertical: 15),
                     ),
@@ -296,84 +266,96 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
   
               const SizedBox(height: 35),
-  
-              // Sections
-              if (_searchQuery.isEmpty) ...[
-                if (appData.isLoading)
-                  const Center(
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(vertical: 60),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          CircularProgressIndicator(color: Color(0xFFF94C66)),
-                          SizedBox(height: 16),
-                          Text("Loading dynamic invitation designs...", style: TextStyle(color: Colors.grey, fontSize: 13)),
-                        ],
+
+              // Sections — ValueListenableBuilder rebuilds only this subtree on search
+              ValueListenableBuilder<String>(
+                valueListenable: _searchQuery,
+                builder: (ctx, query, _) {
+                  if (query.isNotEmpty) {
+                    return _buildSearchResults(lang, appData, query);
+                  }
+                  if (appData.isLoading) {
+                    return const Center(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: 60),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            CircularProgressIndicator(color: Color(0xFFF94C66)),
+                            SizedBox(height: 16),
+                            Text("Loading dynamic invitation designs...", style: TextStyle(color: Colors.grey, fontSize: 13)),
+                          ],
+                        ),
                       ),
-                    ),
-                  )
-                else if (appData.hasError)
-                  Center(
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.cloud_off_rounded, size: 50, color: Colors.grey),
-                          const SizedBox(height: 16),
-                          Text(
-                            appData.errorMessage ?? "An error occurred",
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(color: Colors.black54, fontSize: 14),
-                          ),
-                          const SizedBox(height: 16),
-                          ElevatedButton.icon(
-                            onPressed: () => appData.retryInit(),
-                            icon: const Icon(Icons.refresh_rounded, size: 18),
-                            label: const Text("Retry"),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: const Color(0xFFF94C66),
-                              foregroundColor: Colors.white,
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  )
-                else if (appData.isEmpty)
-                  const Center(
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(vertical: 60),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.inventory_2_outlined, size: 50, color: Colors.grey),
-                          SizedBox(height: 16),
-                          Text("No templates found in database.", style: TextStyle(color: Colors.grey, fontSize: 14)),
-                        ],
-                      ),
-                    ),
-                  )
-                else
-                  ...categories.map((cat) {
-                    final catTemplates = appData.getTemplatesByCategory(cat.id);
-                    if (catTemplates.isEmpty) return const SizedBox.shrink();
-                    return Padding(
-                      padding: const EdgeInsets.only(bottom: 25),
-                      child: _buildSection(cat.name, catTemplates),
                     );
-                  }).toList(),
-              ] else ...[
-                _buildSearchResults(lang, appData),
-              ],
+                  }
+                  if (appData.hasError) {
+                    return Center(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 40),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.cloud_off_rounded, size: 50, color: Colors.grey),
+                            const SizedBox(height: 16),
+                            Text(
+                              appData.errorMessage ?? "An error occurred",
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(color: Colors.black54, fontSize: 14),
+                            ),
+                            const SizedBox(height: 16),
+                            ElevatedButton.icon(
+                              onPressed: () => appData.retryInit(),
+                              icon: const Icon(Icons.refresh_rounded, size: 18),
+                              label: const Text("Retry"),
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFFF94C66),
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
+                  if (appData.isEmpty) {
+                    return const Center(
+                      child: Padding(
+                        padding: EdgeInsets.symmetric(vertical: 60),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.inventory_2_outlined, size: 50, color: Colors.grey),
+                            SizedBox(height: 16),
+                            Text("No templates found in database.", style: TextStyle(color: Colors.grey, fontSize: 14)),
+                          ],
+                        ),
+                      ),
+                    );
+                  }
+                  return Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      ...categories.map((cat) {
+                        final catTemplates = appData.getTemplatesByCategory(cat.id);
+                        if (catTemplates.isEmpty) return const SizedBox.shrink();
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 25),
+                          child: _buildSection(cat.name, catTemplates),
+                        );
+                      }),
+                    ],
+                  );
+                },
+              ),
             ],
           ),
         ),
       ),
     );
   }
+
 
   Widget _buildDraftsTab(LanguageProvider lang, DesignsProvider designsProvider) {
     final drafts = designsProvider.drafts;
@@ -544,7 +526,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildSection(String title, List<TemplateModel> items) {
-    final lang = context.watch<LanguageProvider>();
+    // Use context.read — lang is passed from parent, no need to subscribe
+    final lang = context.read<LanguageProvider>();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -589,9 +572,17 @@ class _HomeScreenState extends State<HomeScreen> {
           child: ListView.builder(
             padding: const EdgeInsets.only(left: 20),
             scrollDirection: Axis.horizontal,
+            // addAutomaticKeepAlives keeps offscreen cards alive so images don't reload
+            addAutomaticKeepAlives: true,
             itemCount: items.length,
             itemBuilder: (context, index) {
-              return _buildTemplateCard(items[index].title, items[index].thumbnail, items[index], title, lang);
+              final t = items[index];
+              return _TemplateCard(
+                key: ValueKey(t.id),
+                template: t,
+                categoryName: title,
+                lang: lang,
+              );
             },
           ),
         ),
@@ -599,10 +590,10 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildSearchResults(LanguageProvider lang, AppDataProvider appData) {
-    final allTemplates = appData.allTemplates;
-    
-    final results = allTemplates.where((t) => t.title.toLowerCase().contains(_searchQuery.toLowerCase())).toList();
+  Widget _buildSearchResults(LanguageProvider lang, AppDataProvider appData, String query) {
+    final results = appData.allTemplates
+        .where((t) => t.title.toLowerCase().contains(query.toLowerCase()))
+        .toList();
 
     if (results.isEmpty) {
       return Padding(
@@ -631,7 +622,14 @@ class _HomeScreenState extends State<HomeScreen> {
               childAspectRatio: 0.75,
             ),
             itemBuilder: (context, index) {
-              return _buildTemplateCard(results[index].title, results[index].thumbnail, results[index], 'Search Result', lang, isGrid: true);
+              final t = results[index];
+              return _TemplateCard(
+                key: ValueKey(t.id),
+                template: t,
+                categoryName: 'Search Result',
+                lang: lang,
+                isGrid: true,
+              );
             },
           ),
         ],
@@ -639,119 +637,14 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  // Kept for backwards compat — routes to standalone widget
   Widget _buildTemplateCard(String name, String imagePath, TemplateModel template, String categoryName, LanguageProvider lp, {bool isGrid = false}) {
-    final subProvider = context.watch<SubscriptionProvider>();
-    final isUnlocked = subProvider.isTemplateUnlocked(template);
-
-    return Container(
-      width: isGrid ? null : 160,
-      margin: isGrid ? EdgeInsets.zero : const EdgeInsets.only(right: 15),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          Expanded(
-            child: GestureDetector(
-              onTap: () {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => TemplateDetailScreen(
-                      categoryName: categoryName,
-                      template: template,
-                    ),
-                  ),
-                );
-              },
-              child: Container(
-                decoration: BoxDecoration(
-                  borderRadius: BorderRadius.circular(15),
-                  image: DecorationImage(
-                    image: isNetworkImage(imagePath) 
-                        ? NetworkImage(resolveImageUrl(imagePath)) 
-                        : AssetImage(cleanAssetPath(imagePath)) as ImageProvider, 
-                    fit: BoxFit.cover,
-                  ),
-                  boxShadow: [
-                    BoxShadow(color: Colors.black.withValues(alpha: 0.05), blurRadius: 10, offset: const Offset(0, 5)),
-                  ],
-                ),
-                child: Stack(
-                  children: [
-                    Positioned(
-                      top: 10,
-                      left: 10,
-                      child: GestureDetector(
-                        onTap: () {
-                          final isFav = context.read<FavoritesProvider>().isFavorite(template);
-                          context.read<FavoritesProvider>().toggleFavorite(template);
-                          TopNotification.show(context, 
-                            message: isFav ? lp.removedFromFavorites : lp.addedToFavorites,
-                            type: isFav ? NotificationType.info : NotificationType.success);
-                        },
-                        child: Container(
-                          padding: const EdgeInsets.all(5),
-                          decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
-                          child: Icon(
-                            context.watch<FavoritesProvider>().isFavorite(template) ? Icons.favorite : Icons.favorite_border, 
-                            size: 16, 
-                            color: context.watch<FavoritesProvider>().isFavorite(template) ? const Color(0xFFF94C66) : Colors.black38
-                          ),
-                        ),
-                      ),
-                    ),
-                    if (template.isPremium)
-                      const Positioned(
-                        top: 10,
-                        right: 10,
-                        child: PremiumBadge(
-                          fontSize: 7.5,
-                          iconSize: 9.0,
-                          padding: EdgeInsets.symmetric(horizontal: 6, vertical: 3.5),
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          const SizedBox(height: 8),
-          TranslatedText(
-            name,
-            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.black87),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 2),
-          if (template.isPremium) ...[
-            Text(
-              isUnlocked
-                  ? lp.planActive
-                  : ((template.singlePurchasePrice != null && template.singlePurchasePrice! > 0)
-                      ? "₹${template.singlePurchasePrice!.toInt()} Lifetime"
-                      : "Included in Premium"),
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: isUnlocked
-                    ? Colors.green.shade600
-                    : ((template.singlePurchasePrice != null && template.singlePurchasePrice! > 0)
-                        ? const Color(0xFFF94C66)
-                        : Colors.grey.shade500),
-              ),
-            ),
-          ] else ...[
-            Text(
-              "Free",
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                color: Colors.green.shade600,
-              ),
-            ),
-          ],
-        ],
-      ),
+    return _TemplateCard(
+      key: ValueKey(template.id),
+      template: template,
+      categoryName: categoryName,
+      lang: lp,
+      isGrid: isGrid,
     );
   }
 
@@ -914,3 +807,153 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Standalone template card — isolated widget so only it rebuilds on sub/fav changes
+// ─────────────────────────────────────────────────────────────────────────────
+class _TemplateCard extends StatelessWidget {
+  final TemplateModel template;
+  final String categoryName;
+  final LanguageProvider lang;
+  final bool isGrid;
+
+  const _TemplateCard({
+    super.key,
+    required this.template,
+    required this.categoryName,
+    required this.lang,
+    this.isGrid = false,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // context.select only rebuilds this card when ITS template unlock state changes
+    final isUnlocked = context.select<SubscriptionProvider, bool>(
+      (sub) => sub.isTemplateUnlocked(template),
+    );
+
+    final title = template.title;
+    final displayName = title.isEmpty
+        ? ''
+        : title.split(' ').map((w) => w.isEmpty ? w : '${w[0].toUpperCase()}${w.substring(1)}').join(' ');
+
+    return Container(
+      width: isGrid ? null : 160,
+      margin: isGrid ? EdgeInsets.zero : const EdgeInsets.only(right: 15),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: GestureDetector(
+              onTap: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => TemplateDetailScreen(
+                    categoryName: categoryName,
+                    template: template,
+                  ),
+                ),
+              ),
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(15),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    // Cached network image — no re-download on scroll/rebuild
+                    AppImage(
+                      src: template.thumbnail,
+                      fit: BoxFit.cover,
+                    ),
+                    // Favourite button — isolated rebuild
+                    Positioned(
+                      top: 10,
+                      left: 10,
+                      child: _FavoriteButton(template: template, lang: lang),
+                    ),
+                    if (template.isPremium)
+                      const Positioned(
+                        top: 10,
+                        right: 10,
+                        child: PremiumBadge(
+                          fontSize: 7.5,
+                          iconSize: 9.0,
+                          padding: EdgeInsets.symmetric(horizontal: 6, vertical: 3.5),
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          TranslatedText(
+            displayName,
+            style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w700, color: Colors.black87),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 2),
+          if (template.isPremium)
+            Text(
+              isUnlocked
+                  ? lang.planActive
+                  : ((template.singlePurchasePrice != null && template.singlePurchasePrice! > 0)
+                      ? '₹${template.singlePurchasePrice!.toInt()} Lifetime'
+                      : 'Included in Premium'),
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: isUnlocked
+                    ? Colors.green.shade600
+                    : ((template.singlePurchasePrice != null && template.singlePurchasePrice! > 0)
+                        ? const Color(0xFFF94C66)
+                        : Colors.grey.shade500),
+              ),
+            )
+          else
+            Text(
+              'Free',
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.green.shade600),
+            ),
+        ],
+      ),
+    );
+  }
+}
+
+// Favourite icon button — only rebuilds when this template's fav status changes
+class _FavoriteButton extends StatelessWidget {
+  final TemplateModel template;
+  final LanguageProvider lang;
+
+  const _FavoriteButton({required this.template, required this.lang});
+
+  @override
+  Widget build(BuildContext context) {
+    final isFav = context.select<FavoritesProvider, bool>(
+      (fav) => fav.isFavorite(template),
+    );
+
+    return GestureDetector(
+      onTap: () {
+        context.read<FavoritesProvider>().toggleFavorite(template);
+        TopNotification.show(
+          context,
+          message: isFav ? lang.removedFromFavorites : lang.addedToFavorites,
+          type: isFav ? NotificationType.info : NotificationType.success,
+        );
+      },
+      child: Container(
+        padding: const EdgeInsets.all(5),
+        decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle),
+        child: Icon(
+          isFav ? Icons.favorite : Icons.favorite_border,
+          size: 16,
+          color: isFav ? const Color(0xFFF94C66) : Colors.black38,
+        ),
+      ),
+    );
+  }
+}
+

@@ -46,6 +46,14 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="nimantran" />
             </intent-filter>
+            
+            <!-- Google OAuth2 redirect for flutter_web_auth_2 (no Firebase needed) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="com.olive.amantran" android:host="oauth2redirect" />
+            </intent-filter>
         </activity>
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
@@ -55,7 +63,7 @@
 
         <provider
             android:name="androidx.core.content.FileProvider"
-            android:authorities="com.olivepatel.nimantran.flutter.share_provider"
+            android:authorities="com.olive.amantran.flutter.share_provider"
             android:exported="false"
             android:grantUriPermissions="true">
             <meta-data

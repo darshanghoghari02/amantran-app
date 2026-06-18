@@ -339,7 +339,7 @@ class _GuestScreenState extends State<GuestScreen> {
 
           // WhatsApp icon — Official SVG Logo
           GestureDetector(
-            onTap: () => _openWhatsApp(guest.phone),
+            onTap: () => _openWhatsApp(guest),
             child: SvgPicture.string(
               '''<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path fill="#25D366" d="M12.004 2c-5.523 0-10 4.477-10 10c0 1.767.459 3.427 1.263 4.873L2 22l5.247-1.377A9.947 9.947 0 0 0 12.004 22c5.523 0 10-4.477 10-10s-4.477-10-10-10zm.004 18.231c-1.63 0-3.167-.423-4.512-1.164l-.323-.178l-3.102.813l.827-3.023l-.196-.312c-.812-1.294-1.264-2.821-1.264-4.43c0-4.542 3.695-8.237 8.237-8.237s8.237 3.695 8.237 8.237s-3.696 8.237-8.237 8.237zm4.515-6.185c-.247-.124-1.464-.722-1.692-.804s-.392-.124-.556.124c-.165.247-.638.804-.784.969c-.144.165-.29.185-.536.062c-.247-.124-1.043-.385-1.986-1.227c-.733-.654-1.228-1.462-1.372-1.71c-.144-.247-.015-.381.109-.504c.112-.111.247-.289.37-.433c.124-.144.165-.247.247-.412c.082-.165.042-.31-.02-.433c-.062-.124-.556-1.341-.763-1.835c-.201-.486-.403-.42-.556-.427c-.144-.007-.31-.008-.474-.008c-.165 0-.433.062-.659.31c-.227.247-.866.845-.866 2.062c0 1.217.886 2.392 1.01 2.557c.124.165 1.743 2.661 4.221 3.732c.59.255 1.05.407 1.41.521c.594.188 1.135.161 1.562.097c.477-.071 1.464-.598 1.67-.1.206-.577.206-1.072.144-1.175c-.062-.103-.227-.165-.474-.289z"/></svg>''',
               width: 28,
@@ -362,7 +362,8 @@ class _GuestScreenState extends State<GuestScreen> {
     );
   }
 
-  Future<void> _openWhatsApp(String phone) async {
+  Future<void> _openWhatsApp(GuestModel guest) async {
+    final phone = guest.phone;
     try {
       final cleanPhone = phone.replaceAll(RegExp(r'[^0-9]'), '');
       if (cleanPhone.isEmpty) {
@@ -383,7 +384,13 @@ class _GuestScreenState extends State<GuestScreen> {
         final fallbackLaunched = await launchUrl(uri, mode: LaunchMode.platformDefault);
         if (!fallbackLaunched && mounted) {
           TopNotification.show(context, message: "Could not open WhatsApp application", type: NotificationType.error);
+          return;
         }
+      }
+
+      // Automatically update the guest's RSVP status to Sent if it was Pending
+      if (guest.rsvpStatus == RsvpStatus.pending) {
+        await context.read<GuestProvider>().updateGuest(guest.id, rsvpStatus: RsvpStatus.sent);
       }
     } catch (e) {
       if (mounted) {

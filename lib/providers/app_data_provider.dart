@@ -41,8 +41,8 @@ class AppDataProvider extends ChangeNotifier {
     // Dynamically listen to active fonts and register them in engine
     _fontService.initFontListener();
 
-    // Start periodic background data polling every 5 seconds to sync changes instantly
-    _refreshTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+    // Start periodic background data polling every 5 minutes to sync changes smoothly without performance/battery drain
+    _refreshTimer = Timer.periodic(const Duration(minutes: 5), (timer) {
       refreshDataSilently();
     });
   }
@@ -191,56 +191,71 @@ class AppDataProvider extends ChangeNotifier {
   }
 
   Future<void> refreshDataSilently() async {
+    // Run all 3 fetches in parallel — 3× faster than sequential awaits
+    await Future.wait([
+      _refreshCategories(),
+      _refreshLanguages(),
+      _refreshTemplates(),
+    ]);
+    notifyListeners();
+  }
+
+  Future<void> _refreshCategories() async {
     try {
-      final catResponse = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/categories'));
-      if (catResponse.statusCode == 200) {
-        final List<dynamic> jsonList = jsonDecode(catResponse.body);
-        _categories = jsonList.map((data) => CategoryModel.fromJson(Map<String, dynamic>.from(data), data['id'] ?? '')).toList()
+      final r = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/categories'));
+      if (r.statusCode == 200) {
+        final List<dynamic> json = jsonDecode(r.body);
+        _categories = json
+            .map((d) => CategoryModel.fromJson(Map<String, dynamic>.from(d), d['id'] ?? ''))
+            .toList()
           ..sort((a, b) => a.displayOrder.compareTo(b.displayOrder));
-        
         final box = await Hive.openBox('cms_cache');
-        await box.put('categories', jsonList);
+        await box.put('categories', json);
       }
     } catch (e) {
       print("Silent refresh categories error: $e");
     }
+  }
 
+  Future<void> _refreshLanguages() async {
     try {
-      final langResponse = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/languages'));
-      if (langResponse.statusCode == 200) {
-        final List<dynamic> jsonList = jsonDecode(langResponse.body);
-        _languages = jsonList.map((data) => LanguageModel.fromJson(Map<String, dynamic>.from(data), data['id'] ?? '')).toList()
+      final r = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/languages'));
+      if (r.statusCode == 200) {
+        final List<dynamic> json = jsonDecode(r.body);
+        _languages = json
+            .map((d) => LanguageModel.fromJson(Map<String, dynamic>.from(d), d['id'] ?? ''))
+            .toList()
           ..sort((a, b) => a.name.compareTo(b.name));
         LanguageRegistry.instance.updateFromBackend(_languages);
-
         final box = await Hive.openBox('cms_cache');
-        await box.put('languages', jsonList);
+        await box.put('languages', json);
       }
     } catch (e) {
       print("Silent refresh languages error: $e");
     }
+  }
 
+  Future<void> _refreshTemplates() async {
     try {
-      final tempResponse = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/templates'));
-      if (tempResponse.statusCode == 200) {
-        final List<dynamic> jsonList = jsonDecode(tempResponse.body);
-        final list = jsonList.map((data) => TemplateModel.fromJson(Map<String, dynamic>.from(data), data['id'] ?? '')).toList();
-        final activeTemplates = list.where((t) => t.isActive).toList();
-        activeTemplates.sort((a, b) {
-          if (a.isPremium && !b.isPremium) return -1;
-          if (!a.isPremium && b.isPremium) return 1;
-          return 0;
-        });
-        _allTemplates = activeTemplates;
-
+      final r = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/templates'));
+      if (r.statusCode == 200) {
+        final List<dynamic> json = jsonDecode(r.body);
+        final active = json
+            .map((d) => TemplateModel.fromJson(Map<String, dynamic>.from(d), d['id'] ?? ''))
+            .where((t) => t.isActive)
+            .toList()
+          ..sort((a, b) {
+            if (a.isPremium && !b.isPremium) return -1;
+            if (!a.isPremium && b.isPremium) return 1;
+            return 0;
+          });
+        _allTemplates = active;
         final box = await Hive.openBox('cms_cache');
-        await box.put('templates', jsonList);
+        await box.put('templates', json);
       }
     } catch (e) {
       print("Silent refresh templates error: $e");
     }
-
-    notifyListeners();
   }
 
   @override

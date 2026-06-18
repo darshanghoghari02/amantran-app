@@ -161,7 +161,9 @@ class _TemplateScreenState extends State<TemplateScreen> {
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
                                     TranslatedText(
-                                      template.title.isEmpty ? "Template ${index + 1}" : template.title,
+                                      template.title.isEmpty
+                                          ? "Template ${index + 1}"
+                                          : template.title.split(' ').map((w) => w.isEmpty ? w : '${w[0].toUpperCase()}${w.substring(1)}').join(' '),
                                       style: const TextStyle(
                                         fontSize: 13,
                                         fontWeight: FontWeight.w700,

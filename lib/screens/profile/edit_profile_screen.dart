@@ -106,7 +106,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       );
 
       // Refresh profile from backend to get the updated image URL
-      await context.read<UserProvider>().fetchProfileFromCloud();
+      await context.read<UserProvider>().fetchProfileFromCloud(silent: true);
 
       if (mounted) {
         Navigator.pop(context); // Pop EditProfileScreen

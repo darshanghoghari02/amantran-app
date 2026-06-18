@@ -1016,17 +1016,17 @@ class _EditorScreenState extends State<EditorScreen> {
                           : MainAxisAlignment.spaceBetween,
                       children: [
                         if (!limitToolbar) ...[
-                          _bottomToolIcon(Icons.edit_note_rounded, "Edit",
+                          _bottomToolIcon(Icons.edit_note_rounded, lang.edit,
                               () => _showEditBottomSheet()),
-                          _bottomToolIcon(Icons.text_format_rounded, "Format",
+                          _bottomToolIcon(Icons.text_format_rounded, lang.format,
                               () => _showFormatBottomSheet()),
                         ],
-                        _bottomToolIcon(Icons.sync_rounded, "Rotate",
+                        _bottomToolIcon(Icons.sync_rounded, lang.rotate,
                             () => _showRotationBottomSheet()),
                         if (!limitToolbar)
-                          _bottomToolIcon(Icons.palette_outlined, "Color",
+                          _bottomToolIcon(Icons.palette_outlined, lang.color,
                               () => _showColorBottomSheet()),
-                        _bottomToolIcon(Icons.opacity_rounded, "Opacity",
+                        _bottomToolIcon(Icons.opacity_rounded, lang.opacity,
                             () => _showOpacityBottomSheet()),
                       ],
                     );

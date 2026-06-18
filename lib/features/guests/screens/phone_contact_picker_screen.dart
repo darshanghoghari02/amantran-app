@@ -133,89 +133,92 @@ class _PhoneContactPickerScreenState extends State<PhoneContactPickerScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          // 🔍 SEARCH
-          Padding(
-            padding: const EdgeInsets.all(8),
-            child: TextField(
-              decoration: const InputDecoration(
-                hintText: "Search contacts",
-                prefixIcon: Icon(Icons.search),
+      body: SafeArea(
+        top: false,
+        child: Column(
+          children: [
+            // 🔍 SEARCH
+            Padding(
+              padding: const EdgeInsets.all(8),
+              child: TextField(
+                decoration: const InputDecoration(
+                  hintText: "Search contacts",
+                  prefixIcon: Icon(Icons.search),
+                ),
+                onChanged: applySearch,
               ),
-              onChanged: applySearch,
             ),
-          ),
 
-          // 🔄 LOADING
-          if (isLoading)
-            const Expanded(
-              child: Center(child: CircularProgressIndicator()),
-            )
-          else if (filteredContacts.isEmpty)
-            const Expanded(
-              child: Center(child: Text("No contacts found")),
-            )
-          else
-            // 📱 CONTACT LIST
-            Expanded(
-              child: ListView.builder(
-                itemCount: filteredContacts.length,
-                itemBuilder: (context, index) {
-                  final c = filteredContacts[index];
+            // 🔄 LOADING
+            if (isLoading)
+              const Expanded(
+                child: Center(child: CircularProgressIndicator()),
+              )
+            else if (filteredContacts.isEmpty)
+              const Expanded(
+                child: Center(child: Text("No contacts found")),
+              )
+            else
+              // 📱 CONTACT LIST
+              Expanded(
+                child: ListView.builder(
+                  itemCount: filteredContacts.length,
+                  itemBuilder: (context, index) {
+                    final c = filteredContacts[index];
 
-                  final selected = selectedIds.contains(c.id);
+                    final selected = selectedIds.contains(c.id);
 
-                  final phone =
-                      c.phones.isNotEmpty ? c.phones.first.number : "No number";
+                    final phone =
+                        c.phones.isNotEmpty ? c.phones.first.number : "No number";
 
-                  return ListTile(
-                    leading: CircleAvatar(
-                      child: Text(
-                        c.displayName.isNotEmpty ? c.displayName[0] : "?",
+                    return ListTile(
+                      leading: CircleAvatar(
+                        child: Text(
+                          c.displayName.isNotEmpty ? c.displayName[0] : "?",
+                        ),
                       ),
-                    ),
-                    title: Text(c.displayName),
-                    subtitle: Text(phone),
-                    trailing: Checkbox(
-                      value: selected,
-                      onChanged: (val) {
+                      title: Text(c.displayName),
+                      subtitle: Text(phone),
+                      trailing: Checkbox(
+                        value: selected,
+                        onChanged: (val) {
+                          setState(() {
+                            if (val == true) {
+                              selectedIds.add(c.id);
+                            } else {
+                              selectedIds.remove(c.id);
+                            }
+                          });
+                        },
+                      ),
+                      onTap: () {
                         setState(() {
-                          if (val == true) {
-                            selectedIds.add(c.id);
-                          } else {
+                          if (selected) {
                             selectedIds.remove(c.id);
+                          } else {
+                            selectedIds.add(c.id);
                           }
                         });
                       },
-                    ),
-                    onTap: () {
-                      setState(() {
-                        if (selected) {
-                          selectedIds.remove(c.id);
-                        } else {
-                          selectedIds.add(c.id);
-                        }
-                      });
-                    },
-                  );
-                },
+                    );
+                  },
+                ),
               ),
-            ),
 
-          // 🔴 IMPORT BUTTON
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: ElevatedButton(
-              onPressed: importSelected,
-              style: ElevatedButton.styleFrom(
-                minimumSize: const Size(double.infinity, 50),
-                backgroundColor: Colors.red,
+            // 🔴 IMPORT BUTTON
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: ElevatedButton(
+                onPressed: importSelected,
+                style: ElevatedButton.styleFrom(
+                  minimumSize: const Size(double.infinity, 50),
+                  backgroundColor: Colors.red,
+                ),
+                child: const Text("Import Selected"),
               ),
-              child: const Text("Import Selected"),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

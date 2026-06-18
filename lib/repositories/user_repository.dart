@@ -94,10 +94,14 @@ class UserRepository {
       if (response.statusCode == 200) {
         return jsonDecode(response.body) as Map<String, dynamic>;
       }
+      if (response.statusCode == 404) {
+        return null;
+      }
+      throw Exception("Server returned status ${response.statusCode}");
     } catch (e) {
       print("Error fetching user document from backend: $e");
+      rethrow;
     }
-    return null;
   }
 
   /// Create or update user document in `/api/app/users`

@@ -3,9 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/language_provider.dart';
-import '../../services/auth_service.dart';
 import '../../widgets/top_notification.dart';
-import '../home/home_screen.dart';
 
 class CompleteProfileScreen extends StatefulWidget {
   final String? phone;
@@ -111,11 +109,9 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
       // Close loader
       Navigator.pop(context);
 
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(builder: (_) => const HomeScreen()),
-        (route) => false,
-      );
+      if (mounted) {
+        Navigator.popUntil(context, (route) => route.isFirst);
+      }
       TopNotification.show(context, message: "Profile completed successfully!", type: NotificationType.success);
     } catch (e) {
       Navigator.pop(context); // Close loader
@@ -142,7 +138,13 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.black87),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () {
+            if (Navigator.canPop(context)) {
+              Navigator.pop(context);
+            } else {
+              context.read<UserProvider>().logout();
+            }
+          },
         ),
       ),
       body: SafeArea(

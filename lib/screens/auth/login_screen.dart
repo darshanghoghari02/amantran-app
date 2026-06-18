@@ -3,21 +3,17 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'dart:io';
 import 'dart:convert';
-import 'dart:math';
-import 'package:crypto/crypto.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:sign_in_with_apple/sign_in_with_apple.dart';
+import 'package:http/http.dart' as http;
 import '../../providers/user_provider.dart';
 import '../../providers/language_provider.dart';
-import '../home/home_screen.dart';
 import '../../widgets/top_notification.dart';
 import '../../services/auth_service.dart';
 import 'otp_verification_screen.dart';
-import 'complete_profile_screen.dart';
-import 'package:firebase_auth/firebase_auth.dart';
-import '../../services/email_auth_service.dart';
+import '../../config/api_config.dart';
 import '../../services/whatsapp_otp_service.dart';
 import '../../utils/image_resolver.dart';
+
 
 class LoginScreen extends StatefulWidget {
   final bool showWelcomeBack;
@@ -46,7 +42,6 @@ class _LoginScreenState extends State<LoginScreen> {
         Navigator.pop(context); // Remove loading
         
         if (result['success']) {
-          final otp = result['otp'];
           Navigator.push(
             context,
             MaterialPageRoute(
@@ -56,9 +51,6 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
             ),
           );
-          TopNotification.show(context,
-              message: "OTP sent to WhatsApp for $formattedPhone. [Test Code: $otp]",
-              type: NotificationType.success);
         } else {
           // Fall back to Firebase SMS if WhatsApp OTP fails
           AuthService.sendOtp(
@@ -93,18 +85,8 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   /// Generates a cryptographically secure random nonce
-  String _generateNonce([int length = 32]) {
-    const charset = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz.-_';
-    final random = Random.secure();
-    return List.generate(length, (index) => charset[random.nextInt(charset.length)]).join();
-  }
 
-  /// Returns the sha256 hash of [input] in hex format
-  String _sha256ofString(String input) {
-    final bytes = utf8.encode(input);
-    final digest = sha256.convert(bytes);
-    return digest.toString();
-  }
+
 
   Future<void> _handleGoogleSignIn() async {
     showDialog(
@@ -116,71 +98,94 @@ class _LoginScreenState extends State<LoginScreen> {
     );
 
     try {
-      final GoogleSignIn googleSignIn = GoogleSignIn();
+      // Initialize GoogleSignIn natively
+      final GoogleSignIn googleSignIn = GoogleSignIn(
+        serverClientId: ApiConfig.googleClientId,
+        scopes: ['email', 'profile'],
+      );
+
+      // Sign out first to force Google to show the account chooser popup every time
       try {
         await googleSignIn.signOut();
-      } catch (_) {}
+      } catch (_) {
+        // Ignore if no account was signed in
+      }
+
+      // Trigger native account chooser popup
       final GoogleSignInAccount? googleUser = await googleSignIn.signIn();
+
       if (googleUser == null) {
-        if (mounted) Navigator.pop(context); // Pop loading spinner
-        return; // User canceled the picker
+        // User cancelled the login flow
+        if (mounted) Navigator.pop(context);
+        return;
       }
 
       final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
-      final AuthCredential credential = GoogleAuthProvider.credential(
-        accessToken: googleAuth.accessToken,
-        idToken: googleAuth.idToken,
+      final String? idToken = googleAuth.idToken;
+
+      if (idToken == null) {
+        throw Exception('Failed to obtain Google ID Token');
+      }
+
+      // Send ID token to backend
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/api/auth/google-login'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({
+          'idToken': idToken,
+        }),
       );
 
-      final UserCredential userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
-      final User? firebaseUser = userCredential.user;
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] && data['token'] != null) {
+          final userProvider = context.read<UserProvider>();
 
-      if (firebaseUser != null) {
-        final userProvider = context.read<UserProvider>();
-        final name = firebaseUser.displayName ?? 'Google User';
-        final email = firebaseUser.email ?? '';
+          // Store JWT token from backend
+          await userProvider.setAuthToken(data['token']);
 
-        // Sync user doc
-        await userProvider.saveOrUpdateUserInCloud(
-          uid: firebaseUser.uid,
-          name: name,
-          email: email,
-          profilePhoto: firebaseUser.photoURL,
-          provider: 'google',
-        );
-
-        // No OTP required for Google login - token is already validated by Firebase
-        userProvider.setSocialOtpVerified(true);
-
-        if (mounted) {
-          Navigator.pop(context); // Pop loading spinner
-
-          TopNotification.show(
-            context,
-            message: "Google Sign-In successful",
-            type: NotificationType.success,
-          );
-
-          // Navigate directly to home or profile completion
-          await userProvider.fetchProfileFromCloud();
-          if (userProvider.isProfileComplete) {
-            Navigator.pushAndRemoveUntil(
-              context,
-              MaterialPageRoute(builder: (_) => const HomeScreen()),
-              (route) => false,
-            );
-          } else {
-            Navigator.pushAndRemoveUntil(
-              context,
-              MaterialPageRoute(builder: (_) => const CompleteProfileScreen()),
-              (route) => false,
-            );
+          // Update user data from backend response
+          if (data['user'] != null) {
+            await userProvider.updateUserFromBackend(data['user']);
           }
+
+          userProvider.setSocialOtpVerified(true);
+
+          if (mounted) {
+            Navigator.pop(context); // Pop loading spinner
+
+            TopNotification.show(
+              context,
+              message: "Google Sign-In successful",
+              type: NotificationType.success,
+            );
+
+            if (mounted) {
+              Navigator.popUntil(context, (route) => route.isFirst);
+            }
+          }
+        } else {
+          throw Exception(data['error'] ?? 'Google login failed');
         }
+      } else {
+        final errorData = jsonDecode(response.body);
+        throw Exception(errorData['error'] ?? 'Backend error: ${response.statusCode}');
+      }
+    } on PlatformException catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        // User cancelled — don't show error
+        final msg = e.message ?? '';
+        if (msg.contains('cancel') || msg.contains('user_cancelled') || msg.contains('User cancelled')) return;
+        TopNotification.show(
+          context,
+          message: "Google Sign-In cancelled: ${e.message}",
+          type: NotificationType.info,
+        );
       }
     } catch (e) {
       if (mounted) {
-        Navigator.pop(context); // Pop loading spinner
+        Navigator.pop(context);
         TopNotification.show(
           context,
           message: "Google Sign-In failed: $e",
@@ -200,90 +205,12 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (ctx) => const Center(
-        child: CircularProgressIndicator(color: Color(0xFFF94C66)),
-      ),
+    // Apple Sign-In not implemented for pure Google Sign-In setup
+    TopNotification.show(
+      context,
+      message: "Apple Sign-In is not available. Please use Google Sign-In.",
+      type: NotificationType.error,
     );
-
-    try {
-      final rawNonce = _generateNonce();
-      final shaNonce = _sha256ofString(rawNonce);
-
-      final appleCredential = await SignInWithApple.getAppleIDCredential(
-        scopes: [
-          AppleIDAuthorizationScopes.email,
-          AppleIDAuthorizationScopes.fullName,
-        ],
-        nonce: shaNonce,
-      );
-
-      final oauthCredential = OAuthProvider("apple.com").credential(
-        idToken: appleCredential.identityToken,
-        rawNonce: rawNonce,
-      );
-
-      final UserCredential userCredential = await FirebaseAuth.instance.signInWithCredential(oauthCredential);
-      final User? firebaseUser = userCredential.user;
-
-      if (firebaseUser != null) {
-        final userProvider = context.read<UserProvider>();
-        final name = [
-          appleCredential.givenName,
-          appleCredential.familyName
-        ].where((e) => e != null && e.isNotEmpty).join(' ');
-        final finalName = name.isNotEmpty ? name : (firebaseUser.displayName ?? 'Apple User');
-        final email = firebaseUser.email ?? '';
-
-        await userProvider.saveOrUpdateUserInCloud(
-          uid: firebaseUser.uid,
-          name: finalName,
-          email: email,
-          profilePhoto: firebaseUser.photoURL,
-          provider: 'apple',
-        );
-
-        // No OTP required for Apple login - token is already validated by Firebase
-        userProvider.setSocialOtpVerified(true);
-
-        if (mounted) {
-          Navigator.pop(context); // Pop loading spinner
-
-          TopNotification.show(
-            context,
-            message: "Apple Sign-In successful",
-            type: NotificationType.success,
-          );
-
-          // Navigate directly to home or profile completion
-          await userProvider.fetchProfileFromCloud();
-          if (userProvider.isProfileComplete) {
-            Navigator.pushAndRemoveUntil(
-              context,
-              MaterialPageRoute(builder: (_) => const HomeScreen()),
-              (route) => false,
-            );
-          } else {
-            Navigator.pushAndRemoveUntil(
-              context,
-              MaterialPageRoute(builder: (_) => const CompleteProfileScreen()),
-              (route) => false,
-            );
-          }
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        Navigator.pop(context); // Pop loading spinner
-        TopNotification.show(
-          context,
-          message: "Apple Sign-In failed: $e",
-          type: NotificationType.error,
-        );
-      }
-    }
   }
 
   @override
@@ -409,10 +336,10 @@ class _LoginScreenState extends State<LoginScreen> {
                     letterSpacing: -0.5),
               ),
               const SizedBox(height: 10),
-              const Text(
-                "Sign in to continue creating beautiful\ninvitations",
+              Text(
+                lang.signInToContinue,
                 textAlign: TextAlign.center,
-                style: TextStyle(
+                style: const TextStyle(
                     fontSize: 14,
                     color: Colors.black45,
                     height: 1.4,
@@ -422,11 +349,11 @@ class _LoginScreenState extends State<LoginScreen> {
               // 3.5 Choose your account (Recent Profiles - only visible if returning)
               if (isReturningUser) ...[
                 const SizedBox(height: 32),
-                const Align(
+                Align(
                   alignment: Alignment.centerLeft,
                   child: Text(
-                    "Choose your account",
-                    style: TextStyle(
+                    lang.chooseYourAccount,
+                    style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.w800,
                         color: Color(0xFF1A1A1A)),
@@ -571,14 +498,14 @@ class _LoginScreenState extends State<LoginScreen> {
                                 },
                                 itemBuilder: (BuildContext context) =>
                                     <PopupMenuEntry<String>>[
-                                  const PopupMenuItem<String>(
+                                  PopupMenuItem<String>(
                                     value: 'remove',
                                     child: Row(
                                       children: [
-                                        Icon(Icons.delete_outline,
+                                        const Icon(Icons.delete_outline,
                                             color: Colors.redAccent, size: 20),
-                                        SizedBox(width: 8),
-                                        Text('Remove Account'),
+                                        const SizedBox(width: 8),
+                                        Text(lang.removeAccount),
                                       ],
                                     ),
                                   ),
@@ -600,8 +527,8 @@ class _LoginScreenState extends State<LoginScreen> {
                 alignment: Alignment.centerLeft,
                 child: Text(
                   isReturningUser
-                      ? "Log in or Sign up"
-                      : "Enter Your Phone Number",
+                      ? lang.logInOrSignUp
+                      : lang.enterPhoneNumber,
                   style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w800,
@@ -646,9 +573,9 @@ class _LoginScreenState extends State<LoginScreen> {
                         ],
                         style: const TextStyle(
                             fontWeight: FontWeight.w700, fontSize: 15),
-                        decoration: const InputDecoration(
-                          hintText: "Enter 10-digit number",
-                          hintStyle: TextStyle(
+                        decoration: InputDecoration(
+                          hintText: lang.enter10DigitNumber,
+                          hintStyle: const TextStyle(
                               color: Colors.black26,
                               fontSize: 14,
                               fontWeight: FontWeight.w500),
@@ -660,11 +587,11 @@ class _LoginScreenState extends State<LoginScreen> {
                 ],
               ),
               const SizedBox(height: 12),
-              const Align(
+              Align(
                 alignment: Alignment.centerLeft,
                 child: Text(
-                  "We'll send a code to verify your account",
-                  style: TextStyle(
+                  lang.weWillSendVerificationCode,
+                  style: const TextStyle(
                       color: Colors.black38,
                       fontSize: 12,
                       fontWeight: FontWeight.w500),
@@ -690,16 +617,16 @@ class _LoginScreenState extends State<LoginScreen> {
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
-                        children: const [
-                          Text("Secure & Private",
-                              style: TextStyle(
+                        children: [
+                          Text(lang.secureAndPrivate,
+                              style: const TextStyle(
                                   fontSize: 15,
                                   fontWeight: FontWeight.w800,
                                   color: Color(0xFF1A1A1A))),
-                          SizedBox(height: 6),
+                          const SizedBox(height: 6),
                           Text(
-                              "Your phone number is encrypted and used only for verification.",
-                              style: TextStyle(
+                              lang.phoneEncryptionDisclaimer,
+                              style: const TextStyle(
                                   fontSize: 12,
                                   color: Colors.black45,
                                   height: 1.4,
@@ -735,8 +662,8 @@ class _LoginScreenState extends State<LoginScreen> {
                     elevation: 0,
                   ),
                   child: isReturningUser
-                      ? const Text("Continue",
-                          style: TextStyle(
+                      ? Text(lang.continueButton,
+                          style: const TextStyle(
                               fontSize: 18, fontWeight: FontWeight.w800))
                       : Row(
                           mainAxisAlignment: MainAxisAlignment.center,
@@ -757,7 +684,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16),
                     child: Text(
-                      "Or login with",
+                      lang.orLoginWith,
                       style: TextStyle(
                         color: Colors.grey.shade400,
                         fontSize: 13,
@@ -841,8 +768,8 @@ class _LoginScreenState extends State<LoginScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Text(
                   isReturningUser
-                      ? "By continuing, you agree to our\nTerm of service Privacy Policy content Policy"
-                      : "By proceeding, you agree to receive SMS messages for verification. Standard rates may apply.",
+                      ? lang.returningUserDisclaimer
+                      : lang.newUserDisclaimer,
                   textAlign: TextAlign.center,
                   style: const TextStyle(
                       color: Colors.black38,

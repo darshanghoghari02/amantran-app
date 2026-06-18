@@ -3,6 +3,11 @@ import 'package:provider/provider.dart';
 import '../../repositories/user_repository.dart';
 import '../../providers/subscription_provider.dart';
 import '../../providers/language_provider.dart';
+import '../../providers/app_data_provider.dart';
+import '../../models/template_model.dart';
+import '../../models/category_model.dart';
+import '../../utils/image_resolver.dart';
+import '../template/template_detail_screen.dart';
 import '../../services/firestore_service.dart';
 import '../../models/subscription_plan.dart';
 import 'mock_payment_screen.dart';
@@ -127,6 +132,7 @@ class _SubscriptionManagementScreenState extends State<SubscriptionManagementScr
   Widget build(BuildContext context) {
     final lang = context.watch<LanguageProvider>();
     final subProvider = context.watch<SubscriptionProvider>();
+    final appDataProvider = context.watch<AppDataProvider>();
     final isSubscribed = subProvider.isSubscribed;
     final plans = subProvider.plans;
 
@@ -193,19 +199,17 @@ class _SubscriptionManagementScreenState extends State<SubscriptionManagementScr
                   _buildStatusHeader(subProvider),
                   const SizedBox(height: 28),
 
-                  if (!isSubscribed) ...[
-                    // Toggle selector
-                    _buildToggleSelector(plans),
-                    const SizedBox(height: 24),
+                  _buildPurchasedTemplates(subProvider, appDataProvider, lang),
 
-                    // Active subscription plan selection cards
-                    _buildPlanShowcase(plans),
-                    const SizedBox(height: 28),
+                  // Toggle selector
+                  _buildToggleSelector(plans),
+                  const SizedBox(height: 24),
 
-                    // Premium features comparison list
-                    _buildFeaturesList(),
-                    const SizedBox(height: 28),
-                  ] else ...[
+                  // Active subscription plan selection cards
+                  _buildPlanShowcase(plans),
+                  const SizedBox(height: 28),
+
+                  if (isSubscribed) ...[
                     // Subscriber Management Controls
                     Text(
                       lang.manageSubscription,
@@ -216,13 +220,17 @@ class _SubscriptionManagementScreenState extends State<SubscriptionManagementScr
                     const SizedBox(height: 28),
                   ],
 
+                  // Premium features comparison list
+                  _buildFeaturesList(),
+                  const SizedBox(height: 28),
+
                   // Invoices List
                   Text(
                     lang.invoiceTransactionHistory,
                     style: const TextStyle(color: Colors.white30, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1),
                   ),
                   const SizedBox(height: 12),
-                  _buildInvoicesList(),
+                  _buildInvoicesList(appDataProvider, lang),
                   const SizedBox(height: 40),
                 ],
               ),
@@ -230,6 +238,105 @@ class _SubscriptionManagementScreenState extends State<SubscriptionManagementScr
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildPurchasedTemplates(SubscriptionProvider subProvider, AppDataProvider appDataProvider, LanguageProvider lang) {
+    final purchasedIds = subProvider.purchasedTemplates;
+    if (purchasedIds.isEmpty) return const SizedBox.shrink();
+
+    // Look up the actual templates
+    final templates = purchasedIds
+        .map((id) => appDataProvider.getTemplateById(id))
+        .whereType<TemplateModel>()
+        .toList();
+
+    if (templates.isEmpty) return const SizedBox.shrink();
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          lang.currentLanguage == 'Gujarati'
+              ? "ખરીદેલ ટેમ્પ્લેટ્સ"
+              : (lang.currentLanguage == 'Hindi' ? "खरीदे गए टेम्पलेट्स" : "Purchased Templates"),
+          style: const TextStyle(color: Colors.white30, fontSize: 11, fontWeight: FontWeight.bold, letterSpacing: 1),
+        ),
+        const SizedBox(height: 12),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: Container(
+            decoration: BoxDecoration(
+              color: const Color(0xFF141416),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.white.withOpacity(0.04)),
+            ),
+            child: MediaQuery.removePadding(
+              context: context,
+              removeTop: true,
+              removeBottom: true,
+              child: ListView.separated(
+                padding: EdgeInsets.zero,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: templates.length,
+                separatorBuilder: (context, index) => const Divider(color: Colors.white10, height: 1),
+                itemBuilder: (context, index) {
+                  final template = templates[index];
+                  final category = appDataProvider.categories.firstWhere(
+                    (c) => c.id == template.categoryId,
+                    orElse: () => CategoryModel(id: '', name: 'Template', slug: '', coverImage: '', displayOrder: 99),
+                  );
+                  final categoryDisplayName = lang.getCategoryTranslation(category.name);
+
+                  return ListTile(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
+                    leading: Container(
+                      width: 50,
+                      height: 50,
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(8),
+                        image: DecorationImage(
+                          image: isNetworkImage(template.thumbnail)
+                              ? NetworkImage(resolveImageUrl(template.thumbnail))
+                              : AssetImage(cleanAssetPath(template.thumbnail)) as ImageProvider,
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                    ),
+                    title: Text(
+                      template.title,
+                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                    ),
+                    subtitle: Text(
+                      categoryDisplayName,
+                      style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 11),
+                    ),
+                    trailing: Text(
+                      lang.currentLanguage == 'Gujarati'
+                          ? "આજીવન ખરીદી"
+                          : (lang.currentLanguage == 'Hindi' ? "आजीवन खरीद" : "Lifetime Purchase"),
+                      style: const TextStyle(color: Color(0xFFF94C66), fontWeight: FontWeight.w600, fontSize: 12),
+                    ),
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => TemplateDetailScreen(
+                            categoryName: category.name,
+                            template: template,
+                          ),
+                        ),
+                      );
+                    },
+                  );
+                },
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(height: 28),
+      ],
     );
   }
 
@@ -410,6 +517,63 @@ class _SubscriptionManagementScreenState extends State<SubscriptionManagementScr
 
     final isPopular = planId == 'yearly';
 
+    final subProvider = context.watch<SubscriptionProvider>();
+    final sub = subProvider.subscription;
+    final isSub = subProvider.isSubscribed;
+    final activePlanId = sub.planType;
+    final isActivePlanSelected = isSub && (selectedPlan.id == activePlanId);
+
+    // Dynamic button text & action
+    String buttonText = "Unlock Premium Now";
+    VoidCallback? buttonAction;
+    bool isButtonEnabled = true;
+
+    if (isActivePlanSelected) {
+      final isCancelled = sub.status == 'cancelled' || !sub.autoRenew;
+      if (isCancelled) {
+        buttonText = "Reactivate Auto-renew";
+        buttonAction = () async {
+          final success = await context.read<SubscriptionProvider>().reactivateSubscription();
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text(success ? "Auto-renew re-enabled." : "Failed to enable auto-renew. Try again."),
+                backgroundColor: success ? Colors.green : Colors.red,
+              ),
+            );
+          }
+          _fetchTransactions();
+        };
+      } else {
+        buttonText = "Active Plan";
+        isButtonEnabled = false;
+      }
+    } else {
+      if (isSub) {
+        buttonText = "Switch to ${selectedPlan.name}";
+      }
+      buttonAction = () async {
+        final isEligible = await context.read<SubscriptionProvider>().checkTrialEligibility();
+        if (!mounted) return;
+
+        final completed = await Navigator.push<bool>(
+          context,
+          MaterialPageRoute(
+            builder: (_) => MockPaymentScreen(
+              planId: planId,
+              planName: planName,
+              price: price,
+              isTrial: isEligible && !isSub, // only allow trial if they don't have an active sub
+            ),
+          ),
+        );
+
+        if (completed == true) {
+          _fetchTransactions();
+        }
+      };
+    }
+
     return Container(
       padding: const EdgeInsets.all(24),
       decoration: BoxDecoration(
@@ -447,9 +611,29 @@ class _SubscriptionManagementScreenState extends State<SubscriptionManagementScr
             ),
             const SizedBox(height: 12),
           ],
-          Text(
-            planName,
-            style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Expanded(
+                child: Text(
+                  planName,
+                  style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w900),
+                ),
+              ),
+              if (isActivePlanSelected)
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF94C66).withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(color: const Color(0xFFF94C66).withOpacity(0.4), width: 0.5),
+                  ),
+                  child: const Text(
+                    "ACTIVE",
+                    style: TextStyle(color: Color(0xFFF94C66), fontSize: 9, fontWeight: FontWeight.bold, letterSpacing: 1),
+                  ),
+                ),
+            ],
           ),
           if (selectedPlan.description.isNotEmpty) ...[
             const SizedBox(height: 6),
@@ -476,33 +660,14 @@ class _SubscriptionManagementScreenState extends State<SubscriptionManagementScr
           ),
           const SizedBox(height: 20),
           ElevatedButton(
-            onPressed: () async {
-              final isEligible = await context.read<SubscriptionProvider>().checkTrialEligibility();
-              if (!mounted) return;
-
-              final completed = await Navigator.push<bool>(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => MockPaymentScreen(
-                    planId: planId,
-                    planName: planName,
-                    price: price,
-                    isTrial: isEligible,
-                  ),
-                ),
-              );
-
-              if (completed == true) {
-                _fetchTransactions();
-              }
-            },
+            onPressed: isButtonEnabled ? buttonAction : null,
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFF94C66),
-              foregroundColor: Colors.white,
+              backgroundColor: isButtonEnabled ? const Color(0xFFF94C66) : Colors.white12,
+              foregroundColor: isButtonEnabled ? Colors.white : Colors.white38,
               padding: const EdgeInsets.symmetric(vertical: 16),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
             ),
-            child: const Text("Unlock Premium Now", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+            child: Text(buttonText, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
           ),
         ],
       ),
@@ -547,10 +712,8 @@ class _SubscriptionManagementScreenState extends State<SubscriptionManagementScr
   Widget _buildSubscribedControls(List<SubscriptionPlanModel> plans) {
     final subProvider = context.watch<SubscriptionProvider>();
     final sub = subProvider.subscription;
-    final activePlanId = sub.planType;
     final isAutoRenewOn = sub.autoRenew && sub.status != 'cancelled';
-    
-    final otherPlans = plans.where((p) => p.id != activePlanId).toList();
+    final isCancelled = sub.status == 'cancelled' || !isAutoRenewOn;
 
     return Container(
       padding: const EdgeInsets.all(20),
@@ -565,18 +728,28 @@ class _SubscriptionManagementScreenState extends State<SubscriptionManagementScr
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text("Plan Renewal", style: TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold)),
-                  const SizedBox(height: 2),
-                  Text(
-                    isAutoRenewOn 
-                        ? "Autorenew is enabled by gateway" 
-                        : "Autorenew is disabled / cancelled", 
-                    style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 11)
-                  ),
-                ],
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      isCancelled ? "Subscription Status" : "Plan Renewal",
+                      style: const TextStyle(color: Colors.white70, fontSize: 13, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      isCancelled 
+                          ? "Subscription cancelled • Auto-renew disabled" 
+                          : (isAutoRenewOn 
+                              ? "Autorenew is enabled by gateway" 
+                              : "Autorenew is disabled"), 
+                      style: TextStyle(
+                        color: isCancelled ? const Color(0xFFF94C66) : Colors.white.withOpacity(0.4), 
+                        fontSize: 11
+                      )
+                    ),
+                  ],
+                ),
               ),
               Switch(
                 value: isAutoRenewOn,
@@ -600,62 +773,22 @@ class _SubscriptionManagementScreenState extends State<SubscriptionManagementScr
               ),
             ],
           ),
-          if (otherPlans.isNotEmpty) ...[
-            const SizedBox(height: 16),
-            const Divider(color: Colors.white10),
-            const SizedBox(height: 12),
-            Text(
-              "Change plan subscription",
-              style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 11, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            ...otherPlans.map((otherPlan) {
-              return Padding(
-                padding: const EdgeInsets.only(bottom: 8.0),
-                child: ElevatedButton(
-                  onPressed: () async {
-                    final completed = await Navigator.push<bool>(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => MockPaymentScreen(
-                          planId: otherPlan.id,
-                          planName: otherPlan.name,
-                          price: otherPlan.price,
-                          isTrial: false,
-                        ),
-                      ),
-                    );
-                    if (completed == true) {
-                      _fetchTransactions();
-                    }
-                  },
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white12,
-                    foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(vertical: 12),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  ),
-                  child: Text("Switch to ${otherPlan.name}"),
-                ),
-              );
-            }),
-          ],
         ],
       ),
     );
   }
 
-  Widget _buildInvoicesList() {
+  Widget _buildInvoicesList(AppDataProvider appDataProvider, LanguageProvider lang) {
     if (_loadingTxns) {
       return const Padding(
-        padding: EdgeInsets.symmetric(vertical: 24.0),
+        padding: EdgeInsets.symmetric(vertical: 16.0),
         child: Center(child: CircularProgressIndicator(color: Color(0xFFF94C66))),
       );
     }
 
     if (_txns.isEmpty) {
       return Container(
-        padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+        padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 16),
         decoration: BoxDecoration(
           color: const Color(0xFF141416),
           borderRadius: BorderRadius.circular(16),
@@ -669,35 +802,69 @@ class _SubscriptionManagementScreenState extends State<SubscriptionManagementScr
       );
     }
 
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFF141416),
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: Colors.white.withOpacity(0.04)),
-      ),
-      child: ListView.separated(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        itemCount: _txns.length,
-        separatorBuilder: (context, index) => const Divider(color: Colors.white10, height: 1),
-        itemBuilder: (context, index) {
-          final tx = _txns[index];
-          return ListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-            title: Text(
-              tx.planId.toUpperCase(),
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
-            ),
-            subtitle: Text(
-              "${_formatDate(tx.date)} • ${tx.details}",
-              style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 11),
-            ),
-            trailing: Text(
-              "₹${tx.amount.toInt()}",
-              style: const TextStyle(color: Colors.green, fontWeight: FontWeight.w900, fontSize: 14),
-            ),
-          );
-        },
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20),
+      child: Container(
+        decoration: BoxDecoration(
+          color: const Color(0xFF141416),
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: Colors.white.withOpacity(0.04)),
+        ),
+        child: MediaQuery.removePadding(
+          context: context,
+          removeTop: true,
+          removeBottom: true,
+          child: ListView.separated(
+            padding: EdgeInsets.zero,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            itemCount: _txns.length,
+            separatorBuilder: (context, index) => const Divider(color: Colors.white10, height: 1),
+            itemBuilder: (context, index) {
+              final tx = _txns[index];
+              
+              String titleText = tx.planId.toUpperCase();
+              String detailsText = tx.details;
+
+              // Check if this transaction is a single template purchase
+              final template = appDataProvider.getTemplateById(tx.planId);
+              if (template != null) {
+                final category = appDataProvider.categories.firstWhere(
+                  (c) => c.id == template.categoryId,
+                  orElse: () => CategoryModel(id: '', name: 'Template', slug: '', coverImage: '', displayOrder: 99),
+                );
+                final categoryDisplayName = lang.getCategoryTranslation(category.name);
+                titleText = template.title;
+                
+                final purchaseLabel = lang.currentLanguage == 'Gujarati'
+                    ? "ટેમ્પ્લેટ ખરીદી"
+                    : (lang.currentLanguage == 'Hindi' ? "टेम्पलेट खरीद" : "Template Purchase");
+                detailsText = "$categoryDisplayName • $purchaseLabel";
+              } else if (tx.planId.toLowerCase().startsWith('tem_') || tx.details.toLowerCase().contains('template')) {
+                final purchaseLabel = lang.currentLanguage == 'Gujarati'
+                    ? "ટેમ્પ્લેટ ખરીદી"
+                    : (lang.currentLanguage == 'Hindi' ? "टेम्पलेट खरीद" : "Template Purchase");
+                detailsText = purchaseLabel;
+              }
+
+              return ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 2),
+                title: Text(
+                  titleText,
+                  style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+                subtitle: Text(
+                  "${_formatDate(tx.date)} • $detailsText",
+                  style: TextStyle(color: Colors.white.withOpacity(0.4), fontSize: 11),
+                ),
+                trailing: Text(
+                  "₹${tx.amount.toInt()}",
+                  style: const TextStyle(color: Colors.green, fontWeight: FontWeight.w900, fontSize: 14),
+                ),
+              );
+            },
+          ),
+        ),
       ),
     );
   }

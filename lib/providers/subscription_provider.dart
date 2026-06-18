@@ -64,7 +64,7 @@ class SubscriptionProvider extends ChangeNotifier with WidgetsBindingObserver {
       return true;
     }
 
-    // 2. Check legacy plan inclusions
+    // 2. Check legacy plan inclusions (monthly / yearly built-in flags)
     if (_subscription.planType == "monthly" && template.includedInMonthlyPlan) {
       return true;
     }
@@ -72,18 +72,31 @@ class SubscriptionProvider extends ChangeNotifier with WidgetsBindingObserver {
       return true;
     }
     
-    // 2. Check dynamic plan configurations
+    // 3. Check dynamic plan configurations
     final activePlans = _plans.where((p) => p.id == _subscription.planType);
     if (activePlans.isNotEmpty) {
       final activePlan = activePlans.first;
       if (activePlan.isActive) {
-        if ((activePlan.durationType == 'monthly' || activePlan.id == 'monthly') && template.includedInMonthlyPlan) {
+        // Monthly/yearly duration types → use legacy flags
+        if ((activePlan.durationType == 'monthly' || activePlan.id == 'monthly') &&
+            template.includedInMonthlyPlan) {
           return true;
         }
-        if ((activePlan.durationType == 'yearly' || activePlan.id == 'yearly') && template.includedInYearlyPlan) {
+        if ((activePlan.durationType == 'yearly' || activePlan.id == 'yearly') &&
+            template.includedInYearlyPlan) {
           return true;
         }
-        if (activePlan.includedTemplateIds.any((id) => id.toLowerCase().trim() == template.id.toLowerCase().trim()) ||
+
+        // Check if this specific template is listed in the plan's includedTemplateIds
+        final templateMatch = activePlan.includedTemplateIds
+            .any((id) => id.toLowerCase().trim() == template.id.toLowerCase().trim());
+        if (templateMatch) return true;
+
+        // Category-based unlock is a FALLBACK — only used when the plan has NO specific
+        // templates listed. If includedTemplateIds is non-empty, categories are ignored.
+        // This prevents admin from accidentally unlocking all templates in a category
+        // when they only intended to include specific templates.
+        if (activePlan.includedTemplateIds.isEmpty &&
             activePlan.includedCategories.contains(template.categoryId)) {
           return true;
         }

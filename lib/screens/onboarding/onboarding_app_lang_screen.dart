@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/language_provider.dart';
+import '../../providers/user_provider.dart';
 import 'onboarding_invitation_lang_screen.dart';
 
 class OnboardingAppLangScreen extends StatefulWidget {
@@ -35,13 +36,27 @@ class _OnboardingAppLangScreenState extends State<OnboardingAppLangScreen> {
         elevation: 0,
         leading: IconButton(
           icon: const Icon(Icons.arrow_back, color: Colors.black87),
-          onPressed: () => Navigator.pop(context),
+          onPressed: () => context.read<UserProvider>().logout(),
         ),
       ),
       body: SafeArea(
         child: Column(
           children: [
-            SizedBox(height: isSmallScreen ? 6 : 10),
+            const SizedBox(height: 16),
+            // Progress Bar (Screen 4 style - Segments with rounded ends)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Row(
+                children: [
+                  Expanded(child: _buildProgressSegment(isActive: true)),
+                  const SizedBox(width: 8),
+                  Expanded(child: _buildProgressSegment(isActive: false)),
+                  const SizedBox(width: 8),
+                  Expanded(child: _buildProgressSegment(isActive: false)),
+                ],
+              ),
+            ),
+            SizedBox(height: isSmallScreen ? 16 : 24),
             Center(
               child: Container(
                 width: isSmallScreen ? 50 : 60,
@@ -145,6 +160,16 @@ class _OnboardingAppLangScreenState extends State<OnboardingAppLangScreen> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildProgressSegment({required bool isActive}) {
+    return Container(
+      height: 4,
+      decoration: BoxDecoration(
+        color: isActive ? const Color(0xFFF94C66) : const Color(0xFFE9ECEF),
+        borderRadius: BorderRadius.circular(2),
       ),
     );
   }

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:hive/hive.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../repositories/user_repository.dart';
 import '../services/storage_service.dart';
 import '../services/firestore_service.dart';
@@ -49,11 +50,14 @@ class UserProvider extends ChangeNotifier {
   bool _isLoading = false;
   bool _isSocialOtpVerified = true;
   Timer? _statusTimer;
+  String? _token;
+  bool _isProfileCompletePersisted = false;
+  late final Future<void> initialization;
 
   final List<AccountModel> _recentAccounts = []; // Empty or memory-only list to satisfy layout interfaces
 
   UserProvider() {
-    _init();
+    initialization = _init();
     // Periodically verify account status from backend to instantly enforce suspensions
     _statusTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
       checkUserStatusSilently();
@@ -71,8 +75,11 @@ class UserProvider extends ChangeNotifier {
   bool get isLoading => _isLoading;
   bool get isSocialOtpVerified => _isSocialOtpVerified;
   List<AccountModel> get recentAccounts => _recentAccounts;
+  String? get token => _token;
+  bool get isAuthenticated => _token != null && _token!.isNotEmpty;
 
   bool get isProfileComplete {
+    if (_isProfileCompletePersisted) return true;
     final hasName = _name.trim().isNotEmpty && 
         _name.toLowerCase() != 'new user' && 
         _name.toLowerCase() != 'user';
@@ -88,10 +95,8 @@ class UserProvider extends ChangeNotifier {
         _phone != '+910000000000' &&
         cleanedPhone.length >= 10;
     
-    // Profile is complete if user has name and email
-    // Phone is optional for social login (Google/Apple)
-    // Phone is required for phone login
-    return hasName && hasEmail;
+    // Profile is complete if user has name, email, and phone number
+    return hasName && hasEmail && hasPhone;
   }
 
   String _normalizePhone(String phone) {
@@ -123,7 +128,7 @@ class UserProvider extends ChangeNotifier {
         print("[_resolveUid] Querying by email: $email");
         final matchedUser = await _userRepository.resolveUserDocument(email: email);
         if (matchedUser != null) {
-          final resolvedId = matchedUser['uid'] ?? matchedUser['id'];
+          final resolvedId = matchedUser['id'] ?? matchedUser['uid'];
           if (resolvedId != null) {
             print("[_resolveUid] Resolved by email match to: $resolvedId");
             return resolvedId.toString();
@@ -137,7 +142,7 @@ class UserProvider extends ChangeNotifier {
         print("[_resolveUid] Querying by phone: $phone");
         final matchedUser = await _userRepository.resolveUserDocument(phone: phone);
         if (matchedUser != null) {
-          final resolvedId = matchedUser['uid'] ?? matchedUser['id'];
+          final resolvedId = matchedUser['id'] ?? matchedUser['uid'];
           if (resolvedId != null) {
             print("[_resolveUid] Resolved by phone match to: $resolvedId");
             return resolvedId.toString();
@@ -153,10 +158,35 @@ class UserProvider extends ChangeNotifier {
 
   Future<void> _init() async {
     await _loadRecentAccounts();
+    _isProfileCompletePersisted = await _getStoredProfileComplete();
+
+    // If a token is saved, initialize in-memory state with the most recent account as a cache
+    final token = await getAuthToken();
+    _token = token;
+    if (token != null && token.isNotEmpty && _recentAccounts.isNotEmpty) {
+      final cachedAccount = _recentAccounts.first;
+      _name = cachedAccount.name;
+      _phone = cachedAccount.phone;
+      _email = cachedAccount.email;
+      _profileImagePath = cachedAccount.profileImagePath;
+      print("💾 [UserProvider] Initialized from cached account: $_name, $_phone");
+    }
+
+    // Restore stored phone if currently empty (handles cold start before profile completion)
+    if (_phone.isEmpty) {
+      final storedPhone = await _getStoredPhone();
+      if (storedPhone != null && storedPhone.isNotEmpty) {
+        _phone = storedPhone;
+        print("💾 [UserProvider] Pre-initialized phone from SharedPreferences: $_phone");
+      }
+    }
+    notifyListeners();
 
     // Listen to Firebase Auth state changes
+    User? previousUser;
     _auth.authStateChanges().listen((user) async {
       if (user != null) {
+        previousUser = user;
         _isLoading = true;
         notifyListeners();
 
@@ -218,110 +248,177 @@ class UserProvider extends ChangeNotifier {
         }
         notifyListeners();
       } else {
-        _clearInMemoryState();
+        final hadFirebaseUser = previousUser != null;
+        previousUser = null;
+
+        // Only clear in-memory state if we were previously logged in via Firebase and now logged out,
+        // and we don't have a JWT token.
+        if (hadFirebaseUser && (_token == null || _token!.isEmpty)) {
+          _clearInMemoryState();
+        }
       }
     });
   }
 
   /// Fetches the user profile from Cloud / MySQL backend
-  Future<void> fetchProfileFromCloud({String? phone}) async {
-    final user = _auth.currentUser;
-    
-    String? resolvedUid = FirestoreService().resolvedUid;
-    
-    if (resolvedUid == null) {
-      if (user != null) {
-        resolvedUid = await _resolveUid(user);
-      } else if (phone != null) {
-        final normalized = _normalizePhone(phone);
-        print("[fetchProfileFromCloud] Resolving UID by phone: $normalized");
-        final matchedUser = await _userRepository.resolveUserDocument(phone: normalized);
-        if (matchedUser != null) {
-          resolvedUid = (matchedUser['uid'] ?? matchedUser['id'])?.toString();
-          print("[fetchProfileFromCloud] Resolved UID by phone match: $resolvedUid");
-        } else {
-          final phoneDigits = normalized.replaceAll(RegExp(r'\D'), '');
-          resolvedUid = 'whatsapp_$phoneDigits';
-          print("[fetchProfileFromCloud] New WhatsApp user, using generated UID: $resolvedUid");
-        }
-      } else if (_phone.isNotEmpty) {
-        final normalized = _normalizePhone(_phone);
-        final matchedUser = await _userRepository.resolveUserDocument(phone: normalized);
-        if (matchedUser != null) {
-          resolvedUid = (matchedUser['uid'] ?? matchedUser['id'])?.toString();
-        } else {
-          final phoneDigits = normalized.replaceAll(RegExp(r'\D'), '');
-          resolvedUid = 'whatsapp_$phoneDigits';
-        }
-      }
-    }
-
-    if (resolvedUid == null) {
-      print("[fetchProfileFromCloud] resolvedUid is null, cannot fetch profile.");
-      return;
-    }
-
-    FirestoreService().setResolvedUid(resolvedUid);
-
-    final userDoc = await _userRepository.fetchUserDocument(resolvedUid);
-    if (userDoc != null) {
-      _name = userDoc['name'] ?? '';
-      _email = userDoc['email'] ?? '';
-      _profileImagePath = userDoc['profilePhoto'];
-      print("Fetched profile image path: $_profileImagePath");
-      _role = userDoc['role'] ?? 'user';
-      final rawStatus = userDoc['accountStatus'] ?? userDoc['status'];
-      if (rawStatus != null) {
-        _accountStatus = rawStatus.toString().toLowerCase() == 'suspended' ? 'suspended' : 'active';
-      } else if (userDoc['isBlocked'] == true) {
-        _accountStatus = 'suspended';
-      } else {
-        _accountStatus = 'active';
-      }
-      _phone = userDoc['phone'] ?? phone ?? (user != null ? user.phoneNumber ?? '' : '');
-
-      if (_name.isNotEmpty) {
-        _addToRecentAccounts(AccountModel(
-          name: _name,
-          phone: _phone,
-          email: _email,
-          profileImagePath: _profileImagePath,
-        ));
-      }
+  Future<void> fetchProfileFromCloud({String? phone, bool silent = false}) async {
+    if (!silent) {
+      _isLoading = true;
       notifyListeners();
-    } else {
-      // Document doesn't exist on backend.
-      if (user != null) {
-        final profile = await _userRepository.fetchProfile();
-        if (profile != null) {
-          _name = profile['name'] ?? '';
-          _phone = profile['phone'] ?? user.phoneNumber ?? '';
-          _email = profile['email'] ?? '';
-          _profileImagePath = profile['profileImagePath'];
+    }
+    try {
+      final user = _auth.currentUser;
+      
+      String? resolvedUid = FirestoreService().resolvedUid;
+      
+      if (resolvedUid == null) {
+        if (user != null) {
+          resolvedUid = await _resolveUid(user);
+        } else if (phone != null) {
+          final normalized = _normalizePhone(phone);
+          print("[fetchProfileFromCloud] Resolving UID by phone: $normalized");
+          final matchedUser = await _userRepository.resolveUserDocument(phone: normalized);
+          if (matchedUser != null) {
+            resolvedUid = (matchedUser['id'] ?? matchedUser['uid'])?.toString();
+            print("[fetchProfileFromCloud] Resolved UID by phone match: $resolvedUid");
+          } else {
+            final phoneDigits = normalized.replaceAll(RegExp(r'\D'), '');
+            resolvedUid = 'whatsapp_$phoneDigits';
+            print("[fetchProfileFromCloud] New WhatsApp user, using generated UID: $resolvedUid");
+          }
+        } else if (_phone.isNotEmpty) {
+          final normalized = _normalizePhone(_phone);
+          final matchedUser = await _userRepository.resolveUserDocument(phone: normalized);
+          if (matchedUser != null) {
+            resolvedUid = (matchedUser['id'] ?? matchedUser['uid'])?.toString();
+          } else {
+            final phoneDigits = normalized.replaceAll(RegExp(r'\D'), '');
+            resolvedUid = 'whatsapp_$phoneDigits';
+          }
+        }
+      }
+
+      // Last-resort fallback: read persisted backend user ID from SharedPreferences
+      // This handles hot-restart when Firebase Auth is null and resolvedUid is not in memory
+      if (resolvedUid == null) {
+        resolvedUid = await _getStoredUserId();
+        if (resolvedUid != null) {
+          print("[fetchProfileFromCloud] Recovered resolvedUid from SharedPreferences: $resolvedUid");
+        }
+      }
+
+      // Ultimate fallback: try resolving by stored phone number
+      if (resolvedUid == null) {
+        final storedPhone = await _getStoredPhone();
+        if (storedPhone != null && storedPhone.isNotEmpty) {
+          print("[fetchProfileFromCloud] Trying to resolve UID by stored phone: $storedPhone");
+          final matchedUser = await _userRepository.resolveUserDocument(phone: storedPhone);
+          if (matchedUser != null) {
+            resolvedUid = (matchedUser['id'] ?? matchedUser['uid'])?.toString();
+            print("[fetchProfileFromCloud] Resolved UID by stored phone: $resolvedUid");
+          }
+        }
+      }
+
+      if (resolvedUid == null) {
+        print("[fetchProfileFromCloud] resolvedUid is null, cannot fetch profile.");
+        return;
+      }
+
+      FirestoreService().setResolvedUid(resolvedUid);
+
+      final userDoc = await _userRepository.fetchUserDocument(resolvedUid);
+      if (userDoc != null) {
+        _name = userDoc['name'] ?? '';
+        _email = userDoc['email'] ?? '';
+        _profileImagePath = userDoc['profilePhoto'];
+        print("Fetched profile image path: $_profileImagePath");
+        _role = userDoc['role'] ?? 'user';
+        final rawStatus = userDoc['accountStatus'] ?? userDoc['status'];
+        if (rawStatus != null) {
+          _accountStatus = rawStatus.toString().toLowerCase() == 'suspended' ? 'suspended' : 'active';
+        } else if (userDoc['isBlocked'] == true) {
+          _accountStatus = 'suspended';
+        } else {
+          _accountStatus = 'active';
+        }
+        _phone = userDoc['phone'] ?? phone ?? (user != null ? user.phoneNumber ?? '' : '');
+
+        // Store resolved UID in SharedPreferences persistently so we don't have to resolve it again
+        await _storeUserId(resolvedUid);
+
+        // Store profile complete status in SharedPreferences
+        if (isProfileComplete) {
+          _isProfileCompletePersisted = true;
+          await _storeProfileComplete(true);
+        }
+
+        if (_name.isNotEmpty) {
+          _addToRecentAccounts(AccountModel(
+            name: _name,
+            phone: _phone,
+            email: _email,
+            profileImagePath: _profileImagePath,
+          ));
+        }
+        notifyListeners();
+      } else {
+        // Document doesn't exist on backend (404 Not Found).
+        if (user != null) {
+          final profile = await _userRepository.fetchProfile();
+          if (profile != null) {
+            _name = profile['name'] ?? '';
+            _phone = profile['phone'] ?? user.phoneNumber ?? '';
+            _email = profile['email'] ?? '';
+            _profileImagePath = profile['profileImagePath'];
+            _role = 'user';
+            _accountStatus = 'active';
+
+            await _userRepository.saveUserDocument(
+              uid: resolvedUid,
+              name: _name,
+              email: _email,
+              phone: _normalizePhone(_phone),
+              profilePhoto: _profileImagePath,
+              provider: user.providerData.isNotEmpty ? user.providerData.first.providerId : 'phone',
+            );
+            
+            // Resolve newly created user integer ID!
+            final matchedUser = await _userRepository.resolveUserDocument(email: _normalizeEmail(_email));
+            if (matchedUser != null && matchedUser['id'] != null) {
+              final newId = matchedUser['id'].toString();
+              FirestoreService().setResolvedUid(newId);
+              await _storeUserId(newId);
+            } else {
+              await _storeUserId(resolvedUid);
+            }
+            
+            notifyListeners();
+          } else {
+            _phone = user.phoneNumber ?? '';
+            _role = 'user';
+            _accountStatus = 'active';
+            notifyListeners();
+          }
+        } else if (phone != null) {
+          _name = '';
+          _email = '';
+          _phone = _normalizePhone(phone);
           _role = 'user';
           _accountStatus = 'active';
-
-          await _userRepository.saveUserDocument(
-            uid: resolvedUid,
-            name: _name,
-            email: _email,
-            phone: _normalizePhone(_phone),
-            profilePhoto: _profileImagePath,
-            provider: user.providerData.isNotEmpty ? user.providerData.first.providerId : 'phone',
-          );
           notifyListeners();
         } else {
-          _phone = user.phoneNumber ?? '';
-          _role = 'user';
-          _accountStatus = 'active';
-          notifyListeners();
+          // NO Firebase user, NO phone, and NO backend document found -> Stale JWT session!
+          print("❌ [UserProvider] Stale JWT session detected (404 not found on backend). Logging out.");
+          await logout();
         }
-      } else if (phone != null) {
-        _name = '';
-        _email = '';
-        _phone = _normalizePhone(phone);
-        _role = 'user';
-        _accountStatus = 'active';
+      }
+    } catch (e) {
+      print("⚠️ [UserProvider] Network or server error fetching profile: $e. Using local cached details.");
+      // Do not log out! The session is still valid but the network is offline or server is down.
+    } finally {
+      if (!silent) {
+        _isLoading = false;
         notifyListeners();
       }
     }
@@ -427,6 +524,15 @@ class UserProvider extends ChangeNotifier {
       profileImagePath: _profileImagePath,
     ));
 
+    if (phone.isNotEmpty) {
+      await storeUserPhone(phone);
+    }
+
+    if (isProfileComplete) {
+      _isProfileCompletePersisted = true;
+      await _storeProfileComplete(true);
+    }
+
     notifyListeners();
 
     // Trigger upload and Firestore sync
@@ -497,6 +603,22 @@ class UserProvider extends ChangeNotifier {
             : 'google',
       );
 
+      // Now query the backend to resolve the newly created/updated user record and get their integer ID!
+      final matchedUser = await _userRepository.resolveUserDocument(phone: normalizedPhone);
+      if (matchedUser != null && matchedUser['id'] != null) {
+        final newId = matchedUser['id'].toString();
+        print("[_syncProfileToCloudInBackground] Resolved newly saved user integer ID: $newId");
+        FirestoreService().setResolvedUid(newId);
+        await _storeUserId(newId);
+      } else {
+        await _storeUserId(currentResolvedUid);
+      }
+
+      if (isProfileComplete) {
+        _isProfileCompletePersisted = true;
+        await _storeProfileComplete(true);
+      }
+
       print("Profile successfully synced to backend.");
     } catch (e) {
       print("Error syncing profile to backend: $e");
@@ -527,18 +649,16 @@ class UserProvider extends ChangeNotifier {
     _accountStatus = 'active';
     _isLoading = false;
     _isSocialOtpVerified = true;
+    _isProfileCompletePersisted = false;
     FirestoreService().clearResolvedUid();
     notifyListeners();
   }
 
-  Future<void> logout() async {
-    _clearInMemoryState();
-    await _auth.signOut();
-  }
 
   Future<void> checkUserStatusSilently() async {
     final user = _auth.currentUser;
-    if (user == null) return;
+    final hasJwt = isAuthenticated;
+    if (user == null && !hasJwt) return;
 
     try {
       final resolvedUid = FirestoreService().resolvedUid;
@@ -642,5 +762,178 @@ class UserProvider extends ChangeNotifier {
     _recentAccounts.insert(0, account);
     
     _saveRecentAccounts();
+  }
+
+  // --- JWT TOKEN MANAGEMENT ---
+  static const String _authTokenKey = 'auth_token';
+  static const String _userIdKey = 'backend_user_id';
+  static const String _userPhoneKey = 'backend_user_phone';
+  static const String _isProfileCompleteKey = 'is_profile_complete';
+
+  Future<void> _storeProfileComplete(bool complete) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_isProfileCompleteKey, complete);
+    } catch (e) {
+      print("Error storing profile completion state: $e");
+    }
+  }
+
+  Future<bool> _getStoredProfileComplete() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_isProfileCompleteKey) ?? false;
+    } catch (e) {
+      print("Error getting stored profile completion state: $e");
+      return false;
+    }
+  }
+
+  Future<bool> getStoredProfileCompleteState() => _getStoredProfileComplete();
+
+  /// Store backend user ID persistently
+  Future<void> _storeUserId(String userId) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_userIdKey, userId);
+    } catch (e) {
+      print("❌ [UserProvider] Error storing user ID: $e");
+    }
+  }
+
+  /// Get stored backend user ID
+  Future<String?> _getStoredUserId() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_userIdKey);
+    } catch (e) {
+      print("❌ [UserProvider] Error getting stored user ID: $e");
+      return null;
+    }
+  }
+
+  /// Store phone number persistently so login survives app restart
+  Future<void> storeUserPhone(String phone) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_userPhoneKey, phone);
+      print("✅ [UserProvider] Phone stored: $phone");
+    } catch (e) {
+      print("❌ [UserProvider] Error storing phone: $e");
+    }
+  }
+
+  /// Get stored phone number
+  Future<String?> _getStoredPhone() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getString(_userPhoneKey);
+    } catch (e) {
+      print("❌ [UserProvider] Error getting stored phone: $e");
+      return null;
+    }
+  }
+
+  /// Store JWT token from backend
+  Future<void> setAuthToken(String token) async {
+    try {
+      _token = token;
+      notifyListeners();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString(_authTokenKey, token);
+      print("✅ [UserProvider] JWT token stored successfully: ${token.substring(0, 20)}...");
+    } catch (e) {
+      print("❌ [UserProvider] Error storing JWT token: $e");
+    }
+  }
+
+  /// Get stored JWT token
+  Future<String?> getAuthToken() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final token = prefs.getString(_authTokenKey);
+      print("🔍 [UserProvider] Retrieved JWT token: ${token != null ? 'Found (${token.substring(0, 20)}...)' : 'Not found'}");
+      return token;
+    } catch (e) {
+      print("❌ [UserProvider] Error getting JWT token: $e");
+      return null;
+    }
+  }
+
+  /// Clear JWT token, stored user ID and phone
+  Future<void> clearAuthToken() async {
+    try {
+      _token = null;
+      _isProfileCompletePersisted = false;
+      notifyListeners();
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_authTokenKey);
+      await prefs.remove(_userIdKey);
+      await prefs.remove(_userPhoneKey);
+      await prefs.remove(_isProfileCompleteKey);
+      print("✅ [UserProvider] JWT token, user ID, phone & profile complete flag cleared successfully");
+    } catch (e) {
+      print("❌ [UserProvider] Error clearing JWT token: $e");
+    }
+  }
+
+  /// Update user data from backend response
+  Future<void> updateUserFromBackend(Map<String, dynamic> userData) async {
+    try {
+      _name = userData['name'] ?? userData['displayName'] ?? '';
+      _email = userData['email'] ?? '';
+      _profileImagePath = userData['profilePhoto'] ?? userData['profile_image'];
+      _phone = userData['phone'] ?? '';
+      _role = userData['role'] ?? 'user';
+      
+      final rawStatus = userData['accountStatus'] ?? userData['status'];
+      if (rawStatus != null) {
+        _accountStatus = rawStatus.toString().toLowerCase() == 'suspended' ? 'suspended' : 'active';
+      } else if (userData['isBlocked'] == true) {
+        _accountStatus = 'suspended';
+      } else {
+        _accountStatus = 'active';
+      }
+
+      // Store resolved UID if provided — also persist to SharedPreferences for hot-restart recovery
+      final resolvedId = userData['id'] ?? userData['uid'];
+      if (resolvedId != null) {
+        final uid = resolvedId.toString();
+        FirestoreService().setResolvedUid(uid);
+        await _storeUserId(uid);
+      }
+
+      // Persist phone number for app-restart recovery
+      if (_phone.isNotEmpty) {
+        await storeUserPhone(_phone);
+      }
+
+      // Store profile complete status in SharedPreferences
+      if (isProfileComplete) {
+        _isProfileCompletePersisted = true;
+        await _storeProfileComplete(true);
+      }
+
+      // Add to recent accounts
+      if (_name.isNotEmpty) {
+        _addToRecentAccounts(AccountModel(
+          name: _name,
+          phone: _phone,
+          email: _email,
+          profileImagePath: _profileImagePath,
+        ));
+      }
+
+      notifyListeners();
+      print("User data updated from backend successfully");
+    } catch (e) {
+      print("Error updating user data from backend: $e");
+    }
+  }
+
+  Future<void> logout() async {
+    await clearAuthToken();
+    _clearInMemoryState();
+    await _auth.signOut();
   }
 }

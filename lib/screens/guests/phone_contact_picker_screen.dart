@@ -154,150 +154,153 @@ class _PhoneContactPickerScreenState extends State<PhoneContactPickerScreen> {
           ),
         ],
       ),
-      body: Column(
-        children: [
-          // Search box
-          Padding(
-            padding: const EdgeInsets.all(16),
-            child: Container(
-              height: 50,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(25),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.04),
-                    blurRadius: 15,
-                    offset: const Offset(0, 5),
-                  )
-                ],
-              ),
-              child: TextField(
-                onChanged: _applySearch,
-                decoration: const InputDecoration(
-                  hintText: "Search contacts",
-                  hintStyle: TextStyle(color: Colors.black26, fontSize: 14),
-                  prefixIcon: Icon(Icons.search, color: Color(0xFFF94C66)),
-                  border: InputBorder.none,
-                  contentPadding: EdgeInsets.symmetric(vertical: 13),
+      body: SafeArea(
+        top: false,
+        child: Column(
+          children: [
+            // Search box
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Container(
+                height: 50,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(25),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.04),
+                      blurRadius: 15,
+                      offset: const Offset(0, 5),
+                    )
+                  ],
+                ),
+                child: TextField(
+                  onChanged: _applySearch,
+                  decoration: const InputDecoration(
+                    hintText: "Search contacts",
+                    hintStyle: TextStyle(color: Colors.black26, fontSize: 14),
+                    prefixIcon: Icon(Icons.search, color: Color(0xFFF94C66)),
+                    border: InputBorder.none,
+                    contentPadding: EdgeInsets.symmetric(vertical: 13),
+                  ),
                 ),
               ),
             ),
-          ),
 
-          // Contact List
-          Expanded(
-            child: isLoading
-                ? const Center(child: CircularProgressIndicator(color: Color(0xFFF94C66)))
-                : filteredContacts.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.contacts_outlined, size: 64, color: Colors.grey.shade300),
-                            const SizedBox(height: 12),
-                            const Text("No contacts found", style: TextStyle(color: Colors.black38, fontSize: 15)),
-                          ],
-                        ),
-                      )
-                    : ListView.builder(
-                        physics: const BouncingScrollPhysics(),
-                        itemCount: filteredContacts.length,
-                        itemBuilder: (context, index) {
-                          final c = filteredContacts[index];
-                          final isSelected = selectedIds.contains(c.id);
-                          final phone = c.phones.first.number;
+            // Contact List
+            Expanded(
+              child: isLoading
+                  ? const Center(child: CircularProgressIndicator(color: Color(0xFFF94C66)))
+                  : filteredContacts.isEmpty
+                      ? Center(
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(Icons.contacts_outlined, size: 64, color: Colors.grey.shade300),
+                              const SizedBox(height: 12),
+                              const Text("No contacts found", style: TextStyle(color: Colors.black38, fontSize: 15)),
+                            ],
+                          ),
+                        )
+                      : ListView.builder(
+                          physics: const BouncingScrollPhysics(),
+                          itemCount: filteredContacts.length,
+                          itemBuilder: (context, index) {
+                            final c = filteredContacts[index];
+                            final isSelected = selectedIds.contains(c.id);
+                            final phone = c.phones.first.number;
 
-                          return Container(
-                            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                            decoration: BoxDecoration(
-                              color: Colors.white,
-                              borderRadius: BorderRadius.circular(14),
-                              boxShadow: [
-                                BoxShadow(
-                                  color: Colors.black.withOpacity(0.01),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 2),
-                                )
-                              ],
-                            ),
-                            child: ListTile(
-                              leading: Container(
-                                width: 40,
-                                height: 40,
-                                decoration: const BoxDecoration(
-                                  color: Color(0xFFFDE8EC),
-                                  shape: BoxShape.circle,
-                                ),
-                                child: Center(
-                                  child: Text(
-                                    c.displayName.isNotEmpty ? c.displayName[0].toUpperCase() : "?",
-                                    style: const TextStyle(
-                                      color: Color(0xFFF94C66),
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 16,
+                            return Container(
+                              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.white,
+                                borderRadius: BorderRadius.circular(14),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.01),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  )
+                                ],
+                              ),
+                              child: ListTile(
+                                leading: Container(
+                                  width: 40,
+                                  height: 40,
+                                  decoration: const BoxDecoration(
+                                    color: Color(0xFFFDE8EC),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      c.displayName.isNotEmpty ? c.displayName[0].toUpperCase() : "?",
+                                      style: const TextStyle(
+                                        color: Color(0xFFF94C66),
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 16,
+                                      ),
                                     ),
                                   ),
                                 ),
-                              ),
-                              title: Text(
-                                c.displayName,
-                                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: Colors.black87),
-                              ),
-                              subtitle: Text(
-                                phone,
-                                style: const TextStyle(fontSize: 12, color: Colors.black38),
-                              ),
-                              trailing: Checkbox(
-                                value: isSelected,
-                                activeColor: const Color(0xFFF94C66),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
-                                onChanged: (val) {
+                                title: Text(
+                                  c.displayName,
+                                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: Colors.black87),
+                                ),
+                                subtitle: Text(
+                                  phone,
+                                  style: const TextStyle(fontSize: 12, color: Colors.black38),
+                                ),
+                                trailing: Checkbox(
+                                  value: isSelected,
+                                  activeColor: const Color(0xFFF94C66),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(4)),
+                                  onChanged: (val) {
+                                    setState(() {
+                                      if (val == true) {
+                                        selectedIds.add(c.id);
+                                      } else {
+                                        selectedIds.remove(c.id);
+                                      }
+                                    });
+                                  },
+                                ),
+                                onTap: () {
                                   setState(() {
-                                    if (val == true) {
-                                      selectedIds.add(c.id);
-                                    } else {
+                                    if (isSelected) {
                                       selectedIds.remove(c.id);
+                                    } else {
+                                      selectedIds.add(c.id);
                                     }
                                   });
                                 },
                               ),
-                              onTap: () {
-                                setState(() {
-                                  if (isSelected) {
-                                    selectedIds.remove(c.id);
-                                  } else {
-                                    selectedIds.add(c.id);
-                                  }
-                                });
-                              },
-                            ),
-                          );
-                        },
-                      ),
-          ),
+                            );
+                          },
+                        ),
+            ),
 
-          // Import button
-          if (!isLoading && filteredContacts.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: ElevatedButton(
-                onPressed: _importSelected,
-                style: ElevatedButton.styleFrom(
-                  minimumSize: const Size(double.infinity, 50),
-                  backgroundColor: const Color(0xFFF94C66),
-                  foregroundColor: Colors.white,
-                  elevation: 2,
-                  shadowColor: const Color(0xFFF94C66).withOpacity(0.3),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
-                ),
-                child: Text(
-                  "Import Selected (${selectedIds.length})",
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+            // Import button
+            if (!isLoading && filteredContacts.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.all(16),
+                child: ElevatedButton(
+                  onPressed: _importSelected,
+                  style: ElevatedButton.styleFrom(
+                    minimumSize: const Size(double.infinity, 50),
+                    backgroundColor: const Color(0xFFF94C66),
+                    foregroundColor: Colors.white,
+                    elevation: 2,
+                    shadowColor: const Color(0xFFF94C66).withOpacity(0.3),
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+                  ),
+                  child: Text(
+                    "Import Selected (${selectedIds.length})",
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                  ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }

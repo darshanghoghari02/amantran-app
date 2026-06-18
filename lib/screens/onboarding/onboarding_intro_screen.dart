@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../providers/language_provider.dart';
-import 'onboarding_app_lang_screen.dart';
+import '../auth/login_screen.dart';
 
 class OnboardingIntroScreen extends StatelessWidget {
   const OnboardingIntroScreen({super.key});
@@ -192,7 +192,7 @@ class OnboardingIntroScreen extends StatelessWidget {
                             ),
                             child: ElevatedButton(
                               onPressed: () {
-                                Navigator.push(context, MaterialPageRoute(builder: (_) => const OnboardingAppLangScreen()));
+                                Navigator.push(context, MaterialPageRoute(builder: (_) => const LoginScreen()));
                               },
                               style: ElevatedButton.styleFrom(
                                 backgroundColor: const Color(0xFFF94C66),

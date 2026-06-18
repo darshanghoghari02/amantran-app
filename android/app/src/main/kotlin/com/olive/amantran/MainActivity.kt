@@ -1,4 +1,4 @@
-package com.olivepatel.nimantran
+package com.olive.amantran
 
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
@@ -11,7 +11,7 @@ import android.accounts.AccountManager
 import android.net.Uri
 
 class MainActivity : FlutterActivity() {
-    private val CHANNEL = "com.olivepatel.nimantran/apk_share"
+    private val CHANNEL = "com.olive.amantran/apk_share"
     
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)

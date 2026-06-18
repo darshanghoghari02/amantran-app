@@ -23,6 +23,7 @@ import '../../providers/language_provider.dart';
 import '../../providers/user_provider.dart';
 import '../../widgets/top_notification.dart';
 import '../../services/interaction_service.dart';
+import '../../utils/image_resolver.dart';
 
 class SuccessScreen extends StatefulWidget {
   final TemplateModel template;
@@ -144,7 +145,7 @@ class _SuccessScreenState extends State<SuccessScreen> {
       if (context == null) return null;
       final boundary = context.findRenderObject() as RenderRepaintBoundary?;
       if (boundary == null) return null;
-      final image = await boundary.toImage(pixelRatio: 3);
+      final image = await boundary.toImage(pixelRatio: 1.2);
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       return byteData?.buffer.asUint8List();
     } catch (e) {
@@ -160,12 +161,32 @@ class _SuccessScreenState extends State<SuccessScreen> {
 
     try {
       await WidgetsBinding.instance.endOfFrame;
-      await Future.delayed(const Duration(milliseconds: 400));
+      await Future.delayed(const Duration(milliseconds: 200));
 
       final visibleIndices = _visiblePageIndices;
       if (visibleIndices.isEmpty) {
         throw Exception('No visible pages to save');
       }
+
+      // Precache backgrounds to ensure they load instantly
+      try {
+        await Future.wait(visibleIndices.map((pageIndex) {
+          final String bgUrl = pageIndex < pagesList.length
+              ? pagesList[pageIndex].backgroundImage
+              : widget.template.thumbnail;
+          if (bgUrl.isEmpty) return Future.value();
+          final imgProvider = isNetworkImage(bgUrl)
+              ? NetworkImage(resolveImageUrl(bgUrl))
+              : AssetImage(cleanAssetPath(bgUrl)) as ImageProvider;
+          return precacheImage(imgProvider, context);
+        }));
+      } catch (e) {
+        debugPrint("Precache background error: $e");
+      }
+
+      // Wait for the widgets to settle with the cached images
+      await WidgetsBinding.instance.endOfFrame;
+      await Future.delayed(const Duration(milliseconds: 150));
 
       final pdf = pw.Document();
       final totalVisible = visibleIndices.length;
@@ -178,7 +199,6 @@ class _SuccessScreenState extends State<SuccessScreen> {
         );
 
         await WidgetsBinding.instance.endOfFrame;
-        await Future.delayed(const Duration(milliseconds: 200));
 
         final bytes = await capture(pageKeys[pageIndex]);
         if (bytes == null) {
@@ -393,63 +413,50 @@ class _SuccessScreenState extends State<SuccessScreen> {
     bool sharedDirectly = false;
 
     if (Platform.isAndroid && platform != 'Other') {
-      // For Messages, just open SMS app without PDF attachment
-      if (platform == 'Messages' || platform == 'Messenger') {
+      String? packageName;
+      if (platform == 'WhatsApp') {
+        packageName = 'com.whatsapp';
+      } else if (platform == 'Gmail') {
+        packageName = 'com.google.android.gm';
+      } else if (platform == 'Messages') {
+        packageName = 'com.google.android.apps.messaging';
+      }
+
+      if (packageName != null) {
         try {
-          const channel = MethodChannel('com.olivepatel.nimantran/apk_share');
+          final fileName = savedPdfPath!.split('/').last;
+          final tempDir = await getTemporaryDirectory();
+          final tempFile = File('${tempDir.path}/$fileName');
+          if (await tempFile.exists()) {
+            try {
+              await tempFile.delete();
+            } catch (_) {}
+          }
+          await File(savedPdfPath!).copy(tempFile.path);
+
+          // Get user's email for Gmail FROM field
+          final userProvider = context.read<UserProvider>();
+          final userEmail = userProvider.email;
+
+          const channel = MethodChannel('com.olive.amantran/apk_share');
           final bool? success = await channel.invokeMethod<bool>(
-            'openSmsApp',
-            {},
+            'shareFileToPackage',
+            {
+              'filePath': tempFile.path,
+              'packageName': packageName,
+              'userEmail': userEmail,
+            },
           );
           sharedDirectly = success ?? false;
         } catch (e) {
-          debugPrint('Open SMS app failed: $e');
-        }
-      } else {
-        // For WhatsApp and Gmail, share with PDF attachment
-        String? packageName;
-        if (platform == 'WhatsApp') {
-          packageName = 'com.whatsapp';
-        } else if (platform == 'Gmail') {
-          packageName = 'com.google.android.gm';
-        }
-
-        if (packageName != null) {
-          try {
-            final fileName = savedPdfPath!.split('/').last;
-            final tempDir = await getTemporaryDirectory();
-            final tempFile = File('${tempDir.path}/$fileName');
-            if (await tempFile.exists()) {
-              try {
-                await tempFile.delete();
-              } catch (_) {}
-            }
-            await File(savedPdfPath!).copy(tempFile.path);
-
-            // Get user's email for Gmail FROM field
-            final userProvider = context.read<UserProvider>();
-            final userEmail = userProvider.email;
-
-            const channel = MethodChannel('com.olivepatel.nimantran/apk_share');
-            final bool? success = await channel.invokeMethod<bool>(
-              'shareFileToPackage',
-              {
-                'filePath': tempFile.path,
-                'packageName': packageName,
-                'userEmail': userEmail,
-              },
+          debugPrint('Direct share to $packageName failed: $e');
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Direct share failed: $e\nMake sure to COLD RUN/REBUILD the app if you just changed native code.'),
+                duration: const Duration(seconds: 5),
+              ),
             );
-            sharedDirectly = success ?? false;
-          } catch (e) {
-            debugPrint('Direct share to $packageName failed: $e');
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text('Direct share failed: $e\nMake sure to COLD RUN/REBUILD the app if you just changed native code.'),
-                  duration: const Duration(seconds: 5),
-                ),
-              );
-            }
           }
         }
       }

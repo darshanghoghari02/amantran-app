@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:provider/provider.dart';
 import '../../repositories/user_repository.dart';
 import '../../providers/language_provider.dart';
+import '../../services/firestore_service.dart';
 
 class UserManagementScreen extends StatefulWidget {
   const UserManagementScreen({Key? key}) : super(key: key);
@@ -15,7 +16,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
   final UserRepository _userRepository = UserRepository();
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
-  final String _currentUid = FirebaseAuth.instance.currentUser?.uid ?? '';
+  final String _currentUid = FirestoreService().resolvedUid ?? FirebaseAuth.instance.currentUser?.uid ?? '';
   List<Map<String, dynamic>> _users = [];
   bool _isLoading = true;
 

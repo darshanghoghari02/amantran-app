@@ -64,7 +64,21 @@ class _OnboardingInvitationLangScreenState extends State<OnboardingInvitationLan
       body: SafeArea(
         child: Column(
           children: [
-            const SizedBox(height: 4),
+            const SizedBox(height: 16),
+            // Progress Bar (Screen 5 style - Segments with rounded ends)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24),
+              child: Row(
+                children: [
+                  Expanded(child: _buildProgressSegment(isActive: true)),
+                  const SizedBox(width: 8),
+                  Expanded(child: _buildProgressSegment(isActive: true)),
+                  const SizedBox(width: 8),
+                  Expanded(child: _buildProgressSegment(isActive: false)),
+                ],
+              ),
+            ),
+            const SizedBox(height: 18),
             // Onboarding Logo Image
             Center(
               child: Container(
@@ -311,6 +325,16 @@ class _OnboardingInvitationLangScreenState extends State<OnboardingInvitationLan
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildProgressSegment({required bool isActive}) {
+    return Container(
+      height: 4,
+      decoration: BoxDecoration(
+        color: isActive ? const Color(0xFFF94C66) : const Color(0xFFE9ECEF),
+        borderRadius: BorderRadius.circular(2),
       ),
     );
   }

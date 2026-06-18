@@ -1,9 +1,16 @@
-import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
 
 class ApiConfig {
   static String _resolvedUrl = '';
+  
+  // Web Client ID from Google Cloud Console (Wedding Invitation App project 6374728923)
+  // Go to: console.cloud.google.com → Credentials → "Web client (auto created by Google Service)"
+  // REPLACE THIS with the full Web Client ID shown in Google Cloud Console
+  static const String googleClientId = '6374728923-6m354i7velgv4qdgas7gpn5371oeld6g.apps.googleusercontent.com';
+  
+
+
 
   /// Returns the dynamically resolved URL, or falls back to local machine defaults.
   static String get baseUrl {
