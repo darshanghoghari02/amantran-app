@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -8,6 +9,7 @@ import '../../../models/template_element.dart';
 import 'transliteration_field.dart';
 import '../../preview/widgets/static_element.dart';
 import '../../../utils/image_resolver.dart';
+
 
 /// Helper to calculate the dynamic wrapped text height
 double _calculateTextHeight(TemplateElement element, double width, String activeLanguage) {
@@ -109,6 +111,7 @@ class DraggableElement extends StatelessWidget {
         final bool isLeft = alignment == Alignment.topLeft || alignment == Alignment.bottomLeft || alignment == Alignment.centerLeft;
         final bool isRight = alignment == Alignment.topRight || alignment == Alignment.bottomRight || alignment == Alignment.centerRight;
         final bool isTop = alignment == Alignment.topLeft || alignment == Alignment.topRight || alignment == Alignment.topCenter;
+        final bool isBottom = alignment == Alignment.bottomLeft || alignment == Alignment.bottomRight || alignment == Alignment.bottomCenter;
 
         if (isCorner) {
           // Corner resize scales width, height, font size, and letter spacing proportionally
@@ -134,16 +137,30 @@ class DraggableElement extends StatelessWidget {
           final double newHeight = (element.height * finalRatio).clamp(minH, maxDim);
           final double newLetterSpacing = element.letterSpacing * finalRatio;
 
-          // Calculate new coordinates to keep the opposite corner pinned
-          double newX = element.x;
-          double newY = element.y;
-
+          // Calculate new coordinates to keep opposite corner pinned under rotation
+          double du = 0.0;
           if (isLeft) {
-            newX = (element.x + element.width) - newWidth;
+            du = (element.width - newWidth) / 2.0;
+          } else if (isRight) {
+            du = (newWidth - element.width) / 2.0;
           }
+
+          double dv = 0.0;
           if (isTop) {
-            newY = (element.y + element.height) - newHeight;
+            dv = (element.height - newHeight) / 2.0;
+          } else if (isBottom) {
+            dv = (newHeight - element.height) / 2.0;
           }
+
+          final double angleRad = element.rotation * 3.141592653589793 / 180.0;
+          final double cosA = math.cos(angleRad);
+          final double sinA = math.sin(angleRad);
+
+          final double shiftX = du * cosA - dv * sinA;
+          final double shiftY = du * sinA + dv * cosA;
+
+          final double newX = element.x + (element.width - newWidth) / 2.0 + shiftX;
+          final double newY = element.y + (element.height - newHeight) / 2.0 + shiftY;
 
           onResize(
             newWidth,
@@ -165,26 +182,42 @@ class DraggableElement extends StatelessWidget {
           // Calculate dynamic text height based on new width
           final double newHeight = _calculateTextHeight(element, newWidth, activeLanguage);
 
-          // Calculate new coordinates to keep opposite side pinned
-          double newX = element.x;
+          // Calculate new coordinates to keep opposite side pinned under rotation (top edge is pinned for vertical changes)
+          double du = 0.0;
           if (isLeft) {
-            newX = (element.x + element.width) - newWidth;
+            du = (element.width - newWidth) / 2.0;
+          } else if (isRight) {
+            du = (newWidth - element.width) / 2.0;
           }
+
+          double dv = (newHeight - element.height) / 2.0;
+
+          final double angleRad = element.rotation * 3.141592653589793 / 180.0;
+          final double cosA = math.cos(angleRad);
+          final double sinA = math.sin(angleRad);
+
+          final double shiftX = du * cosA - dv * sinA;
+          final double shiftY = du * sinA + dv * cosA;
+
+          final double newX = element.x + (element.width - newWidth) / 2.0 + shiftX;
+          final double newY = element.y + (element.height - newHeight) / 2.0 + shiftY;
 
           onResize(
             newWidth,
             newHeight,
             null,
             newX: newX,
-            newY: element.y, // Top edge is pinned, y remains same
+            newY: newY,
           );
         }
       } else {
         // Original logic for non-text elements (image, divider, decorative)
-        if (isCorner) {
-          final bool isTop = alignment == Alignment.topLeft || alignment == Alignment.topRight;
-          final bool isLeft = alignment == Alignment.topLeft || alignment == Alignment.bottomLeft;
+        final bool isLeft = alignment == Alignment.topLeft || alignment == Alignment.bottomLeft || alignment == Alignment.centerLeft;
+        final bool isRight = alignment == Alignment.topRight || alignment == Alignment.bottomRight || alignment == Alignment.centerRight;
+        final bool isTop = alignment == Alignment.topLeft || alignment == Alignment.topRight || alignment == Alignment.topCenter;
+        final bool isBottom = alignment == Alignment.bottomLeft || alignment == Alignment.bottomRight || alignment == Alignment.bottomCenter;
 
+        if (isCorner) {
           final double factorW = isLeft ? -1 : 1;
           final double factorH = isTop ? -1 : 1;
 
@@ -204,30 +237,71 @@ class DraggableElement extends StatelessWidget {
           final double newW = (element.width * ratio).clamp(minW, maxDim);
           final double newH = (element.height * ratio).clamp(minH, maxDim);
 
-          final double anchorX = isLeft ? (element.x + element.width) : element.x;
-          final double anchorY = isTop ? (element.y + element.height) : element.y;
+          double du = 0.0;
+          if (isLeft) {
+            du = (element.width - newW) / 2.0;
+          } else if (isRight) {
+            du = (newW - element.width) / 2.0;
+          }
 
-          final double? newX = isLeft ? (anchorX - newW) : null;
-          final double? newY = isTop ? (anchorY - newH) : null;
+          double dv = 0.0;
+          if (isTop) {
+            dv = (element.height - newH) / 2.0;
+          } else if (isBottom) {
+            dv = (newH - element.height) / 2.0;
+          }
+
+          final double angleRad = element.rotation * 3.141592653589793 / 180.0;
+          final double cosA = math.cos(angleRad);
+          final double sinA = math.sin(angleRad);
+
+          final double shiftX = du * cosA - dv * sinA;
+          final double shiftY = du * sinA + dv * cosA;
+
+          final double newX = element.x + (element.width - newW) / 2.0 + shiftX;
+          final double newY = element.y + (element.height - newH) / 2.0 + shiftY;
 
           onResize(newW, newH, null, newX: newX, newY: newY);
         } else {
           // Side edges for non-text
+          double newW = element.width;
+          double newH = element.height;
+
           if (alignment == Alignment.centerRight) {
-            final double newW = (element.width + dw).clamp(minW, maxDim);
-            onResize(newW, element.height, null);
+            newW = (element.width + dw).clamp(minW, maxDim);
           } else if (alignment == Alignment.centerLeft) {
-            final double newW = (element.width - dw).clamp(minW, maxDim);
-            final double newX = element.x + (element.width - newW);
-            onResize(newW, element.height, null, newX: newX);
+            newW = (element.width - dw).clamp(minW, maxDim);
           } else if (alignment == Alignment.bottomCenter) {
-            final double newH = (element.height + dh).clamp(minH, maxDim);
-            onResize(element.width, newH, null);
+            newH = (element.height + dh).clamp(minH, maxDim);
           } else if (alignment == Alignment.topCenter) {
-            final double newH = (element.height - dh).clamp(minH, maxDim);
-            final double newY = element.y + (element.height - newH);
-            onResize(element.width, newH, null, newY: newY);
+            newH = (element.height - dh).clamp(minH, maxDim);
           }
+
+          double du = 0.0;
+          if (alignment == Alignment.centerLeft) {
+            du = (element.width - newW) / 2.0;
+          } else if (alignment == Alignment.centerRight) {
+            du = (newW - element.width) / 2.0;
+          }
+
+          double dv = 0.0;
+          if (alignment == Alignment.topCenter) {
+            dv = (element.height - newH) / 2.0;
+          } else if (alignment == Alignment.bottomCenter) {
+            dv = (newH - element.height) / 2.0;
+          }
+
+          final double angleRad = element.rotation * 3.141592653589793 / 180.0;
+          final double cosA = math.cos(angleRad);
+          final double sinA = math.sin(angleRad);
+
+          final double shiftX = du * cosA - dv * sinA;
+          final double shiftY = du * sinA + dv * cosA;
+
+          final double newX = element.x + (element.width - newW) / 2.0 + shiftX;
+          final double newY = element.y + (element.height - newH) / 2.0 + shiftY;
+
+          onResize(newW, newH, null, newX: newX, newY: newY);
         }
       }
     }
@@ -237,17 +311,17 @@ class DraggableElement extends StatelessWidget {
       top: (newY * sy) - padding,
       width: (textW * sx) + padding * 2,
       height: (textH * sy) + padding * 2,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          // 🔹 MAIN ELEMENT CONTENT (Wrapped with drag-to-move gestures)
-          Positioned(
-            left: padding,
-            top: padding,
-            width: textW * sx,
-            height: textH * sy,
-            child: Transform.rotate(
-              angle: element.rotation * 3.14159 / 180,
+      child: Transform.rotate(
+        angle: element.rotation * 3.141592653589793 / 180.0,
+        child: Stack(
+          clipBehavior: Clip.none,
+          children: [
+            // 🔹 MAIN ELEMENT CONTENT (Wrapped with drag-to-move gestures)
+            Positioned(
+              left: padding,
+              top: padding,
+              width: textW * sx,
+              height: textH * sy,
               child: Opacity(
                 opacity: element.opacity,
                 child: GestureDetector(
@@ -271,7 +345,13 @@ class DraggableElement extends StatelessWidget {
                   onPanEnd: (_) => onActionEnd?.call(),
                   onPanUpdate: element.isMovable
                       ? (details) {
-                          onDrag(details.delta.dx, details.delta.dy);
+                          // Rotate the local delta back to global/unrotated coordinates for dragging
+                          final double angleRad = element.rotation * 3.141592653589793 / 180.0;
+                          final double cosA = math.cos(angleRad);
+                          final double sinA = math.sin(angleRad);
+                          final double globalDx = details.delta.dx * cosA - details.delta.dy * sinA;
+                          final double globalDy = details.delta.dx * sinA + details.delta.dy * cosA;
+                          onDrag(globalDx, globalDy);
                         }
                       : null,
                   child: Container(
@@ -304,136 +384,44 @@ class DraggableElement extends StatelessWidget {
                 ),
               ),
             ),
-          ),
 
-          // 🗑️ DELETE FLOATING BUTTON ABOVE ELEMENT
-          if (isSelected && onDelete != null)
-            Positioned(
-              left: padding + (textW * sx) / 2 - 15.0,
-              top: padding - 36.0,
-              child: GestureDetector(
-                onTap: onDelete,
-                child: Container(
-                  width: 30.0,
-                  height: 30.0,
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF94C66),
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: const Color(0xFFF94C66).withValues(alpha: 0.35),
-                        blurRadius: 8,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
-                    border: Border.all(color: Colors.white, width: 1.5),
-                  ),
-                  child: const Icon(
-                    Icons.delete_rounded,
-                    color: Colors.white,
-                    size: 16.0,
+            // 🗑️ DELETE FLOATING BUTTON ABOVE ELEMENT
+            if (isSelected && onDelete != null)
+              Positioned(
+                left: padding + (textW * sx) / 2 - 15.0,
+                top: padding - 36.0,
+                child: GestureDetector(
+                  onTap: onDelete,
+                  child: Container(
+                    width: 30.0,
+                    height: 30.0,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFF94C66),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: const Color(0xFFF94C66).withValues(alpha: 0.35),
+                          blurRadius: 8,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                      border: Border.all(color: Colors.white, width: 1.5),
+                    ),
+                    child: const Icon(
+                      Icons.delete_rounded,
+                      color: Colors.white,
+                      size: 16.0,
+                    ),
                   ),
                 ),
               ),
-            ),
 
-          // 🔹 RESIZE HANDLES (siblings in Stack, preventing any gesture conflict!)
-          if (isSelected && element.isResizable) ...[
-            // Top-Left corner
-            _resizeHandle(
-              alignment: Alignment.topLeft,
-              cursor: SystemMouseCursors.resizeUpLeft,
-              padding: padding,
-              sx: sx,
-              sy: sy,
-              elementW: textW,
-              elementH: textH,
-              onActionStart: () => onActionStart?.call(),
-              onActionEnd: () => onActionEnd?.call(),
-              onDrag: (dx, dy) {
-                handleResize(dx: dx, dy: dy, alignment: Alignment.topLeft);
-              },
-            ),
-            // Top-Right corner
-            _resizeHandle(
-              alignment: Alignment.topRight,
-              cursor: SystemMouseCursors.resizeUpRight,
-              padding: padding,
-              sx: sx,
-              sy: sy,
-              elementW: textW,
-              elementH: textH,
-              onActionStart: () => onActionStart?.call(),
-              onActionEnd: () => onActionEnd?.call(),
-              onDrag: (dx, dy) {
-                handleResize(dx: dx, dy: dy, alignment: Alignment.topRight);
-              },
-            ),
-            // Bottom-Left corner
-            _resizeHandle(
-              alignment: Alignment.bottomLeft,
-              cursor: SystemMouseCursors.resizeDownLeft,
-              padding: padding,
-              sx: sx,
-              sy: sy,
-              elementW: textW,
-              elementH: textH,
-              onActionStart: () => onActionStart?.call(),
-              onActionEnd: () => onActionEnd?.call(),
-              onDrag: (dx, dy) {
-                handleResize(dx: dx, dy: dy, alignment: Alignment.bottomLeft);
-              },
-            ),
-            // Bottom-Right corner
-            _resizeHandle(
-              alignment: Alignment.bottomRight,
-              cursor: SystemMouseCursors.resizeDownRight,
-              padding: padding,
-              sx: sx,
-              sy: sy,
-              elementW: textW,
-              elementH: textH,
-              onActionStart: () => onActionStart?.call(),
-              onActionEnd: () => onActionEnd?.call(),
-              onDrag: (dx, dy) {
-                handleResize(dx: dx, dy: dy, alignment: Alignment.bottomRight);
-              },
-            ),
-            // Left edge
-            _resizeHandle(
-              alignment: Alignment.centerLeft,
-              cursor: SystemMouseCursors.resizeColumn,
-              padding: padding,
-              sx: sx,
-              sy: sy,
-              elementW: textW,
-              elementH: textH,
-              onActionStart: () => onActionStart?.call(),
-              onActionEnd: () => onActionEnd?.call(),
-              onDrag: (dx, dy) {
-                handleResize(dx: dx, dy: 0, alignment: Alignment.centerLeft);
-              },
-            ),
-            // Right edge
-            _resizeHandle(
-              alignment: Alignment.centerRight,
-              cursor: SystemMouseCursors.resizeColumn,
-              padding: padding,
-              sx: sx,
-              sy: sy,
-              elementW: textW,
-              elementH: textH,
-              onActionStart: () => onActionStart?.call(),
-              onActionEnd: () => onActionEnd?.call(),
-              onDrag: (dx, dy) {
-                handleResize(dx: dx, dy: 0, alignment: Alignment.centerRight);
-              },
-            ),
-            // Top edge (only for non-text)
-            if (element.type != ElementType.text)
+            // 🔹 RESIZE HANDLES (siblings in Stack, preventing any gesture conflict!)
+            if (isSelected && element.isResizable) ...[
+              // Top-Left corner
               _resizeHandle(
-                alignment: Alignment.topCenter,
-                cursor: SystemMouseCursors.resizeRow,
+                alignment: Alignment.topLeft,
+                cursor: SystemMouseCursors.resizeUpLeft,
                 padding: padding,
                 sx: sx,
                 sy: sy,
@@ -442,14 +430,13 @@ class DraggableElement extends StatelessWidget {
                 onActionStart: () => onActionStart?.call(),
                 onActionEnd: () => onActionEnd?.call(),
                 onDrag: (dx, dy) {
-                  handleResize(dx: 0, dy: dy, alignment: Alignment.topCenter);
+                  handleResize(dx: dx, dy: dy, alignment: Alignment.topLeft);
                 },
               ),
-            // Bottom edge (only for non-text)
-            if (element.type != ElementType.text)
+              // Top-Right corner
               _resizeHandle(
-                alignment: Alignment.bottomCenter,
-                cursor: SystemMouseCursors.resizeRow,
+                alignment: Alignment.topRight,
+                cursor: SystemMouseCursors.resizeUpRight,
                 padding: padding,
                 sx: sx,
                 sy: sy,
@@ -458,11 +445,104 @@ class DraggableElement extends StatelessWidget {
                 onActionStart: () => onActionStart?.call(),
                 onActionEnd: () => onActionEnd?.call(),
                 onDrag: (dx, dy) {
-                  handleResize(dx: 0, dy: dy, alignment: Alignment.bottomCenter);
+                  handleResize(dx: dx, dy: dy, alignment: Alignment.topRight);
                 },
               ),
+              // Bottom-Left corner
+              _resizeHandle(
+                alignment: Alignment.bottomLeft,
+                cursor: SystemMouseCursors.resizeDownLeft,
+                padding: padding,
+                sx: sx,
+                sy: sy,
+                elementW: textW,
+                elementH: textH,
+                onActionStart: () => onActionStart?.call(),
+                onActionEnd: () => onActionEnd?.call(),
+                onDrag: (dx, dy) {
+                  handleResize(dx: dx, dy: dy, alignment: Alignment.bottomLeft);
+                },
+              ),
+              // Bottom-Right corner
+              _resizeHandle(
+                alignment: Alignment.bottomRight,
+                cursor: SystemMouseCursors.resizeDownRight,
+                padding: padding,
+                sx: sx,
+                sy: sy,
+                elementW: textW,
+                elementH: textH,
+                onActionStart: () => onActionStart?.call(),
+                onActionEnd: () => onActionEnd?.call(),
+                onDrag: (dx, dy) {
+                  handleResize(dx: dx, dy: dy, alignment: Alignment.bottomRight);
+                },
+              ),
+              // Left edge
+              _resizeHandle(
+                alignment: Alignment.centerLeft,
+                cursor: SystemMouseCursors.resizeColumn,
+                padding: padding,
+                sx: sx,
+                sy: sy,
+                elementW: textW,
+                elementH: textH,
+                onActionStart: () => onActionStart?.call(),
+                onActionEnd: () => onActionEnd?.call(),
+                onDrag: (dx, dy) {
+                  handleResize(dx: dx, dy: 0, alignment: Alignment.centerLeft);
+                },
+              ),
+              // Right edge
+              _resizeHandle(
+                alignment: Alignment.centerRight,
+                cursor: SystemMouseCursors.resizeColumn,
+                padding: padding,
+                sx: sx,
+                sy: sy,
+                elementW: textW,
+                elementH: textH,
+                onActionStart: () => onActionStart?.call(),
+                onActionEnd: () => onActionEnd?.call(),
+                onDrag: (dx, dy) {
+                  handleResize(dx: dx, dy: 0, alignment: Alignment.centerRight);
+                },
+              ),
+              // Top edge (only for non-text)
+              if (element.type != ElementType.text)
+                _resizeHandle(
+                  alignment: Alignment.topCenter,
+                  cursor: SystemMouseCursors.resizeRow,
+                  padding: padding,
+                  sx: sx,
+                  sy: sy,
+                  elementW: textW,
+                  elementH: textH,
+                  onActionStart: () => onActionStart?.call(),
+                  onActionEnd: () => onActionEnd?.call(),
+                  onDrag: (dx, dy) {
+                    handleResize(dx: 0, dy: dy, alignment: Alignment.topCenter);
+                  },
+                ),
+              // Bottom edge (only for non-text)
+              if (element.type != ElementType.text)
+                _resizeHandle(
+                  alignment: Alignment.bottomCenter,
+                  cursor: SystemMouseCursors.resizeRow,
+                  padding: padding,
+                  sx: sx,
+                  sy: sy,
+                  elementW: textW,
+                  elementH: textH,
+                  onActionStart: () => onActionStart?.call(),
+                  onActionEnd: () => onActionEnd?.call(),
+                  onDrag: (dx, dy) {
+                    handleResize(dx: 0, dy: dy, alignment: Alignment.bottomCenter);
+                  },
+                ),
+            ],
           ],
-        ],
+        ),
       ),
     );
   }

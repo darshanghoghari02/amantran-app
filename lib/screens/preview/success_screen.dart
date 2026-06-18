@@ -145,7 +145,7 @@ class _SuccessScreenState extends State<SuccessScreen> {
       if (context == null) return null;
       final boundary = context.findRenderObject() as RenderRepaintBoundary?;
       if (boundary == null) return null;
-      final image = await boundary.toImage(pixelRatio: 1.2);
+      final image = await boundary.toImage(pixelRatio: 1.0);
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       return byteData?.buffer.asUint8List();
     } catch (e) {
@@ -188,6 +188,13 @@ class _SuccessScreenState extends State<SuccessScreen> {
       await WidgetsBinding.instance.endOfFrame;
       await Future.delayed(const Duration(milliseconds: 150));
 
+      _updateSaveStatus(lang.finalizingDesign, 0.3);
+
+      // Capture all pages concurrently in parallel
+      final capturedBytesList = await Future.wait(
+        visibleIndices.map((pageIndex) => capture(pageKeys[pageIndex])),
+      );
+
       final pdf = pw.Document();
       final totalVisible = visibleIndices.length;
 
@@ -195,12 +202,10 @@ class _SuccessScreenState extends State<SuccessScreen> {
         final pageIndex = visibleIndices[step];
         _updateSaveStatus(
           lang.savingPage(step + 1, totalVisible),
-          0.1 + (0.7 * (step / totalVisible)),
+          0.3 + (0.5 * (step / totalVisible)),
         );
 
-        await WidgetsBinding.instance.endOfFrame;
-
-        final bytes = await capture(pageKeys[pageIndex]);
+        final bytes = capturedBytesList[step];
         if (bytes == null) {
           throw Exception('Failed to capture page ${pageIndex + 1}');
         }

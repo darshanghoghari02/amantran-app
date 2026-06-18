@@ -75,10 +75,15 @@ class _DesignPdfShareDialogState extends State<DesignPdfShareDialog> {
       await WidgetsBinding.instance.endOfFrame;
       await Future.delayed(const Duration(milliseconds: 150));
 
+      // Capture all pages concurrently in parallel
+      final capturedBytesList = await Future.wait(
+        List.generate(_pages.length, (i) => _capture(_pageKeys[i])),
+      );
+
       final pdf = pw.Document();
 
       for (int i = 0; i < _pages.length; i++) {
-        final bytes = await _capture(_pageKeys[i]);
+        final bytes = capturedBytesList[i];
         if (bytes == null) {
           throw Exception('Failed to capture page ${i + 1}');
         }
@@ -165,7 +170,7 @@ class _DesignPdfShareDialogState extends State<DesignPdfShareDialog> {
       if (context == null) return null;
       final boundary = context.findRenderObject() as RenderRepaintBoundary?;
       if (boundary == null) return null;
-      final image = await boundary.toImage(pixelRatio: 1.2);
+      final image = await boundary.toImage(pixelRatio: 1.0);
       final byteData = await image.toByteData(format: ui.ImageByteFormat.png);
       return byteData?.buffer.asUint8List();
     } catch (e) {

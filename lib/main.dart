@@ -91,10 +91,12 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   bool _isCheckingAuth = true;
+  late final Stream<User?> _authStateStream;
 
   @override
   void initState() {
     super.initState();
+    _authStateStream = FirebaseAuth.instance.authStateChanges();
     _checkAuthToken();
   }
 
@@ -156,7 +158,7 @@ class _MyAppState extends State<MyApp> {
               ),
             )
           : StreamBuilder<User?>(
-              stream: FirebaseAuth.instance.authStateChanges(),
+              stream: _authStateStream,
               builder: (context, snapshot) {
                 // Check if user is logged in via Firebase Auth OR has valid JWT token
                 final isFirebaseLoggedIn = snapshot.hasData && snapshot.data != null;
@@ -164,7 +166,7 @@ class _MyAppState extends State<MyApp> {
 
                 print("🔍 [Main] Auth state check - Firebase: $isFirebaseLoggedIn, JWT: $isJwtLoggedIn");
 
-                if (snapshot.connectionState == ConnectionState.waiting) {
+                if (snapshot.connectionState == ConnectionState.waiting && !isJwtLoggedIn) {
                   return const Scaffold(
                     body: Center(
                       child: CircularProgressIndicator(color: Color(0xFFF94C66)),

@@ -510,10 +510,21 @@ class UserProvider extends ChangeNotifier {
       }
     }
 
+    // 1. Trigger upload and Firestore sync FIRST before updating local state
+    final finalImageUrl = await _syncProfileToCloudInBackground(
+      name: name,
+      phone: phone,
+      email: email,
+      localImagePath: profileImagePath,
+    );
+
+    // 2. Update local state fields only after successful sync
     _name = name;
     _phone = phone;
     _email = email;
-    if (profileImagePath != null) {
+    if (finalImageUrl != null) {
+      _profileImagePath = finalImageUrl;
+    } else if (profileImagePath != null) {
       _profileImagePath = profileImagePath;
     }
 
@@ -534,17 +545,9 @@ class UserProvider extends ChangeNotifier {
     }
 
     notifyListeners();
-
-    // Trigger upload and Firestore sync
-    await _syncProfileToCloudInBackground(
-      name: name,
-      phone: phone,
-      email: email,
-      localImagePath: profileImagePath,
-    );
   }
 
-  Future<void> _syncProfileToCloudInBackground({
+  Future<String?> _syncProfileToCloudInBackground({
     required String name,
     required String phone,
     required String email,
@@ -574,18 +577,6 @@ class UserProvider extends ChangeNotifier {
           customFileName: 'profile_picture_${DateTime.now().millisecondsSinceEpoch}',
         );
         print("Profile image uploaded to: $finalImageUrl");
-
-        // Update the in-memory path to the remote URL now that it is uploaded successfully
-        _profileImagePath = finalImageUrl;
-        notifyListeners();
-
-        // Also update the local cached account with the remote URL
-        _addToRecentAccounts(AccountModel(
-          name: _name,
-          phone: _phone,
-          email: _email,
-          profileImagePath: _profileImagePath,
-        ));
       }
 
       final currentResolvedUid = FirestoreService().currentUid;
@@ -614,12 +605,8 @@ class UserProvider extends ChangeNotifier {
         await _storeUserId(currentResolvedUid);
       }
 
-      if (isProfileComplete) {
-        _isProfileCompletePersisted = true;
-        await _storeProfileComplete(true);
-      }
-
       print("Profile successfully synced to backend.");
+      return finalImageUrl;
     } catch (e) {
       print("Error syncing profile to backend: $e");
       rethrow;
