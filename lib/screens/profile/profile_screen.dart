@@ -10,10 +10,10 @@ import 'app_language_screen.dart';
 import 'invitation_language_screen.dart';
 import '../../providers/language_provider.dart';
 import '../../providers/user_provider.dart';
-import '../../utils/image_resolver.dart';
 import '../../providers/subscription_provider.dart';
 import '../../widgets/rating_dialog.dart';
 import '../../widgets/top_notification.dart';
+import '../../widgets/app_image.dart';
 import '../auth/login_screen.dart';
 import 'user_management_screen.dart';
 import 'package:flutter/services.dart';
@@ -102,40 +102,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               shape: BoxShape.circle,
                             ),
                             child: ClipOval(
-                              child: context.watch<UserProvider>().profileImagePath != null &&
-                                      context.watch<UserProvider>().profileImagePath!.isNotEmpty
-                                  ? (context.watch<UserProvider>().profileImagePath!.startsWith('http')
-                                      ? Image.network(
-                                          resolveImageUrl(context.watch<UserProvider>().profileImagePath!),
-                                          fit: BoxFit.cover,
-                                          key: ValueKey(context.watch<UserProvider>().profileImagePath!),
-                                          errorBuilder: (context, error, stackTrace) {
-                                            print('Error loading profile image in profile screen: $error');
-                                            return Image.asset(
-                                              'assets/images/banner_image.png',
-                                              fit: BoxFit.cover,
-                                            );
-                                          },
-                                          loadingBuilder: (context, child, loadingProgress) {
-                                            if (loadingProgress == null) return child;
-                                            return const Center(
-                                              child: CircularProgressIndicator(
-                                                strokeWidth: 2,
-                                                color: Color(0xFFF94C66),
-                                              ),
-                                            );
-                                          },
-                                        )
-                                      : Image.file(
-                                          File(context
-                                              .watch<UserProvider>()
-                                              .profileImagePath!),
-                                          fit: BoxFit.cover,
-                                          key: ValueKey(context.watch<UserProvider>().profileImagePath!)))
-                                  : Image.asset(
-                                      'assets/images/banner_image.png',
-                                      fit: BoxFit.cover,
-                                    ),
+                              child: AppImage(
+                                src: context.watch<UserProvider>().profileImagePath ?? '',
+                                fit: BoxFit.cover,
+                                errorWidget: Image.asset(
+                                  'assets/images/banner_image.png',
+                                  fit: BoxFit.cover,
+                                ),
+                              ),
                             ),
                           ),
                           Positioned(
@@ -536,6 +510,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   }
 
   Widget _buildSubscriptionCard(BuildContext context) {
+    // Hide the premium card for now
+    return const SizedBox.shrink();
+    /*
     final subProvider = context.watch<SubscriptionProvider>();
     final lang = context.watch<LanguageProvider>();
     final isSubscribed = subProvider.isSubscribed;
@@ -786,6 +763,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
         ),
       );
     }
+    */
   }
 
   Widget _divider() {

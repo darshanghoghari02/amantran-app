@@ -175,8 +175,8 @@ class _InvitationLanguageScreenState extends State<InvitationLanguageScreen> {
                       const SizedBox(height: 2),
                       Text(
                         widget.isSingleSelect
-                            ? "Choose exactly one language for the editor"
-                            : "Select one or more languages for your templates",
+                            ? lang.chooseExactlyOneLanguage
+                            : lang.selectOneOrMoreLanguages,
                         style: const TextStyle(
                           fontSize: 12,
                           fontWeight: FontWeight.w500,
@@ -354,7 +354,7 @@ class _InvitationLanguageScreenState extends State<InvitationLanguageScreen> {
                     ),
                   ),
                   child: Text(
-                    widget.isSingleSelect ? "Continue" : "Apply",
+                    widget.isSingleSelect ? lang.continueLabel : lang.apply,
                     style: const TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.w800,
@@ -387,11 +387,6 @@ class _InvitationLanguageScreenState extends State<InvitationLanguageScreen> {
             setState(() {
               _singleSelected = langName;
             });
-            if (widget.isSingleSelect) {
-              context
-                  .read<LanguageProvider>()
-                  .setActiveInvitationLanguage(langName);
-            }
           },
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 250),

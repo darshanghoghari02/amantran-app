@@ -140,10 +140,11 @@ class _PhoneContactPickerScreenState extends State<PhoneContactPickerScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = Provider.of<LanguageProvider>(context);
     return Scaffold(
       backgroundColor: const Color(0xFFFCF9F9),
       appBar: AppBar(
-        title: Text("Select Contacts (${selectedIds.length})", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.black87)),
+        title: Text("${lang.selectContacts} (${selectedIds.length})", style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18, color: Colors.black87)),
         backgroundColor: Colors.white,
         elevation: 0.5,
         iconTheme: const IconThemeData(color: Colors.black87),
@@ -163,6 +164,7 @@ class _PhoneContactPickerScreenState extends State<PhoneContactPickerScreen> {
               padding: const EdgeInsets.all(16),
               child: Container(
                 height: 50,
+                alignment: Alignment.center,
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(25),
@@ -176,12 +178,13 @@ class _PhoneContactPickerScreenState extends State<PhoneContactPickerScreen> {
                 ),
                 child: TextField(
                   onChanged: _applySearch,
-                  decoration: const InputDecoration(
-                    hintText: "Search contacts",
-                    hintStyle: TextStyle(color: Colors.black26, fontSize: 14),
-                    prefixIcon: Icon(Icons.search, color: Color(0xFFF94C66)),
+                  textAlignVertical: TextAlignVertical.center,
+                  decoration: InputDecoration(
+                    hintText: lang.searchContacts,
+                    hintStyle: const TextStyle(color: Colors.black26, fontSize: 14),
+                    prefixIcon: const Icon(Icons.search, color: Color(0xFFF94C66)),
                     border: InputBorder.none,
-                    contentPadding: EdgeInsets.symmetric(vertical: 13),
+                    contentPadding: const EdgeInsets.symmetric(vertical: 13),
                   ),
                 ),
               ),
@@ -198,7 +201,7 @@ class _PhoneContactPickerScreenState extends State<PhoneContactPickerScreen> {
                             children: [
                               Icon(Icons.contacts_outlined, size: 64, color: Colors.grey.shade300),
                               const SizedBox(height: 12),
-                              const Text("No contacts found", style: TextStyle(color: Colors.black38, fontSize: 15)),
+                              Text(lang.noContactsFound, style: const TextStyle(color: Colors.black38, fontSize: 15)),
                             ],
                           ),
                         )

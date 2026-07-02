@@ -2,13 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:permission_handler/permission_handler.dart';
-import 'package:device_info_plus/device_info_plus.dart';
-import 'dart:io';
 import '../../providers/user_provider.dart';
 import '../../providers/language_provider.dart';
 import '../../widgets/top_notification.dart';
-import '../../utils/image_resolver.dart';
+import '../../widgets/app_image.dart';
+import '../../utils/country_codes.dart';
 
 class EditProfileScreen extends StatefulWidget {
   const EditProfileScreen({super.key});
@@ -22,16 +20,28 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   late TextEditingController _phoneController;
   late TextEditingController _emailController;
   String? _tempImagePath;
+  Country _selectedCountry = countries.firstWhere((c) => c.code == 'IN');
+  String _searchQuery = "";
 
   @override
   void initState() {
     super.initState();
     final user = context.read<UserProvider>();
     _nameController = TextEditingController(text: user.name);
-    _phoneController = TextEditingController(text: user.phone.replaceAll(RegExp(r'[^0-9]'), ''));
-    if (_phoneController.text.startsWith('91') && _phoneController.text.length > 10) {
-      _phoneController.text = _phoneController.text.substring(_phoneController.text.length - 10);
+    
+    if (user.phone.isNotEmpty) {
+      _selectedCountry = CountryParser.parsePhone(user.phone);
+      final local = CountryParser.getLocalNumber(user.phone);
+      _phoneController = TextEditingController(text: local);
+    } else {
+      _phoneController = TextEditingController();
+      // Auto detect country by device locale if empty
+      try {
+        final countryCode = WidgetsBinding.instance.platformDispatcher.locale.countryCode;
+        _selectedCountry = CountryParser.detectCountry(countryCode);
+      } catch (_) {}
     }
+    
     _emailController = TextEditingController(text: user.email);
     _tempImagePath = user.profileImagePath;
   }
@@ -44,38 +54,204 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     super.dispose();
   }
 
+  void _showCountryPicker() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final List<Country> filteredList = countries.where((c) {
+              final query = _searchQuery.toLowerCase();
+              return c.name.toLowerCase().contains(query) ||
+                  c.dialCode.contains(query) ||
+                  c.code.toLowerCase().contains(query);
+            }).toList();
+
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: Container(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.65,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(height: 10),
+                    Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      "Select Country",
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        color: Color(0xFF1A1A1A),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8F9FA),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.black.withOpacity(0.05)),
+                        ),
+                        child: TextField(
+                          onChanged: (val) {
+                            setModalState(() {
+                              _searchQuery = val;
+                            });
+                          },
+                          textAlignVertical: TextAlignVertical.center,
+                          decoration: const InputDecoration(
+                            hintText: "Search country or dial code...",
+                            hintStyle: TextStyle(
+                              color: Colors.black26,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            prefixIcon: Icon(Icons.search, color: Color(0xFFF94C66)),
+                            border: InputBorder.none,
+                            contentPadding: EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: filteredList.isEmpty
+                          ? const Center(
+                              child: Text(
+                                "No country found",
+                                style: TextStyle(color: Colors.grey, fontSize: 14),
+                              ),
+                            )
+                          : ListView.builder(
+                              physics: const BouncingScrollPhysics(),
+                              itemCount: filteredList.length,
+                              itemBuilder: (context, index) {
+                                final country = filteredList[index];
+                                final isSelected = country.code == _selectedCountry.code;
+                                return ListTile(
+                                  onTap: () {
+                                    setState(() {
+                                      _selectedCountry = country;
+                                    });
+                                    Navigator.pop(context);
+                                  },
+                                  leading: Text(
+                                    country.flag,
+                                    style: const TextStyle(fontSize: 24),
+                                  ),
+                                  title: Text(
+                                    country.name,
+                                    style: TextStyle(
+                                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                      color: isSelected ? const Color(0xFFF94C66) : const Color(0xFF1A1A1A),
+                                      fontSize: 15,
+                                    ),
+                                  ),
+                                  trailing: Text(
+                                    country.dialCode,
+                                    style: TextStyle(
+                                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w700,
+                                      color: isSelected ? const Color(0xFFF94C66) : Colors.black54,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    ).then((_) {
+      _searchQuery = "";
+    });
+  }
+
   Future<void> _pickImage() async {
-    // Request storage permissions
-    PermissionStatus status;
-    if (Platform.isAndroid) {
-      final androidInfo = await DeviceInfoPlugin().androidInfo;
-      if (androidInfo.version.sdkInt >= 33) {
-        status = await Permission.photos.request();
-      } else {
-        status = await Permission.storage.request();
+    try {
+      final picker = ImagePicker();
+      final pickedFile = await picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 85,
+      );
+      if (pickedFile != null) {
+        setState(() {
+          _tempImagePath = pickedFile.path;
+        });
       }
-    } else {
-      status = await Permission.photos.request();
-    }
-
-    if (!status.isGranted) {
-      if (mounted) {
-        _showError("Permission denied. Please grant storage permission to select image.");
-      }
-      return;
-    }
-
-    final picker = ImagePicker();
-    final pickedFile = await picker.pickImage(source: ImageSource.gallery);
-    if (pickedFile != null) {
-      setState(() {
-        _tempImagePath = pickedFile.path;
-      });
+    } catch (e) {
+      _showError("Failed to select image: $e");
     }
   }
 
   bool _isValidEmail(String email) {
     return RegExp(r'^[\w-\.]+@([\w-]+\.)+[\w-]{2,4}$').hasMatch(email);
+  }
+
+  void _onPhoneChanged(String val) {
+    String text = val.trim();
+    if (text.isEmpty) return;
+
+    if (text.startsWith('00')) {
+      text = '+' + text.substring(2);
+    }
+
+    if (text.startsWith('+')) {
+      final country = CountryParser.parsePhone(text);
+      final local = CountryParser.getLocalNumber(text);
+      setState(() {
+        _selectedCountry = country;
+      });
+      _phoneController.value = TextEditingValue(
+        text: local,
+        selection: TextSelection.collapsed(offset: local.length),
+      );
+      return;
+    }
+
+    if (text.length > 10) {
+      final sorted = List<Country>.from(countries)
+        ..sort((a, b) => b.dialCode.replaceAll(RegExp(r'\D'), '').length.compareTo(
+            a.dialCode.replaceAll(RegExp(r'\D'), '').length));
+      for (var country in sorted) {
+        final dialDigits = country.dialCode.replaceAll(RegExp(r'\D'), '');
+        if (dialDigits.isNotEmpty && text.startsWith(dialDigits)) {
+          final local = text.substring(dialDigits.length);
+          setState(() {
+            _selectedCountry = country;
+          });
+          _phoneController.value = TextEditingValue(
+            text: local,
+            selection: TextSelection.collapsed(offset: local.length),
+          );
+          return;
+        }
+      }
+    }
   }
 
   void _handleUpdate() async {
@@ -87,7 +263,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
       return;
     }
     
-    if (_phoneController.text.length != 10) {
+    final rawPhone = _phoneController.text.trim().replaceAll(RegExp(r'\D'), '');
+    final mismatchError = CountryParser.checkPhoneMismatch(_selectedCountry.dialCode, rawPhone);
+    if (mismatchError != null) {
+      _showError(mismatchError);
+      return;
+    }
+
+    if (!RegExp(r'^\d{7,15}$').hasMatch(rawPhone)) {
       _showError(lang.pleaseEnterPhone);
       return;
     }
@@ -100,7 +283,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
     try {
       await context.read<UserProvider>().updateProfile(
         name: _nameController.text.trim(),
-        phone: "+91${_phoneController.text}",
+        phone: "${_selectedCountry.dialCode}$rawPhone",
         email: _emailController.text.trim(),
         profileImagePath: _tempImagePath,
       );
@@ -187,18 +370,14 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
                         ],
                       ),
                       child: ClipOval(
-                        child: _tempImagePath != null && _tempImagePath!.isNotEmpty
-                            ? (_tempImagePath!.startsWith('http')
-                                ? Image.network(
-                                    resolveImageUrl(_tempImagePath!),
-                                    fit: BoxFit.cover,
-                                    errorBuilder: (context, error, stackTrace) {
-                                      print('Error loading temp profile image: $error');
-                                      return Image.asset('assets/images/banner_image.png', fit: BoxFit.cover);
-                                    },
-                                  )
-                                : Image.file(File(_tempImagePath!), fit: BoxFit.cover))
-                            : Image.asset('assets/images/banner_image.png', fit: BoxFit.cover),
+                        child: AppImage(
+                          src: _tempImagePath ?? '',
+                          fit: BoxFit.cover,
+                          errorWidget: Image.asset(
+                            'assets/images/banner_image.png',
+                            fit: BoxFit.cover,
+                          ),
+                        ),
                       ),
                     ),
                     Positioned(
@@ -355,23 +534,64 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.grey.shade100),
       ),
-      child: TextField(
-        controller: controller,
-        onChanged: (val) => setState(() {}),
-        keyboardType: isPhone ? TextInputType.phone : (isEmail ? TextInputType.emailAddress : TextInputType.name),
-        inputFormatters: isPhone ? [
-          FilteringTextInputFormatter.digitsOnly,
-          LengthLimitingTextInputFormatter(10),
-        ] : null,
-        style: const TextStyle(fontSize: 14, color: Colors.black87),
-        decoration: InputDecoration(
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-          prefixText: isPhone ? "+91 " : null,
-          prefixStyle: const TextStyle(color: Colors.black87, fontSize: 14),
-          suffixText: isPhone || isEmail ? lang.change : null,
-          suffixStyle: const TextStyle(color: Color(0xFFF94C66), fontSize: 13, fontWeight: FontWeight.w600),
-        ),
+      child: Row(
+        children: [
+          if (isPhone)
+            GestureDetector(
+              onTap: _showCountryPicker,
+              child: Container(
+                padding: const EdgeInsets.only(left: 16, right: 8),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      _selectedCountry.flag,
+                      style: const TextStyle(fontSize: 16),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      _selectedCountry.dialCode,
+                      style: const TextStyle(color: Colors.black87, fontSize: 14, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(width: 2),
+                    const Icon(Icons.keyboard_arrow_down_rounded, color: Colors.black54, size: 16),
+                  ],
+                ),
+              ),
+            ),
+          Expanded(
+            child: TextField(
+              controller: controller,
+              onChanged: (val) {
+                if (isPhone) {
+                  _onPhoneChanged(val);
+                } else {
+                  setState(() {});
+                }
+              },
+              keyboardType: isPhone ? TextInputType.phone : (isEmail ? TextInputType.emailAddress : TextInputType.name),
+              inputFormatters: isPhone ? [
+                FilteringTextInputFormatter.allow(RegExp(r'[0-9+]')),
+                LengthLimitingTextInputFormatter(15),
+              ] : null,
+              style: const TextStyle(fontSize: 14, color: Colors.black87),
+              decoration: InputDecoration(
+                border: InputBorder.none,
+                contentPadding: EdgeInsets.symmetric(
+                  horizontal: isPhone ? 8 : 16,
+                  vertical: 14,
+                ),
+                suffixIcon: isEmail ? Padding(
+                  padding: const EdgeInsets.only(right: 16, top: 14),
+                  child: Text(
+                    lang.change,
+                    style: const TextStyle(color: Color(0xFFF94C66), fontSize: 13, fontWeight: FontWeight.w600),
+                  ),
+                ) : null,
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

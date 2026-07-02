@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../providers/user_provider.dart';
 import '../../providers/language_provider.dart';
 import '../../widgets/top_notification.dart';
+import '../../utils/country_codes.dart';
 
 class CompleteProfileScreen extends StatefulWidget {
   final String? phone;
@@ -19,6 +20,8 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
   late TextEditingController _phoneController;
   bool _agreedToTerms = false;
   bool _isPhoneReadOnly = false;
+  Country _selectedCountry = countries.firstWhere((c) => c.code == 'IN');
+  String _searchQuery = "";
 
   @override
   void initState() {
@@ -28,18 +31,22 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
     // Check if initial phone is provided or exists in UserProvider
     String initialPhone = widget.phone ?? userProvider.phone;
     // Clean default placeholders
-    if (initialPhone == "+91 00000 00000" || initialPhone == "+910000000000") {
+    if (initialPhone.contains("00000 00000") || initialPhone.contains("0000000000")) {
       initialPhone = "";
     }
     
-    // Clean country prefix for editing if we edit it
-    String editablePhone = initialPhone;
-    if (editablePhone.startsWith('+91')) {
-      editablePhone = editablePhone.substring(3);
+    if (initialPhone.isNotEmpty) {
+      _selectedCountry = CountryParser.parsePhone(initialPhone);
+      final local = CountryParser.getLocalNumber(initialPhone);
+      _phoneController = TextEditingController(text: local);
+    } else {
+      _phoneController = TextEditingController();
+      // Auto detect country by device locale if empty
+      try {
+        final countryCode = WidgetsBinding.instance.platformDispatcher.locale.countryCode;
+        _selectedCountry = CountryParser.detectCountry(countryCode);
+      } catch (_) {}
     }
-    editablePhone = editablePhone.replaceAll(RegExp(r'\D'), '');
-
-    _phoneController = TextEditingController(text: editablePhone);
     
     String initialName = userProvider.name;
     if (initialName.toLowerCase() == 'new user' || initialName.toLowerCase() == 'user') {
@@ -54,13 +61,197 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
     _emailController = TextEditingController(text: initialEmail);
 
     // If initialPhone is valid and not empty, mark as read-only
-    _isPhoneReadOnly = initialPhone.isNotEmpty && initialPhone.replaceAll(RegExp(r'\D'), '').length >= 10;
+    final digits = initialPhone.replaceAll(RegExp(r'\D'), '');
+    _isPhoneReadOnly = initialPhone.isNotEmpty && digits.length >= 9;
+  }
+
+  void _showCountryPicker() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final List<Country> filteredList = countries.where((c) {
+              final query = _searchQuery.toLowerCase();
+              return c.name.toLowerCase().contains(query) ||
+                  c.dialCode.contains(query) ||
+                  c.code.toLowerCase().contains(query);
+            }).toList();
+
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: Container(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.65,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(height: 10),
+                    Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      "Select Country",
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        color: Color(0xFF1A1A1A),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8F9FA),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.black.withOpacity(0.05)),
+                        ),
+                        child: TextField(
+                          onChanged: (val) {
+                            setModalState(() {
+                              _searchQuery = val;
+                            });
+                          },
+                          textAlignVertical: TextAlignVertical.center,
+                          decoration: const InputDecoration(
+                            hintText: "Search country or dial code...",
+                            hintStyle: TextStyle(
+                              color: Colors.black26,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            prefixIcon: Icon(Icons.search, color: Color(0xFFF94C66)),
+                            border: InputBorder.none,
+                            contentPadding: EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: filteredList.isEmpty
+                          ? const Center(
+                              child: Text(
+                                "No country found",
+                                style: TextStyle(color: Colors.grey, fontSize: 14),
+                              ),
+                            )
+                          : ListView.builder(
+                              physics: const BouncingScrollPhysics(),
+                              itemCount: filteredList.length,
+                              itemBuilder: (context, index) {
+                                final country = filteredList[index];
+                                final isSelected = country.code == _selectedCountry.code;
+                                return ListTile(
+                                  onTap: () {
+                                    setState(() {
+                                      _selectedCountry = country;
+                                    });
+                                    Navigator.pop(context);
+                                  },
+                                  leading: Text(
+                                    country.flag,
+                                    style: const TextStyle(fontSize: 24),
+                                  ),
+                                  title: Text(
+                                    country.name,
+                                    style: TextStyle(
+                                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                      color: isSelected ? const Color(0xFFF94C66) : const Color(0xFF1A1A1A),
+                                      fontSize: 15,
+                                    ),
+                                  ),
+                                  trailing: Text(
+                                    country.dialCode,
+                                    style: TextStyle(
+                                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w700,
+                                      color: isSelected ? const Color(0xFFF94C66) : Colors.black54,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    ).then((_) {
+      _searchQuery = "";
+    });
+  }
+
+  void _onPhoneChanged(String val) {
+    String text = val.trim();
+    if (text.isEmpty) return;
+
+    if (text.startsWith('00')) {
+      text = '+' + text.substring(2);
+    }
+
+    if (text.startsWith('+')) {
+      final country = CountryParser.parsePhone(text);
+      final local = CountryParser.getLocalNumber(text);
+      setState(() {
+        _selectedCountry = country;
+      });
+      _phoneController.value = TextEditingValue(
+        text: local,
+        selection: TextSelection.collapsed(offset: local.length),
+      );
+      return;
+    }
+
+    if (text.length > 10) {
+      final sorted = List<Country>.from(countries)
+        ..sort((a, b) => b.dialCode.replaceAll(RegExp(r'\D'), '').length.compareTo(
+            a.dialCode.replaceAll(RegExp(r'\D'), '').length));
+      for (var country in sorted) {
+        final dialDigits = country.dialCode.replaceAll(RegExp(r'\D'), '');
+        if (dialDigits.isNotEmpty && text.startsWith(dialDigits)) {
+          final local = text.substring(dialDigits.length);
+          setState(() {
+            _selectedCountry = country;
+          });
+          _phoneController.value = TextEditingValue(
+            text: local,
+            selection: TextSelection.collapsed(offset: local.length),
+          );
+          return;
+        }
+      }
+    }
   }
 
   void _onComplete() async {
     final name = _nameController.text.trim();
     final email = _emailController.text.trim();
     final rawPhone = _phoneController.text.trim().replaceAll(RegExp(r'\D'), '');
+    
+    final mismatchError = CountryParser.checkPhoneMismatch(_selectedCountry.dialCode, rawPhone);
+    if (mismatchError != null) {
+      TopNotification.show(context, message: mismatchError, type: NotificationType.error);
+      return;
+    }
     
     if (name.isEmpty) {
       TopNotification.show(context, message: 'Please enter your full name', type: NotificationType.error);
@@ -78,11 +269,11 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
     }
 
     // Phone Validation
-    if (rawPhone.length != 10) {
-      TopNotification.show(context, message: 'Please enter a valid 10-digit phone number', type: NotificationType.error);
+    if (!RegExp(r'^\d{7,15}$').hasMatch(rawPhone)) {
+      TopNotification.show(context, message: 'Please enter a valid phone number', type: NotificationType.error);
       return;
     }
-    final formattedPhone = '+91$rawPhone';
+    final formattedPhone = '${_selectedCountry.dialCode}$rawPhone';
 
     if (!_agreedToTerms) {
       TopNotification.show(context, message: 'Please agree to terms and privacy policy', type: NotificationType.error);
@@ -238,18 +429,37 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
               else
                 Row(
                   children: [
-                    Container(
-                      height: 56,
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: const Color(0xFFF8F9FA),
-                        borderRadius: BorderRadius.circular(14),
-                        border: Border.all(color: Colors.black.withOpacity(0.05)),
-                      ),
-                      child: const Text(
-                        "+91",
-                        style: TextStyle(color: Color(0xFF1A1A1A), fontWeight: FontWeight.w800, fontSize: 15),
+                    GestureDetector(
+                      onTap: _showCountryPicker,
+                      child: Container(
+                        height: 56,
+                        padding: const EdgeInsets.symmetric(horizontal: 12),
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8F9FA),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: Colors.black.withOpacity(0.05)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              _selectedCountry.flag,
+                              style: const TextStyle(fontSize: 18),
+                            ),
+                            const SizedBox(width: 6),
+                            Text(
+                              _selectedCountry.dialCode,
+                              style: const TextStyle(color: Color(0xFF1A1A1A), fontWeight: FontWeight.w800, fontSize: 15),
+                            ),
+                            const SizedBox(width: 4),
+                            const Icon(
+                              Icons.keyboard_arrow_down_rounded,
+                              color: Colors.black54,
+                              size: 18,
+                            ),
+                          ],
+                        ),
                       ),
                     ),
                     const SizedBox(width: 12),
@@ -257,6 +467,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                       child: Container(
                         height: 56,
                         padding: const EdgeInsets.symmetric(horizontal: 16),
+                        alignment: Alignment.center,
                         decoration: BoxDecoration(
                           color: const Color(0xFFF8F9FA),
                           borderRadius: BorderRadius.circular(14),
@@ -264,16 +475,20 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
                         ),
                         child: TextField(
                           controller: _phoneController,
+                          onChanged: _onPhoneChanged,
                           keyboardType: TextInputType.phone,
                           inputFormatters: [
-                            FilteringTextInputFormatter.digitsOnly,
-                            LengthLimitingTextInputFormatter(10),
+                            FilteringTextInputFormatter.allow(RegExp(r'[0-9+]')),
+                            LengthLimitingTextInputFormatter(15),
                           ],
                           style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
-                          decoration: const InputDecoration(
-                            hintText: "Enter 10-digit number",
-                            hintStyle: TextStyle(color: Colors.black26, fontSize: 14, fontWeight: FontWeight.w500),
+                          textAlignVertical: TextAlignVertical.center,
+                          decoration: InputDecoration(
+                            hintText: lang.enterPhoneNumber,
+                            hintStyle: const TextStyle(color: Colors.black26, fontSize: 14, fontWeight: FontWeight.w500),
                             border: InputBorder.none,
+                            isDense: true,
+                            contentPadding: EdgeInsets.zero,
                           ),
                         ),
                       ),
@@ -374,6 +589,7 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
     return Container(
       height: 56,
       padding: const EdgeInsets.symmetric(horizontal: 16),
+      alignment: Alignment.center,
       decoration: BoxDecoration(
         color: const Color(0xFFF8F9FA),
         borderRadius: BorderRadius.circular(14),
@@ -383,10 +599,13 @@ class _CompleteProfileScreenState extends State<CompleteProfileScreen> {
         controller: controller,
         keyboardType: type,
         style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+        textAlignVertical: TextAlignVertical.center,
         decoration: InputDecoration(
           hintText: hint,
           hintStyle: const TextStyle(color: Colors.black26, fontSize: 14, fontWeight: FontWeight.w500),
           border: InputBorder.none,
+          isDense: true,
+          contentPadding: EdgeInsets.zero,
         ),
       ),
     );

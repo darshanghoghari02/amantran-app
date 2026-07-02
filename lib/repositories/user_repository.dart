@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'package:http/http.dart' as http;
+import '../services/api_client.dart';
 import '../config/api_config.dart';
 import '../services/firestore_service.dart';
 
@@ -10,7 +10,7 @@ class UserRepository {
   Future<Map<String, dynamic>?> fetchProfile() async {
     try {
       final uid = _firestoreService.currentUid;
-      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/users/$uid/profile'));
+      final response = await ApiClient.get(Uri.parse('${ApiConfig.baseUrl}/api/app/users/$uid/profile'));
       if (response.statusCode == 200) {
         return jsonDecode(response.body) as Map<String, dynamic>;
       }
@@ -37,7 +37,7 @@ class UserRepository {
         'updatedAt': DateTime.now().toIso8601String()
       };
 
-      final response = await http.post(
+      final response = await ApiClient.post(
         Uri.parse('${ApiConfig.baseUrl}/api/app/users/$uid/profile'),
         headers: {
           'Content-Type': 'application/json',
@@ -57,7 +57,7 @@ class UserRepository {
   Future<Map<String, dynamic>?> fetchSettings() async {
     try {
       final uid = _firestoreService.currentUid;
-      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/users/$uid/settings'));
+      final response = await ApiClient.get(Uri.parse('${ApiConfig.baseUrl}/api/app/users/$uid/settings'));
       if (response.statusCode == 200) {
         return jsonDecode(response.body) as Map<String, dynamic>;
       }
@@ -71,7 +71,7 @@ class UserRepository {
   Future<void> saveSettings(Map<String, dynamic> settings) async {
     try {
       final uid = _firestoreService.currentUid;
-      final response = await http.post(
+      final response = await ApiClient.post(
         Uri.parse('${ApiConfig.baseUrl}/api/app/users/$uid/settings'),
         headers: {
           'Content-Type': 'application/json',
@@ -90,7 +90,7 @@ class UserRepository {
   /// Fetch primary user document from `/api/app/users/{uid}`
   Future<Map<String, dynamic>?> fetchUserDocument(String uid) async {
     try {
-      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/users/$uid'));
+      final response = await ApiClient.get(Uri.parse('${ApiConfig.baseUrl}/api/app/users/$uid'));
       if (response.statusCode == 200) {
         return jsonDecode(response.body) as Map<String, dynamic>;
       }
@@ -127,7 +127,7 @@ class UserRepository {
         if (accountStatus != null) 'accountStatus': accountStatus,
       };
 
-      final response = await http.post(
+      final response = await ApiClient.post(
         Uri.parse('${ApiConfig.baseUrl}/api/app/users'),
         headers: {
           'Content-Type': 'application/json',
@@ -136,13 +136,11 @@ class UserRepository {
       );
 
       if (response.statusCode != 200 && response.statusCode != 201) {
-        try {
-          final errData = jsonDecode(response.body);
-          if (errData is Map && errData.containsKey('error')) {
-            throw Exception(errData['error']);
-          }
-        } catch (_) {}
-        throw Exception("Failed to save user document: Status ${response.statusCode}");
+        String serverError = response.body.trim();
+        if (serverError.length > 150) {
+          serverError = '${serverError.substring(0, 150)}...';
+        }
+        throw Exception("Failed to save user document: Status ${response.statusCode}\nBody: $serverError");
       }
     } catch (e) {
       rethrow;
@@ -157,7 +155,7 @@ class UserRepository {
       if (phone != null) queryParams['phone'] = phone;
 
       final uri = Uri.parse('${ApiConfig.baseUrl}/api/app/users/resolve/find').replace(queryParameters: queryParams);
-      final response = await http.get(uri);
+      final response = await ApiClient.get(uri);
 
       if (response.statusCode == 200) {
         return jsonDecode(response.body) as Map<String, dynamic>;
@@ -171,7 +169,7 @@ class UserRepository {
   /// Fetches rating for user from `/api/app/ratings/{userId}`
   Future<Map<String, dynamic>?> fetchRating(String userId) async {
     try {
-      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/ratings/$userId'));
+      final response = await ApiClient.get(Uri.parse('${ApiConfig.baseUrl}/api/app/ratings/$userId'));
       if (response.statusCode == 200) {
         return jsonDecode(response.body) as Map<String, dynamic>;
       }
@@ -198,7 +196,7 @@ class UserRepository {
         if (userPhone != null) 'userPhone': userPhone,
       };
 
-      final response = await http.post(
+      final response = await ApiClient.post(
         Uri.parse('${ApiConfig.baseUrl}/api/app/ratings'),
         headers: {
           'Content-Type': 'application/json',
@@ -217,7 +215,7 @@ class UserRepository {
   /// Fetches all users from backend `/api/app/users`
   Future<List<Map<String, dynamic>>?> fetchAllUsers() async {
     try {
-      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/users'));
+      final response = await ApiClient.get(Uri.parse('${ApiConfig.baseUrl}/api/app/users'));
       if (response.statusCode == 200) {
         final list = jsonDecode(response.body) as List<dynamic>;
         return list.map((item) => item as Map<String, dynamic>).toList();
@@ -240,7 +238,7 @@ class UserRepository {
         'accountStatus': accountStatus,
       };
 
-      final response = await http.put(
+      final response = await ApiClient.put(
         Uri.parse('${ApiConfig.baseUrl}/api/app/users/$uid'),
         headers: {
           'Content-Type': 'application/json',
@@ -259,7 +257,7 @@ class UserRepository {
   /// Fetches transactions for user from `/api/app/transactions/{userId}`
   Future<List<Map<String, dynamic>>?> fetchTransactions(String userId) async {
     try {
-      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/transactions/$userId'));
+      final response = await ApiClient.get(Uri.parse('${ApiConfig.baseUrl}/api/app/transactions/$userId'));
       if (response.statusCode == 200) {
         final list = jsonDecode(response.body) as List<dynamic>;
         return list.map((item) => item as Map<String, dynamic>).toList();

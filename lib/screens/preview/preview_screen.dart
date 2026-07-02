@@ -13,6 +13,7 @@ import '../../models/user_design.dart';
 import '../../providers/designs_provider.dart';
 import '../../providers/subscription_provider.dart';
 import '../../services/interaction_service.dart';
+import '../../providers/language_provider.dart';
 
 import 'widgets/preview_page.dart';
 import 'success_screen.dart';
@@ -90,6 +91,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final lang = context.watch<LanguageProvider>();
     return Scaffold(
       backgroundColor: const Color(0xFFFAFAFA),
       body: SafeArea(
@@ -105,9 +107,9 @@ class _PreviewScreenState extends State<PreviewScreen> {
                     onPressed: () => Navigator.pop(context),
                   ),
                   const SizedBox(width: 8),
-                  const Text(
-                    "Preview",
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87),
+                  Text(
+                    lang.preview,
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87),
                   ),
                   const Spacer(),
                   Container(
@@ -145,7 +147,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
                             Text(
-                              "Page ${index + 1}/${pages.length}",
+                              lang.pageLabel(index + 1, pages.length),
                               style: const TextStyle(color: Colors.grey, fontSize: 13),
                             ),
                             GestureDetector(
@@ -153,12 +155,12 @@ class _PreviewScreenState extends State<PreviewScreen> {
                                 showDialog(
                                   context: context,
                                   builder: (ctx) => AlertDialog(
-                                    title: const Text("Delete Page?"),
-                                    content: const Text("Are you sure you want to delete this page?"),
+                                    title: Text(lang.deletePage),
+                                    content: Text(lang.deletePageConfirm),
                                     actions: [
                                       TextButton(
                                         onPressed: () => Navigator.pop(ctx),
-                                        child: const Text("Cancel"),
+                                        child: Text(lang.cancel),
                                       ),
                                        TextButton(
                                         onPressed: () {
@@ -189,7 +191,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
                                             },
                                           );
                                         },
-                                        child: const Text("Delete", style: TextStyle(color: Colors.red)),
+                                        child: Text(lang.delete, style: const TextStyle(color: Colors.red)),
                                       ),
                                     ],
                                   ),
@@ -260,7 +262,7 @@ class _PreviewScreenState extends State<PreviewScreen> {
               );
             },
             icon: const Icon(Icons.download),
-            label: const Text("Download", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            label: Text(lang.download, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             style: ElevatedButton.styleFrom(
               backgroundColor: const Color(0xFFF94C66),
               foregroundColor: Colors.white,

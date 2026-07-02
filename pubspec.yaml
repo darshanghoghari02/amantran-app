@@ -99,9 +99,146 @@ flutter:
     - assets/templates/theme_9/
 
   fonts:
+    # ── Gujarati KAP Legacy Fonts ──────────────────────────
+    - family: KAP001
+      fonts:
+        - asset: assets/fonts/KAP001.TTF
+    - family: KAP002
+      fonts:
+        - asset: assets/fonts/KAP002.TTF
+    - family: KAP003
+      fonts:
+        - asset: assets/fonts/KAP003.TTF
+    - family: KAP004
+      fonts:
+        - asset: assets/fonts/KAP004.TTF
+    - family: KAP005
+      fonts:
+        - asset: assets/fonts/KAP005.TTF
+    - family: KAP006
+      fonts:
+        - asset: assets/fonts/KAP006.TTF
+    - family: KAP007
+      fonts:
+        - asset: assets/fonts/KAP007.TTF
+    - family: KAP008
+      fonts:
+        - asset: assets/fonts/KAP008.TTF
+    - family: KAP009
+      fonts:
+        - asset: assets/fonts/KAP009.TTF
+    - family: KAP010
+      fonts:
+        - asset: assets/fonts/KAP010.TTF
     - family: KAP011
       fonts:
         - asset: assets/fonts/KAP011.TTF
+    - family: KAP012
+      fonts:
+        - asset: assets/fonts/KAP012.TTF
+    - family: KAP013
+      fonts:
+        - asset: assets/fonts/KAP013.TTF
+    - family: KAP014
+      fonts:
+        - asset: assets/fonts/KAP014.TTF
+    - family: KAP015
+      fonts:
+        - asset: assets/fonts/KAP015.TTF
+    - family: KAP016
+      fonts:
+        - asset: assets/fonts/KAP016.TTF
+    - family: KAP017
+      fonts:
+        - asset: assets/fonts/KAP017.TTF
+    - family: KAP018
+      fonts:
+        - asset: assets/fonts/KAP018.TTF
+    - family: KAP019
+      fonts:
+        - asset: assets/fonts/KAP019.TTF
+    - family: KAP020
+      fonts:
+        - asset: assets/fonts/KAP020.TTF
+    - family: KAP021
+      fonts:
+        - asset: assets/fonts/KAP021.TTF
+    - family: KAP022
+      fonts:
+        - asset: assets/fonts/KAP022.TTF
+    - family: KAP023
+      fonts:
+        - asset: assets/fonts/KAP023.TTF
+    - family: KAP025
+      fonts:
+        - asset: assets/fonts/KAP025.TTF
+    - family: KAP030
+      fonts:
+        - asset: assets/fonts/KAP030.TTF
+    - family: KAP035
+      fonts:
+        - asset: assets/fonts/KAP035.TTF
+    - family: KAP040
+      fonts:
+        - asset: assets/fonts/KAP040.TTF
+    - family: KAP045
+      fonts:
+        - asset: assets/fonts/KAP045.TTF
+    - family: KAP050
+      fonts:
+        - asset: assets/fonts/KAP050.TTF
+    - family: KAP060
+      fonts:
+        - asset: assets/fonts/KAP060.TTF
+    - family: KAP070
+      fonts:
+        - asset: assets/fonts/KAP070.TTF
+    - family: KAP080
+      fonts:
+        - asset: assets/fonts/KAP080.TTF
+    - family: KAP090
+      fonts:
+        - asset: assets/fonts/KAP090.TTF
+    - family: KAP100
+      fonts:
+        - asset: assets/fonts/KAP100.TTF
+    - family: KAP105
+      fonts:
+        - asset: assets/fonts/KAP105.TTF
+    - family: KAP110
+      fonts:
+        - asset: assets/fonts/KAP110.TTF
+    - family: KAP120
+      fonts:
+        - asset: assets/fonts/KAP120.TTF
+    - family: KAP130
+      fonts:
+        - asset: assets/fonts/KAP130.TTF
+    - family: KAP140
+      fonts:
+        - asset: assets/fonts/KAP140.TTF
+    - family: KAP149
+      fonts:
+        - asset: assets/fonts/KAP149.TTF
+    - family: KAP150
+      fonts:
+        - asset: assets/fonts/KAP150.TTF
+    - family: KAP155
+      fonts:
+        - asset: assets/fonts/KAP155.TTF
+    - family: KAP157
+      fonts:
+        - asset: assets/fonts/KAP157.TTF
+    - family: KAP158
+      fonts:
+        - asset: assets/fonts/KAP158.TTF
+    - family: KAP159
+      fonts:
+        - asset: assets/fonts/KAP159.TTF
+    - family: KAP160
+      fonts:
+        - asset: assets/fonts/KAP160.TTF
+    # ── Gujarati Unicode Fonts ──────────────────────────────
     - family: Noto Serif Gujarati
       fonts:
         - asset: assets/fonts/NotoSerifGujarati.ttf
@@ -117,3 +254,4 @@ flutter:
     - family: Farsan
       fonts:
         - asset: assets/fonts/Farsan.ttf
+

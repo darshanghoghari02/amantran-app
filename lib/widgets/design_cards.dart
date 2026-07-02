@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../models/user_design.dart';
-import '../utils/image_resolver.dart';
+import 'app_image.dart';
 import 'translated_text.dart';
 
 class DraftCard extends StatefulWidget {
@@ -51,9 +51,14 @@ class _DraftCardState extends State<DraftCard> {
                 children: [
                   ClipRRect(
                     borderRadius: const BorderRadius.vertical(top: Radius.circular(15)),
-                    child: isNetworkImage(widget.design.template.thumbnail)
-                        ? Image.network(resolveImageUrl(widget.design.template.thumbnail), fit: BoxFit.cover)
-                        : Image.asset(cleanAssetPath(widget.design.template.thumbnail), fit: BoxFit.cover),
+                    child: AppImage(
+                      src: widget.design.template.thumbnail,
+                      fit: BoxFit.cover,
+                      errorWidget: Image.asset(
+                        'assets/images/banner_image.png',
+                        fit: BoxFit.cover,
+                      ),
+                    ),
                   ),
                   if (widget.showActions)
                     Positioned(
@@ -197,9 +202,14 @@ class _CompletedDesignCardState extends State<CompletedDesignCard> {
                 children: [
                   ClipRRect(
                     borderRadius: BorderRadius.circular(10),
-                    child: isNetworkImage(widget.design.template.thumbnail)
-                        ? Image.network(resolveImageUrl(widget.design.template.thumbnail), fit: BoxFit.cover)
-                        : Image.asset(cleanAssetPath(widget.design.template.thumbnail), fit: BoxFit.cover),
+                    child: AppImage(
+                      src: widget.design.template.thumbnail,
+                      fit: BoxFit.cover,
+                      errorWidget: Image.asset(
+                        'assets/images/banner_image.png',
+                        fit: BoxFit.cover,
+                      ),
+                    ),
                   ),
                   Positioned(
                     bottom: 0,

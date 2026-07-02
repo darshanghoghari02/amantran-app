@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
-import 'package:provider/provider.dart';
 import '../../../models/template_element.dart';
-import '../../../providers/language_provider.dart';
+import '../../../widgets/font_picker_widget.dart';
 
 /// Bottom toolbar for the editor canvas.
 ///
@@ -49,6 +47,10 @@ class _EditorToolbarState extends State<EditorToolbar>
   void initState() {
     super.initState();
     _tabController = TabController(length: 4, vsync: this);
+    // Rebuild when tab changes so height updates dynamically
+    _tabController.addListener(() {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
@@ -81,32 +83,11 @@ class _EditorToolbarState extends State<EditorToolbar>
     Color(0xFF8D6E63), // Brown 400
   ];
 
-  // 🔤 PREMIUM TRADITIONAL & MODERN FONTS FOR WEDDING/ENGAGEMENT CARDS
-  static const List<String> _fonts = [
-    'Mogra',
-    'Poppins',
-    'Hind Vadodara',
-    'Great Vibes',
-    'Playfair Display',
-    'Mukta Vaani',
-    'Noto Serif Gujarati',
-    'Rasa',
-    'Shrikhand',
-    'Farsan',
-    'Baloo Bhai 2',
-    'Yatra One',
-    'Rozha One',
-    'KAP011',
-    'Dancing Script',
-    'Parisienne',
-    'Allura',
-    'Sacramento',
-  ];
+  // Font list is now managed by FontPickerWidget / FontRegistry
 
   @override
   Widget build(BuildContext context) {
     final element = widget.selectedElement;
-    final lang = context.watch<LanguageProvider>();
 
     if (element == null) {
       return Container(
@@ -228,74 +209,25 @@ class _EditorToolbarState extends State<EditorToolbar>
   // 🔤 FONT TAB
   // ─────────────────────────────────────────────────
   Widget _buildFontTab(TemplateElement element) {
-    final lang = context.read<LanguageProvider>();
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
       child: Column(
+        mainAxisSize: MainAxisSize.min,
         children: [
-          // Font family dropdown
-          SizedBox(
-            height: 40,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              itemCount: _fonts.length,
-              itemBuilder: (context, index) {
-                final font = _fonts[index];
-                final isActive = element.fontFamily == font;
-
-                TextStyle getFontPreviewStyle(String fontFamily, Color color) {
-                  final baseStyle = TextStyle(
-                    fontSize: 12,
-                    color: color,
-                    fontWeight: isActive ? FontWeight.bold : FontWeight.normal,
-                  );
-                  if (fontFamily == 'KAP011') {
-                    return baseStyle.copyWith(fontFamily: 'KAP011');
-                  }
-                  try {
-                    return GoogleFonts.getFont(fontFamily, textStyle: baseStyle);
-                  } catch (e) {
-                    return baseStyle.copyWith(fontFamily: fontFamily);
-                  }
-                }
-
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: ChoiceChip(
-                    label: Text(
-                      font,
-                      style: getFontPreviewStyle(
-                          font, isActive ? Colors.red.shade900 : Colors.black87),
-                    ),
-                    selected: isActive,
-                    selectedColor: Colors.red.shade100,
-                    backgroundColor: Colors.grey.shade50,
-                    checkmarkColor: Colors.red.shade900,
-                    showCheckmark: false,
-                    onSelected: (_) => widget.onFontFamilyChanged(font),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                      side: BorderSide(
-                        color: isActive ? Colors.red.shade400 : Colors.grey.shade200,
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
+          // Compact Font Family Selector Row which opens FontPickerSheet modal
+          FontSelectorRow(
+            currentFont: element.fontFamily,
+            onFontSelected: (font) => widget.onFontFamilyChanged(font),
           ),
-
-          const SizedBox(height: 8),
-
-          // Alignment + Bold buttons
+          const SizedBox(height: 12),
+          // Alignment + Bold/Duplicate/Delete row
           Row(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               _alignButton(Icons.format_align_left, TextAlign.left, element),
-              _alignButton(
-                  Icons.format_align_center, TextAlign.center, element),
+              _alignButton(Icons.format_align_center, TextAlign.center, element),
               _alignButton(Icons.format_align_right, TextAlign.right, element),
-              const SizedBox(width: 16),
+              const SizedBox(width: 8),
               IconButton(
                 icon: Icon(
                   Icons.format_bold,
@@ -314,12 +246,10 @@ class _EditorToolbarState extends State<EditorToolbar>
               IconButton(
                 icon: Icon(Icons.copy, color: Colors.blue.shade400),
                 onPressed: widget.onDuplicate,
-                tooltip: lang.duplicateElement,
               ),
               IconButton(
                 icon: Icon(Icons.delete_outline, color: Colors.red.shade400),
                 onPressed: widget.onDelete,
-                tooltip: lang.deleteElement,
               ),
             ],
           ),

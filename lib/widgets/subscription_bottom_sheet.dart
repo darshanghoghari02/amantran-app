@@ -205,9 +205,6 @@ class _SubscriptionBottomSheetState extends State<SubscriptionBottomSheet> {
                   
                   final price = widget.template!.singlePurchasePrice ?? 49.0;
                   
-                  // Dismiss bottom sheet
-                  navigator.pop();
-                  
                   // Show loading dialog
                   showDialog(
                     context: context,
@@ -228,7 +225,7 @@ class _SubscriptionBottomSheetState extends State<SubscriptionBottomSheet> {
                     Navigator.of(context).pop();
                   }
                   
-                  // Show result
+                  // Show result and close bottom sheet
                   if (context.mounted) {
                     if (success) {
                       ScaffoldMessenger.of(context).showSnackBar(
@@ -237,6 +234,8 @@ class _SubscriptionBottomSheetState extends State<SubscriptionBottomSheet> {
                           backgroundColor: Colors.green,
                         ),
                       );
+                      // Close bottom sheet
+                      Navigator.of(context).pop();
                     } else {
                       ScaffoldMessenger.of(context).showSnackBar(
                         const SnackBar(

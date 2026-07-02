@@ -1,7 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:http/http.dart' as http;
+import '../services/api_client.dart';
 import 'package:hive/hive.dart';
 import '../config/api_config.dart';
 import '../models/category_model.dart';
@@ -11,10 +12,19 @@ import '../models/page_model.dart';
 import '../repositories/template_repository.dart';
 import '../services/font_service.dart';
 import '../services/language_registry.dart';
+import '../services/realtime_sse_client.dart';
 
 class AppDataProvider extends ChangeNotifier {
   final TemplateRepository _repository = TemplateRepository();
   final FontService _fontService = FontService();
+
+  Future<Box> _getCacheBox() async {
+    const name = 'cms_cache';
+    if (Hive.isBoxOpen(name)) {
+      return Hive.box(name);
+    }
+    return await Hive.openBox(name);
+  }
   
   List<CategoryModel> _categories = [];
   List<LanguageModel> _languages = [];
@@ -35,16 +45,63 @@ class AppDataProvider extends ChangeNotifier {
   StreamSubscription? _languagesSub;
   StreamSubscription? _templatesSub;
   Timer? _refreshTimer;
+  RealtimeSSEClient? _sseClient;
+  Timer? _fallbackPollTimer;
+
+  bool _isFallbackPollingActive = false;
+  DateTime? _lastRefreshTime;
+
+  void _startFallbackPolling() {
+    if (_isFallbackPollingActive) return;
+    _isFallbackPollingActive = true;
+    _pollData();
+  }
+
+  void _stopFallbackPolling() {
+    _isFallbackPollingActive = false;
+    _fallbackPollTimer?.cancel();
+    _fallbackPollTimer = null;
+  }
+
+  void _pollData() async {
+    _fallbackPollTimer?.cancel();
+    if (!_isFallbackPollingActive) return;
+
+    debugPrint('🔄 SSE Fallback: Polling data from server...');
+    try {
+      await refreshDataSilently();
+    } catch (e) {
+      debugPrint('Error during fallback poll: $e');
+    }
+
+    if (_isFallbackPollingActive) {
+      // 15 seconds in debug mode, 60 seconds in production
+      final duration = kDebugMode ? const Duration(seconds: 15) : const Duration(seconds: 60);
+      _fallbackPollTimer = Timer(duration, _pollData);
+    }
+  }
 
   AppDataProvider() {
-    _initStreams();
+    _initWithCacheBust();
     // Dynamically listen to active fonts and register them in engine
     _fontService.initFontListener();
 
-    // Start periodic background data polling every 5 minutes to sync changes smoothly without performance/battery drain
+    // Background data polling every 5 minutes
     _refreshTimer = Timer.periodic(const Duration(minutes: 5), (timer) {
       refreshDataSilently();
     });
+  }
+
+  Future<void> _initWithCacheBust() async {
+    // Clear stale Hive cache if the backend/version has changed
+    await _repository.bustCacheIfVersionChanged();
+    _initStreams();
+  }
+
+  Future<void> _initSSEAfterResolution() async {
+    // Wait for baseUrl to be resolved before initializing SSE
+    await ApiConfig.resolveBaseUrl();
+    _initSSE();
   }
 
   void _initStreams() {
@@ -60,11 +117,16 @@ class AppDataProvider extends ChangeNotifier {
     bool languagesLoaded = false;
     bool templatesLoaded = false;
 
+    bool sseInitialized = false;
     void updateLoadingState() {
       if (categoriesLoaded && languagesLoaded && templatesLoaded) {
         if (_isLoading) {
           _isLoading = false;
           notifyListeners();
+        }
+        if (!sseInitialized) {
+          sseInitialized = true;
+          _initSSEAfterResolution();
         }
       }
     }
@@ -115,8 +177,8 @@ class AppDataProvider extends ChangeNotifier {
       notifyListeners();
     });
 
-    // Safeguard: Force-hide loading spinner after 5 seconds to prevent infinite hang on clean slow boot
-    Future.delayed(const Duration(seconds: 5), () {
+    // Safeguard: Force-hide loading spinner after 2 seconds to prevent infinite hang on clean slow boot
+    Future.delayed(const Duration(seconds: 2), () {
       if (_isLoading) {
         _isLoading = false;
         notifyListeners();
@@ -155,7 +217,7 @@ class AppDataProvider extends ChangeNotifier {
 
   Future<void> refreshTemplateDetails(String templateId) async {
     try {
-      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/templates/$templateId'));
+      final response = await ApiClient.get(Uri.parse('${ApiConfig.baseUrl}/api/app/templates/$templateId'));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final template = TemplateModel.fromJson(Map<String, dynamic>.from(data), data['id'] ?? templateId);
@@ -168,7 +230,7 @@ class AppDataProvider extends ChangeNotifier {
         }
         
         // Update Hive cache
-        final box = await Hive.openBox('cms_cache');
+        final box = await _getCacheBox();
         final List<dynamic>? cached = box.get('templates');
         if (cached != null) {
           final List<dynamic> updatedCached = cached.map((e) {
@@ -183,6 +245,9 @@ class AppDataProvider extends ChangeNotifier {
           await box.put('templates', updatedCached);
         }
         
+        // Also fetch and update pages cache for this template
+        await _repository.getTemplatePages(templateId);
+        
         notifyListeners();
       }
     } catch (e) {
@@ -190,7 +255,14 @@ class AppDataProvider extends ChangeNotifier {
     }
   }
 
-  Future<void> refreshDataSilently() async {
+  Future<void> refreshDataSilently({bool force = false}) async {
+    final now = DateTime.now();
+    if (!force && _lastRefreshTime != null && now.difference(_lastRefreshTime!) < const Duration(seconds: 30)) {
+      debugPrint("⏭️ Skipping silent refresh: last refresh was less than 30s ago");
+      return;
+    }
+    _lastRefreshTime = now;
+
     // Run all 3 fetches in parallel — 3× faster than sequential awaits
     await Future.wait([
       _refreshCategories(),
@@ -202,14 +274,14 @@ class AppDataProvider extends ChangeNotifier {
 
   Future<void> _refreshCategories() async {
     try {
-      final r = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/categories'));
+      final r = await ApiClient.get(Uri.parse('${ApiConfig.baseUrl}/api/app/categories'));
       if (r.statusCode == 200) {
         final List<dynamic> json = jsonDecode(r.body);
         _categories = json
             .map((d) => CategoryModel.fromJson(Map<String, dynamic>.from(d), d['id'] ?? ''))
             .toList()
           ..sort((a, b) => a.displayOrder.compareTo(b.displayOrder));
-        final box = await Hive.openBox('cms_cache');
+        final box = await _getCacheBox();
         await box.put('categories', json);
       }
     } catch (e) {
@@ -219,7 +291,7 @@ class AppDataProvider extends ChangeNotifier {
 
   Future<void> _refreshLanguages() async {
     try {
-      final r = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/languages'));
+      final r = await ApiClient.get(Uri.parse('${ApiConfig.baseUrl}/api/app/languages'));
       if (r.statusCode == 200) {
         final List<dynamic> json = jsonDecode(r.body);
         _languages = json
@@ -227,7 +299,7 @@ class AppDataProvider extends ChangeNotifier {
             .toList()
           ..sort((a, b) => a.name.compareTo(b.name));
         LanguageRegistry.instance.updateFromBackend(_languages);
-        final box = await Hive.openBox('cms_cache');
+        final box = await _getCacheBox();
         await box.put('languages', json);
       }
     } catch (e) {
@@ -237,7 +309,7 @@ class AppDataProvider extends ChangeNotifier {
 
   Future<void> _refreshTemplates() async {
     try {
-      final r = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/templates'));
+      final r = await ApiClient.get(Uri.parse('${ApiConfig.baseUrl}/api/app/templates'));
       if (r.statusCode == 200) {
         final List<dynamic> json = jsonDecode(r.body);
         final active = json
@@ -250,7 +322,7 @@ class AppDataProvider extends ChangeNotifier {
             return 0;
           });
         _allTemplates = active;
-        final box = await Hive.openBox('cms_cache');
+        final box = await _getCacheBox();
         await box.put('templates', json);
       }
     } catch (e) {
@@ -258,9 +330,75 @@ class AppDataProvider extends ChangeNotifier {
     }
   }
 
+  void _initSSE() {
+    final resolvedUrl = ApiConfig.baseUrl; // Use the already-resolved baseUrl
+    _sseClient = RealtimeSSEClient(
+      url: '$resolvedUrl/api/app/realtime',
+      onConnected: () {
+        debugPrint("✅ Realtime SSE Connected. Stopping fallback polling.");
+        _stopFallbackPolling();
+      },
+      onDisconnected: () {
+        debugPrint("⚠️ Realtime SSE Disconnected. Starting fallback polling.");
+        _startFallbackPolling();
+      },
+      onEvent: (event) {
+        final type = event['type']?.toString();
+        if (type == 'refresh') {
+          final collection = event['collection']?.toString();
+          final action = event['action']?.toString();
+          final id = event['id']?.toString() ?? '';
+          _handleRealtimeUpdate(collection, action, id);
+        }
+      },
+      onError: (err) {
+        debugPrint("Realtime SSE connection error: $err. Starting fallback polling.");
+        _startFallbackPolling();
+      },
+    );
+    _sseClient?.connect();
+    
+    // Start fallback polling initially. It will be stopped once SSE connects.
+    _startFallbackPolling();
+  }
+
+  Future<void> _handleRealtimeUpdate(String? collection, String? action, String id) async {
+    print("🔄 Real-time Update Event: [Collection: $collection, Action: $action, ID: $id]");
+    if (collection == 'categories') {
+      await _refreshCategories();
+      notifyListeners();
+    } else if (collection == 'languages') {
+      await _refreshLanguages();
+      notifyListeners();
+    } else if (collection == 'templates') {
+      if (action == 'delete') {
+        _allTemplates.removeWhere((t) => t.id == id);
+        try {
+          final box = await _getCacheBox();
+          final List<dynamic>? cached = box.get('templates');
+          if (cached != null) {
+            final List<dynamic> updatedCached = cached.where((e) => (e['id'] ?? '') != id).toList();
+            await box.put('templates', updatedCached);
+          }
+        } catch (e) {
+          print("Error updating Hive cache on delete: $e");
+        }
+        notifyListeners();
+      } else {
+        await _refreshTemplates();
+        if (id.isNotEmpty && (action == 'update' || action == 'add')) {
+          await refreshTemplateDetails(id);
+        }
+        notifyListeners();
+      }
+    }
+  }
+
   @override
   void dispose() {
+    _sseClient?.dispose();
     _refreshTimer?.cancel();
+    _fallbackPollTimer?.cancel();
     _categoriesSub?.cancel();
     _languagesSub?.cancel();
     _templatesSub?.cancel();

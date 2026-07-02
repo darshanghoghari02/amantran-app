@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import '../services/font_service.dart';
 import '../services/language_registry.dart';
+import '../utils/gopika_converter.dart';
 
 /// Types of elements that can be placed on the canvas
 enum ElementType {
@@ -49,6 +50,7 @@ class TemplateElement {
   int zIndex;
   String? assetPath; // image asset or URL
   String? mapUrl;
+  final Map<String, Map<String, dynamic>> languageStyles;
 
   TemplateElement({
     required this.id,
@@ -79,10 +81,12 @@ class TemplateElement {
     this.zIndex = 0,
     this.assetPath,
     this.mapUrl,
+    Map<String, Map<String, dynamic>>? languageStyles,
   }) : this.contentMap = contentMap ?? {
           'en': content,
           'gu': contentGujarati,
-        };
+        },
+       this.languageStyles = languageStyles ?? {};
 
   // Getters/setters to preserve absolute backwards compatibility with existing UI/Provider code
   String get content {
@@ -133,10 +137,11 @@ class TemplateElement {
     }
 
     if (json['text'] is String) {
+      // Only seed the English slot — do NOT pre-fill other language codes with English text.
+      // Other languages must remain empty so the invitation language sync / translation
+      // pipeline can populate them with the correct script/language.
       final textVal = sanitizeCorruptedText(json['text'] as String);
-      for (final code in ['en', 'gu', 'hi', 'mr', 'pa', 'ta', 'ur', 'ks', 'sa', 'or', 'as']) {
-        if (!cMap.containsKey(code)) cMap[code] = textVal;
-      }
+      if (!cMap.containsKey('en')) cMap['en'] = textVal;
     }
 
     // Preserve older structure root-level strings
@@ -145,6 +150,25 @@ class TemplateElement {
     }
     if (json['contentGujarati'] is String && !cMap.containsKey('gu')) {
       cMap['gu'] = sanitizeCorruptedText(json['contentGujarati'] as String);
+    }
+
+    final Map<String, Map<String, dynamic>> langStyles = {};
+    if (json['languageStyles'] is Map) {
+      (json['languageStyles'] as Map).forEach((k, v) {
+        if (v is Map) {
+          final langKey = k.toString().trim();
+          final code = LanguageRegistry.instance.codeFor(langKey);
+          langStyles[code] = Map<String, dynamic>.from(v);
+        }
+      });
+    } else if (json['language_styles'] is Map) {
+      (json['language_styles'] as Map).forEach((k, v) {
+        if (v is Map) {
+          final langKey = k.toString().trim();
+          final code = LanguageRegistry.instance.codeFor(langKey);
+          langStyles[code] = Map<String, dynamic>.from(v);
+        }
+      });
     }
 
     return TemplateElement(
@@ -163,7 +187,11 @@ class TemplateElement {
       width: (json['width'] as num?)?.toDouble() ?? 200.0,
       height: (json['height'] as num?)?.toDouble() ?? 40.0,
       fontSize: (json['fontSize'] as num?)?.toDouble() ?? 16.0,
-      fontFamily: json['fontFamily']?.toString() ?? 'Roboto',
+      // Replace legacy KAP/Gopika ASCII fonts with a proper Unicode font so that
+      // all invitation languages (English, Hindi, Gujarati, Tamil, Urdu, etc.) render
+      // correctly. KAP fonts only handle Gujarati-encoded ASCII and produce garbled
+      // output for any other language or when the font file hasn't loaded yet.
+      fontFamily: _resolveFontFamily(json['fontFamily']?.toString() ?? 'Roboto'),
       color: _parseColor(json['color'] ?? json['colorValue'] ?? json['color_value'] ?? json['colorString'] ?? json['textColor'] ?? json['fontColor']),
       fontWeight: _parseFontWeight(json['fontWeight'] ?? json['fontWeightIndex']),
       textAlign: TextAlign.values.firstWhere(
@@ -186,8 +214,19 @@ class TemplateElement {
       zIndex: (json['zIndex'] as num?)?.toInt() ?? 0,
       assetPath: json['imagePath'] ?? json['imageUrl'] ?? json['assetPath']?.toString(),
       mapUrl: json['mapUrl']?.toString(),
+      languageStyles: langStyles,
     );
   }
+
+  /// Resolves the font family, replacing legacy KAP/Gopika fonts with
+  /// "Noto Serif Gujarati" so all Unicode text renders correctly.
+  static String _resolveFontFamily(String raw) {
+    if (GopikaConverter.isLegacyFont(raw)) {
+      return 'Noto Serif Gujarati';
+    }
+    return raw.isEmpty ? 'Roboto' : raw;
+  }
+
 
   Map<String, dynamic> toJson() {
     return {
@@ -219,6 +258,13 @@ class TemplateElement {
       'imagePath': assetPath,
       'assetPath': assetPath,
       'mapUrl': mapUrl,
+      'languageStyles': languageStyles.map((code, style) {
+        final name = LanguageRegistry.instance.nameForCode(code) ?? code;
+        final displayName = name.isEmpty
+            ? name
+            : '${name[0].toUpperCase()}${name.substring(1)}';
+        return MapEntry(displayName, style);
+      }),
       'translations': contentMap.map((code, text) {
         final name = LanguageRegistry.instance.nameForCode(code) ?? code;
         final displayName = name.isEmpty
@@ -277,13 +323,16 @@ class TemplateElement {
           
       if (hexString.length == 6) {
         hexString = 'ff$hexString';
-      } else if (hexString.length == 8) {
-        if (!hexString.startsWith('ff')) {
-          // Convert RGBA to ARGB
-          hexString = hexString.substring(6, 8) + hexString.substring(0, 6);
-        }
       }
-      return Color(int.tryParse(hexString, radix: 16) ?? Colors.black.value);
+      
+      final parsedValue = int.tryParse(hexString, radix: 16) ?? Colors.black.value;
+      Color color = Color(parsedValue);
+      
+      // Auto-fix transparent colors (alpha == 0) to prevent text from being invisible
+      if (color.alpha == 0) {
+        color = color.withAlpha(221); // 221 is 0xdd (standard black87 opacity)
+      }
+      return color;
     }
     return Colors.black;
   }
@@ -395,6 +444,7 @@ class TemplateElement {
     TextDecoration? textDecoration,
     String? assetPath,
     String? mapUrl,
+    Map<String, Map<String, dynamic>>? languageStyles,
   }) {
     final Map<String, String> newContentMap = Map<String, String>.from(contentMap ?? this.contentMap);
     if (content != null) newContentMap['en'] = content;
@@ -427,19 +477,31 @@ class TemplateElement {
       textDecoration: textDecoration ?? this.textDecoration,
       assetPath: assetPath ?? this.assetPath,
       mapUrl: mapUrl ?? this.mapUrl,
+      languageStyles: languageStyles ?? this.languageStyles,
     );
   }
 
   String getDisplayText(String activeLanguage) {
     final String code = _getLanguageCode(activeLanguage);
     final String? text = contentMap[code];
+    String resolved;
     if (text != null && text.isNotEmpty) {
-      return sanitizeCorruptedText(text);
+      resolved = sanitizeCorruptedText(text);
+    } else {
+      // Never fall back to a different regional script — only English
+      final en = contentMap['en'] ?? '';
+      resolved = en.isNotEmpty ? sanitizeCorruptedText(en) : '';
     }
-    // Never fall back to a different regional script — only English
-    final en = contentMap['en'] ?? '';
-    if (en.isNotEmpty) return sanitizeCorruptedText(en);
-    return '';
+
+    // Apply Unicode → Gopika/KAP ASCII transliteration for legacy fonts,
+    // but ONLY when the text actually contains Gujarati script.
+    // Passing English/Hindi/other-script text through GopikaConverter produces
+    // garbled ASCII characters.
+    if (GopikaConverter.isLegacyFont(fontFamily) && hasGujaratiScript(resolved)) {
+      resolved = GopikaConverter.convert(resolved);
+    }
+
+    return resolved;
   }
 
   static bool hasGujaratiScript(String text) =>
@@ -484,31 +546,106 @@ class TemplateElement {
     }
   }
 
-  TextStyle getTextStyleForLanguage(String activeLanguage, {double scale = 1.0}) {
-    final baseStyle = getTextStyle(scale: scale);
+  TextAlign getTextAlignForLanguage(String activeLanguage) {
     final code = languageCodeFor(activeLanguage);
-    
-    // First, check if the element has a custom fontFamily that should be respected
-    // If the fontFamily is not the default 'Roboto', use it
-    if (fontFamily != 'Roboto' && fontFamily.isNotEmpty) {
-      // Try to apply the custom font first
-      final String lowerFamily = fontFamily.toLowerCase();
-      
-      // Check for locally bundled fonts
-      if (lowerFamily == 'kap011') {
-        return baseStyle.copyWith(fontFamily: 'KAP011');
+    final specificStyle = languageStyles[code];
+    if (specificStyle != null) {
+      final alignVal = specificStyle['alignment'] ?? specificStyle['textAlign'];
+      if (alignVal != null) {
+        return TextAlign.values.firstWhere(
+          (e) => e.name == alignVal || e.name.toLowerCase() == alignVal.toString().toLowerCase() || e.name.toLowerCase().replaceAll('_', '') == alignVal.toString().toLowerCase().replaceAll('_', ''),
+          orElse: () => textAlign,
+        );
+      }
+    }
+    return textAlign;
+  }
+
+  TextStyle getTextStyleForLanguage(String activeLanguage, {double scale = 1.0}) {
+    final code = languageCodeFor(activeLanguage);
+    final specificStyle = languageStyles[code];
+
+    String resolvedFontFamily = fontFamily;
+    Color resolvedColor = color;
+    double resolvedFontSize = fontSize;
+    FontWeight resolvedFontWeight = fontWeight;
+    double resolvedLetterSpacing = letterSpacing;
+    double resolvedLineHeight = lineHeight;
+    TextDecoration resolvedTextDecoration = textDecoration;
+    FontStyle resolvedFontStyle = fontStyle;
+
+    if (specificStyle != null) {
+      if (specificStyle['fontFamily'] != null) {
+        resolvedFontFamily = _resolveFontFamily(specificStyle['fontFamily'].toString());
+      }
+      if (specificStyle['color'] != null) {
+        resolvedColor = _parseColor(specificStyle['color']);
+      }
+      if (specificStyle['fontSize'] != null) {
+        resolvedFontSize = (specificStyle['fontSize'] as num).toDouble();
+      }
+      if (specificStyle['fontWeight'] != null) {
+        resolvedFontWeight = _parseFontWeight(specificStyle['fontWeight']);
+      }
+      if (specificStyle['letterSpacing'] != null) {
+        resolvedLetterSpacing = (specificStyle['letterSpacing'] as num).toDouble();
+      }
+      if (specificStyle['lineHeight'] != null) {
+        resolvedLineHeight = (specificStyle['lineHeight'] as num).toDouble();
+      }
+      if (specificStyle['textDecoration'] != null) {
+        resolvedTextDecoration = _stringToTextDecoration(specificStyle['textDecoration']?.toString());
+      }
+      if (specificStyle['fontStyle'] != null) {
+        resolvedFontStyle = FontStyle.values.firstWhere(
+          (e) => e.name == specificStyle['fontStyle'],
+          orElse: () => FontStyle.normal,
+        );
+      }
+    }
+
+    final double fs = resolvedFontSize * scale;
+    final baseStyle = TextStyle(
+      fontSize: fs,
+      color: resolvedColor,
+      fontWeight: resolvedFontWeight,
+      fontStyle: resolvedFontStyle,
+      decoration: resolvedTextDecoration,
+      letterSpacing: resolvedLetterSpacing * scale,
+      height: resolvedLineHeight,
+    );
+
+    TextStyle applyFontFamily(String family, TextStyle style) {
+      final String lowerFamily = family.toLowerCase();
+      if (GopikaConverter.isLegacyFont(family)) {
+        for (final reg in FontService.registeredFamilies) {
+          if (reg.toLowerCase() == lowerFamily) {
+            return style.copyWith(fontFamily: reg);
+          }
+        }
+        return style.copyWith(fontFamily: family);
       }
       if (lowerFamily == 'noto serif gujarati') {
-        return baseStyle.copyWith(fontFamily: 'Noto Serif Gujarati');
+        return style.copyWith(fontFamily: 'Noto Serif Gujarati');
+      }
+      if (lowerFamily == 'hind vadodara') {
+        return style.copyWith(fontFamily: 'Hind Vadodara');
+      }
+      if (lowerFamily == 'rasa') {
+        return style.copyWith(fontFamily: 'Rasa');
+      }
+      if (lowerFamily == 'shrikhand') {
+        return style.copyWith(fontFamily: 'Shrikhand');
+      }
+      if (lowerFamily == 'farsan') {
+        return style.copyWith(fontFamily: 'Farsan');
       }
       if (lowerFamily == 'kankotri') {
-        return baseStyle.copyWith(fontFamily: 'Kankotri');
+        return style.copyWith(fontFamily: 'Kankotri');
       }
       if (lowerFamily.startsWith('custom_')) {
-        return baseStyle.copyWith(fontFamily: fontFamily);
+        return style.copyWith(fontFamily: family);
       }
-      
-      // Check for dynamically registered fonts
       String? matchedRegisteredFamily;
       for (final reg in FontService.registeredFamilies) {
         if (reg.toLowerCase() == lowerFamily) {
@@ -517,18 +654,24 @@ class TemplateElement {
         }
       }
       if (matchedRegisteredFamily != null) {
-        return baseStyle.copyWith(fontFamily: matchedRegisteredFamily);
+        return style.copyWith(fontFamily: matchedRegisteredFamily);
       }
-      
-      // Try GoogleFonts
       try {
-        return GoogleFonts.getFont(fontFamily, textStyle: baseStyle);
+        return GoogleFonts.getFont(family, textStyle: style);
       } catch (_) {
-        // Fall through to language-specific fonts
+        return style.copyWith(fontFamily: family);
       }
     }
+
+    if (GopikaConverter.isLegacyFont(resolvedFontFamily)) {
+      return applyFontFamily(resolvedFontFamily, baseStyle);
+    }
+
+    if (resolvedFontFamily != 'Roboto' && resolvedFontFamily.isNotEmpty) {
+      return applyFontFamily(resolvedFontFamily, baseStyle);
+    }
     
-    // Fall back to language-specific fonts if no custom font is set or it failed
+    // Fall back to language-specific fonts if no custom font is set
     switch (code) {
       case 'ur':
       case 'ks':
@@ -599,12 +742,31 @@ class TemplateElement {
 
     final String lowerFamily = fontFamily.toLowerCase();
 
-    // 1. Check locally bundled fonts case-insensitively
-    if (lowerFamily == 'kap011') {
-      return baseStyle.copyWith(fontFamily: 'KAP011');
+    // 1. Check locally bundled or dynamically registered KAP/legacy fonts
+    if (GopikaConverter.isLegacyFont(fontFamily)) {
+      // Check dynamically registered KAP variant (e.g. KAP012, KAP149…)
+      for (final reg in FontService.registeredFamilies) {
+        if (reg.toLowerCase() == lowerFamily) {
+          return baseStyle.copyWith(fontFamily: reg);
+        }
+      }
+      // Fall back to font-family name directly (handles locally bundled KAP011)
+      return baseStyle.copyWith(fontFamily: fontFamily);
     }
     if (lowerFamily == 'noto serif gujarati') {
       return baseStyle.copyWith(fontFamily: 'Noto Serif Gujarati');
+    }
+    if (lowerFamily == 'hind vadodara') {
+      return baseStyle.copyWith(fontFamily: 'Hind Vadodara');
+    }
+    if (lowerFamily == 'rasa') {
+      return baseStyle.copyWith(fontFamily: 'Rasa');
+    }
+    if (lowerFamily == 'shrikhand') {
+      return baseStyle.copyWith(fontFamily: 'Shrikhand');
+    }
+    if (lowerFamily == 'farsan') {
+      return baseStyle.copyWith(fontFamily: 'Farsan');
     }
     if (lowerFamily == 'kankotri') {
       return baseStyle.copyWith(fontFamily: 'Kankotri');
@@ -631,6 +793,7 @@ class TemplateElement {
     } catch (_) {
       // 4. Final fallback: let Flutter resolve the fontFamily name directly.
       return baseStyle.copyWith(fontFamily: fontFamily);
+
     }
   }
 }

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:google_fonts/google_fonts.dart';
 import '../../../models/template_element.dart';
 import '../../../providers/invitation_provider.dart';
 import '../../../providers/language_provider.dart';
+import '../../../widgets/font_picker_widget.dart';
 
 // ─────────────────────────────────────────────────
 // COMMON SHEET WRAPPER
@@ -101,27 +101,8 @@ class _FormatBottomSheetState extends State<FormatBottomSheet> {
   late TemplateElement element;
   late TemplateElement _originalState;
 
-  // 🔤 PREMIUM TRADITIONAL & MODERN FONTS FOR CARD STYLING
-  static const List<String> _fonts = [
-    'Mogra',
-    'Poppins',
-    'Hind Vadodara',
-    'Great Vibes',
-    'Playfair Display',
-    'Mukta Vaani',
-    'Noto Serif Gujarati',
-    'Rasa',
-    'Shrikhand',
-    'Farsan',
-    'Baloo Bhai 2',
-    'Yatra One',
-    'Rozha One',
-    'KAP011',
-    'Dancing Script',
-    'Parisienne',
-    'Allura',
-    'Sacramento',
-  ];
+  // Font list is now managed by FontPickerWidget / FontRegistry
+
 
   @override
   void initState() {
@@ -188,6 +169,7 @@ class _FormatBottomSheetState extends State<FormatBottomSheet> {
   @override
   Widget build(BuildContext context) {
     final lang = context.watch<LanguageProvider>();
+    // allFonts local variable removed — FontPickerWidget handles the list internally
     return _SheetWrapper(
       onCancel: _revert,
       onDone: () => Navigator.pop(context),
@@ -249,32 +231,33 @@ class _FormatBottomSheetState extends State<FormatBottomSheet> {
                 });
                 widget.onChanged();
               }, isUnderline: true),
-              _toggleBtn("aA", false, () {
-                setState(() {
-                  final text = element.content;
-                  if (text == text.toUpperCase()) {
-                    element.content = text.toLowerCase();
-                  } else if (text == text.toLowerCase()) {
-                    element.content = _toTitleCase(text);
-                  } else {
-                    element.content = text.toUpperCase();
-                  }
-
-                  // Also handle the localized slot if it contains Latin characters
-                  final textGu = element.contentGujarati;
-                  if (textGu.contains(RegExp(r'[a-zA-Z]'))) {
-                    if (textGu == textGu.toUpperCase()) {
-                      element.contentGujarati = textGu.toLowerCase();
-                    } else if (textGu == textGu.toLowerCase()) {
-                      element.contentGujarati = _toTitleCase(textGu);
+              if (lang.activeInvitationLanguage.toLowerCase() == 'english')
+                _toggleBtn("aA", false, () {
+                  setState(() {
+                    final text = element.content;
+                    if (text == text.toUpperCase()) {
+                      element.content = text.toLowerCase();
+                    } else if (text == text.toLowerCase()) {
+                      element.content = _toTitleCase(text);
                     } else {
-                      element.contentGujarati = textGu.toUpperCase();
+                      element.content = text.toUpperCase();
                     }
-                  }
-                  _updateDimensions();
-                });
-                widget.onChanged();
-              }),
+
+                    // Also handle the localized slot if it contains Latin characters
+                    final textGu = element.contentGujarati;
+                    if (textGu.contains(RegExp(r'[a-zA-Z]'))) {
+                      if (textGu == textGu.toUpperCase()) {
+                        element.contentGujarati = textGu.toLowerCase();
+                      } else if (textGu == textGu.toLowerCase()) {
+                        element.contentGujarati = _toTitleCase(textGu);
+                      } else {
+                        element.contentGujarati = textGu.toUpperCase();
+                      }
+                    }
+                    _updateDimensions();
+                  });
+                  widget.onChanged();
+                }),
             ],
           ),
           const SizedBox(height: 20),
@@ -301,101 +284,21 @@ class _FormatBottomSheetState extends State<FormatBottomSheet> {
           ),
           const SizedBox(height: 20),
           // Font Family Section
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(
-                lang.currentLanguage == 'Gujarati'
-                    ? 'ફોન્ટ ફેમિલી'
-                    : 'Font Family',
-                style:
-                    const TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
-              ),
-              if (element.fontFamily.isNotEmpty)
-                Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFFFF2F4),
-                    borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                        color: const Color(0xFFF94C66).withValues(alpha: 0.15)),
-                  ),
-                  child: Text(
-                    element.fontFamily,
-                    style: const TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFFF94C66),
-                    ),
-                  ),
-                ),
-            ],
+          FontSelectorRow(
+            currentFont: element.fontFamily,
+            label: lang.currentLanguage == 'Gujarati'
+                ? 'ફોન્ટ ફેમિલી'
+                : 'Font Family',
+            onFontSelected: (font) {
+              setState(() {
+                element.fontFamily = font;
+                _updateDimensions();
+              });
+              widget.onChanged();
+            },
           ),
-          const SizedBox(height: 10),
-          SizedBox(
-            height: 40,
-            child: ListView.builder(
-              scrollDirection: Axis.horizontal,
-              itemCount: _fonts.length,
-              itemBuilder: (context, index) {
-                final font = _fonts[index];
-                final isSelected = element.fontFamily == font;
+          const SizedBox(height: 16),
 
-                // Get visual preview of this font family style inside the chips
-                TextStyle getFontPreviewStyle(String fontFamily, Color color) {
-                  final baseStyle = TextStyle(
-                    fontSize: 13,
-                    color: color,
-                    fontWeight:
-                        isSelected ? FontWeight.bold : FontWeight.normal,
-                  );
-                  if (fontFamily == 'KAP011') {
-                    return baseStyle.copyWith(fontFamily: 'KAP011');
-                  }
-                  try {
-                    return GoogleFonts.getFont(fontFamily,
-                        textStyle: baseStyle);
-                  } catch (e) {
-                    return baseStyle.copyWith(fontFamily: fontFamily);
-                  }
-                }
-
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8.0),
-                  child: ChoiceChip(
-                    label: Text(
-                      font,
-                      style: getFontPreviewStyle(
-                          font, isSelected ? Colors.white : Colors.black87),
-                    ),
-                    selected: isSelected,
-                    selectedColor: const Color(0xFFF94C66),
-                    backgroundColor: Colors.grey.shade50,
-                    checkmarkColor: Colors.white,
-                    onSelected: (selected) {
-                      if (selected) {
-                        setState(() {
-                          element.fontFamily = font;
-                          _updateDimensions();
-                        });
-                        widget.onChanged();
-                      }
-                    },
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(20),
-                      side: BorderSide(
-                        color: isSelected
-                            ? const Color(0xFFF94C66)
-                            : Colors.grey.shade200,
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
-          ),
-          const SizedBox(height: 20),
           // Invitation Language Row
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -476,6 +379,7 @@ class _FormatBottomSheetState extends State<FormatBottomSheet> {
             fontStyle: isItalic ? FontStyle.italic : FontStyle.normal,
             decoration:
                 isUnderline ? TextDecoration.underline : TextDecoration.none,
+            decorationColor: isSelected ? Colors.white : Colors.black87,
           ),
         ),
       ),
@@ -1067,8 +971,8 @@ double getMaxConstraintWidth(String elementId) {
                              id.endsWith('_right');
 
   if (isLeftColumn || isRightColumn) {
-    return 160.0;
+    return 480.0;
   }
-  return 320.0;
+  return 960.0;
 }
 

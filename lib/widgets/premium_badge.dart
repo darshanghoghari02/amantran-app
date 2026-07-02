@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
 class PremiumBadge extends StatelessWidget {
   final double fontSize;
@@ -17,11 +18,11 @@ class PremiumBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Scale up slightly to match the visual footprint of the old circular badge
-    final displayHeight = iconSize * 3.5;
-    final displayWidth = displayHeight * 0.784; // Aspect ratio of cropped medal (276/352)
+    final displayHeight = iconSize * 2.5;
+    final displayWidth = displayHeight; // The cropped medal is square (aspect ratio ~1.0)
 
-    return Image.asset(
-      'assets/images/premium_logo.png',
+    return SvgPicture.asset(
+      'assets/images/premium_logo.svg',
       width: displayWidth,
       height: displayHeight,
       fit: BoxFit.contain,

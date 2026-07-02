@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:http/http.dart' as http;
+import '../services/api_client.dart';
 import '../config/api_config.dart';
 import '../services/firestore_service.dart';
 
@@ -17,7 +17,7 @@ class DraftRepository {
 
   Future<List<Map<String, dynamic>>> fetchDrafts(String userId) async {
     try {
-      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/drafts/$userId'));
+      final response = await ApiClient.get(Uri.parse('${ApiConfig.baseUrl}/api/app/drafts/$userId'));
       if (response.statusCode == 200) {
         final List<dynamic> list = jsonDecode(response.body);
         return list.map((e) => Map<String, dynamic>.from(e)).toList();
@@ -38,7 +38,7 @@ class DraftRepository {
 
   Future<List<Map<String, dynamic>>> fetchCards(String userId) async {
     try {
-      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/cards/$userId'));
+      final response = await ApiClient.get(Uri.parse('${ApiConfig.baseUrl}/api/app/cards/$userId'));
       if (response.statusCode == 200) {
         final List<dynamic> list = jsonDecode(response.body);
         return list.map((e) => Map<String, dynamic>.from(e)).toList();
@@ -55,7 +55,7 @@ class DraftRepository {
     if (uid == null) throw Exception("User not authenticated.");
 
     try {
-      final response = await http.post(
+      final response = await ApiClient.post(
         Uri.parse('${ApiConfig.baseUrl}/api/app/drafts'),
         headers: {
           'Content-Type': 'application/json',
@@ -81,7 +81,7 @@ class DraftRepository {
     if (uid == null) throw Exception("User not authenticated.");
 
     try {
-      final response = await http.post(
+      final response = await ApiClient.post(
         Uri.parse('${ApiConfig.baseUrl}/api/app/cards'),
         headers: {
           'Content-Type': 'application/json',
@@ -107,7 +107,7 @@ class DraftRepository {
   /// Deletes a draft from backend
   Future<void> deleteDraft(String id) async {
     try {
-      final response = await http.delete(Uri.parse('${ApiConfig.baseUrl}/api/app/drafts/$id'));
+      final response = await ApiClient.delete(Uri.parse('${ApiConfig.baseUrl}/api/app/drafts/$id'));
       if (response.statusCode != 200) {
         print("Failed to delete draft from backend: Status ${response.statusCode}");
       }
@@ -119,7 +119,7 @@ class DraftRepository {
   /// Deletes a completed card from backend
   Future<void> deleteCard(String id) async {
     try {
-      final response = await http.delete(Uri.parse('${ApiConfig.baseUrl}/api/app/cards/$id'));
+      final response = await ApiClient.delete(Uri.parse('${ApiConfig.baseUrl}/api/app/cards/$id'));
       if (response.statusCode != 200) {
         print("Failed to delete completed card from backend: Status ${response.statusCode}");
       }

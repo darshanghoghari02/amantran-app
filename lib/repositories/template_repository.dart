@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:http/http.dart' as http;
+import 'package:flutter/foundation.dart';
+import '../services/api_client.dart';
 import 'package:hive/hive.dart';
 import '../config/api_config.dart';
 import '../services/firestore_service.dart';
@@ -14,13 +15,36 @@ import '../models/template_element.dart';
 class TemplateRepository {
   static const String _cacheBoxName = 'cms_cache';
 
+  Future<Box> _getBox() async {
+    if (Hive.isBoxOpen(_cacheBoxName)) {
+      return Hive.box(_cacheBoxName);
+    }
+    return await Hive.openBox(_cacheBoxName);
+  }
+
+  /// Checks if the stored cache version matches the current one.
+  /// If not, clears all cached data to prevent showing stale data from old backends.
+  Future<void> bustCacheIfVersionChanged() async {
+    try {
+      final box = await _getBox();
+      final storedVersion = box.get('_cacheVersion');
+      if (storedVersion != ApiConfig.cacheVersion) {
+        await box.clear();
+        await box.put('_cacheVersion', ApiConfig.cacheVersion);
+        debugPrint('🗑️ Cache cleared: version changed from $storedVersion → ${ApiConfig.cacheVersion}');
+      }
+    } catch (e) {
+      print('Error busting cache: $e');
+    }
+  }
+
   // -------------------------------------------------------------
   // 🔥 GLOBAL CONTENT STREAMS (FROM ADMIN API + CACHE)
   // -------------------------------------------------------------
 
   Stream<List<CategoryModel>> watchCategories() async* {
     try {
-      final box = await Hive.openBox(_cacheBoxName);
+      final box = await _getBox();
       final List<dynamic>? cached = box.get('categories');
       if (cached != null) {
         yield cached.map((e) => CategoryModel.fromJson(Map<String, dynamic>.from(e), e['id'] ?? '')).toList();
@@ -30,12 +54,12 @@ class TemplateRepository {
     }
 
     try {
-      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/categories'));
+      final response = await ApiClient.get(Uri.parse('${ApiConfig.baseUrl}/api/app/categories'));
       if (response.statusCode == 200) {
         final List<dynamic> jsonList = jsonDecode(response.body);
         final list = jsonList.map((data) => CategoryModel.fromJson(Map<String, dynamic>.from(data), data['id'] ?? '')).toList();
         
-        final box = await Hive.openBox(_cacheBoxName);
+        final box = await _getBox();
         await box.put('categories', jsonList);
         yield list;
       }
@@ -44,9 +68,10 @@ class TemplateRepository {
     }
   }
 
+
   Stream<List<LanguageModel>> watchLanguages() async* {
     try {
-      final box = await Hive.openBox(_cacheBoxName);
+      final box = await _getBox();
       final List<dynamic>? cached = box.get('languages');
       if (cached != null) {
         yield cached.map((e) => LanguageModel.fromJson(Map<String, dynamic>.from(e), e['id'] ?? '')).toList();
@@ -56,12 +81,12 @@ class TemplateRepository {
     }
 
     try {
-      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/languages'));
+      final response = await ApiClient.get(Uri.parse('${ApiConfig.baseUrl}/api/app/languages'));
       if (response.statusCode == 200) {
         final List<dynamic> jsonList = jsonDecode(response.body);
         final list = jsonList.map((data) => LanguageModel.fromJson(Map<String, dynamic>.from(data), data['id'] ?? '')).toList();
         
-        final box = await Hive.openBox(_cacheBoxName);
+        final box = await _getBox();
         await box.put('languages', jsonList);
         yield list;
       }
@@ -72,7 +97,7 @@ class TemplateRepository {
 
   Stream<List<TemplateModel>> watchTemplates({String? categoryId}) async* {
     try {
-      final box = await Hive.openBox(_cacheBoxName);
+      final box = await _getBox();
       final List<dynamic>? cached = box.get('templates');
       if (cached != null) {
         final list = cached.map((e) => TemplateModel.fromJson(Map<String, dynamic>.from(e), e['id'] ?? '')).toList();
@@ -87,13 +112,13 @@ class TemplateRepository {
     }
 
     try {
-      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/templates'));
+      final response = await ApiClient.get(Uri.parse('${ApiConfig.baseUrl}/api/app/templates'));
       if (response.statusCode == 200) {
         final List<dynamic> jsonList = jsonDecode(response.body);
         final list = jsonList.map((data) => TemplateModel.fromJson(Map<String, dynamic>.from(data), data['id'] ?? '')).toList();
         
         if (categoryId == null || categoryId.isEmpty) {
-          final box = await Hive.openBox(_cacheBoxName);
+          final box = await _getBox();
           await box.put('templates', jsonList);
         }
         
@@ -110,7 +135,7 @@ class TemplateRepository {
 
   Stream<List<PageModel>> watchTemplatePages(String templateId) async* {
     try {
-      final box = await Hive.openBox(_cacheBoxName);
+      final box = await _getBox();
       final List<dynamic>? cached = box.get('pages_$templateId');
       if (cached != null) {
         yield cached.map((e) => PageModel.fromJson(Map<String, dynamic>.from(e), e['id'] ?? '')).toList();
@@ -130,7 +155,7 @@ class TemplateRepository {
   /// Returns cached pages instantly when available; refreshes from server in background.
   Future<List<PageModel>> getTemplatePagesCachedFirst(String templateId) async {
     try {
-      final box = await Hive.openBox(_cacheBoxName);
+      final box = await _getBox();
       final List<dynamic>? cached = box.get('pages_$templateId');
       if (cached != null && cached.isNotEmpty) {
         final pages = cached.map((e) => PageModel.fromJson(Map<String, dynamic>.from(e), e['id']?.toString() ?? '')).toList();
@@ -146,7 +171,7 @@ class TemplateRepository {
 
   Future<List<PageModel>> getTemplatePages(String templateId) async {
     try {
-      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/templates/$templateId'));
+      final response = await ApiClient.get(Uri.parse('${ApiConfig.baseUrl}/api/app/templates/$templateId'));
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
         final pagesList = data['pages'] as List? ?? [];
@@ -169,7 +194,7 @@ class TemplateRepository {
           }
         }
         
-        final box = await Hive.openBox(_cacheBoxName);
+        final box = await _getBox();
         final cacheData = pages.map((p) => p.toJson()).toList();
         await box.put('pages_$templateId', cacheData);
         return pages;
@@ -180,7 +205,7 @@ class TemplateRepository {
 
     // fallback to cache
     try {
-      final box = await Hive.openBox(_cacheBoxName);
+      final box = await _getBox();
       final List<dynamic>? cached = box.get('pages_$templateId');
       if (cached != null) {
         return (cached as List)
@@ -207,7 +232,7 @@ class TemplateRepository {
 
   Future<List<String>> getFavoriteTemplateIds(String userId) async {
     try {
-      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/favorites/$userId'));
+      final response = await ApiClient.get(Uri.parse('${ApiConfig.baseUrl}/api/app/favorites/$userId'));
       if (response.statusCode == 200) {
         final List<dynamic> list = jsonDecode(response.body);
         return list.map((e) => e.toString()).toList();
@@ -223,7 +248,7 @@ class TemplateRepository {
     if (uid == null) return;
 
     try {
-      final response = await http.post(
+      final response = await ApiClient.post(
         Uri.parse('${ApiConfig.baseUrl}/api/app/favorites'),
         headers: {
           'Content-Type': 'application/json',

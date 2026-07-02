@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'package:http/http.dart' as http;
+import '../services/api_client.dart';
 import '../config/api_config.dart';
 import '../services/firestore_service.dart';
 
@@ -17,7 +17,7 @@ class GuestRepository {
 
   Future<List<Map<String, dynamic>>> fetchGuests(String userId) async {
     try {
-      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/guests/$userId'));
+      final response = await ApiClient.get(Uri.parse('${ApiConfig.baseUrl}/api/app/guests/$userId'));
       if (response.statusCode == 200) {
         final List<dynamic> list = jsonDecode(response.body);
         return list.map((e) => Map<String, dynamic>.from(e)).toList();
@@ -34,7 +34,7 @@ class GuestRepository {
     if (uid == null) throw Exception("User not authenticated.");
 
     try {
-      final response = await http.post(
+      final response = await ApiClient.post(
         Uri.parse('${ApiConfig.baseUrl}/api/app/guests'),
         headers: {
           'Content-Type': 'application/json',
@@ -57,7 +57,7 @@ class GuestRepository {
   /// Deletes a guest in backend
   Future<void> deleteGuest(String id) async {
     try {
-      final response = await http.delete(Uri.parse('${ApiConfig.baseUrl}/api/app/guests/$id'));
+      final response = await ApiClient.delete(Uri.parse('${ApiConfig.baseUrl}/api/app/guests/$id'));
       if (response.statusCode != 200) {
         print("Failed to delete guest: Status ${response.statusCode}");
       }
@@ -72,7 +72,7 @@ class GuestRepository {
     if (uid == null) return;
 
     try {
-      final response = await http.delete(Uri.parse('${ApiConfig.baseUrl}/api/app/guests/clear/$uid'));
+      final response = await ApiClient.delete(Uri.parse('${ApiConfig.baseUrl}/api/app/guests/clear/$uid'));
       if (response.statusCode != 200) {
         print("Failed to clear guests: Status ${response.statusCode}");
       }

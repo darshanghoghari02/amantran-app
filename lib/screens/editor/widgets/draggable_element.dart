@@ -4,12 +4,36 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:flutter_svg/flutter_svg.dart';
+import '../../../config/api_config.dart';
 import '../../../providers/invitation_provider.dart';
 import '../../../models/template_element.dart';
 import 'transliteration_field.dart';
 import '../../preview/widgets/static_element.dart';
 import '../../../utils/image_resolver.dart';
+import '../../../widgets/app_image.dart';
+import '../../../providers/language_provider.dart';
 
+class GuidelineInfo {
+  final double x;
+  final double y;
+  final double width;
+  final double height;
+  final double pageW;
+  final double pageH;
+  final double scaleX;
+  final double scaleY;
+
+  GuidelineInfo({
+    required this.x,
+    required this.y,
+    required this.width,
+    required this.height,
+    required this.pageW,
+    required this.pageH,
+    required this.scaleX,
+    required this.scaleY,
+  });
+}
 
 /// Helper to calculate the dynamic wrapped text height
 double _calculateTextHeight(TemplateElement element, double width, String activeLanguage) {
@@ -35,14 +59,12 @@ double _calculateTextHeight(TemplateElement element, double width, String active
 /// - Drag to move (when selected and movable)
 /// - Resize handles on corners + edges (when selected and resizable)
 /// - Double-tap to edit text inline, or double-tap Ganesh to change style
-class DraggableElement extends StatelessWidget {
-  static final Map<String, DateTime> _lastTapTimes = {};
-
+class DraggableElement extends StatefulWidget {
   final TemplateElement element;
   final bool isSelected;
   final String activeLanguage;
   final VoidCallback onTap;
-  final Function(double dx, double dy) onDrag;
+  final Function(double newX, double newY) onDrag;
   final Function(double newWidth, double newHeight, double? newFontSize, {double? newX, double? newY, double? newLetterSpacing}) onResize;
   final Function(String newText, String newTextGujarati) onTextEdit;
   final VoidCallback? onActionStart;
@@ -50,6 +72,9 @@ class DraggableElement extends StatelessWidget {
   final double scaleX;
   final double scaleY;
   final VoidCallback? onDelete;
+  final double pageW;
+  final double pageH;
+  final ValueNotifier<GuidelineInfo?> guidelineNotifier;
 
   const DraggableElement({
     super.key,
@@ -65,246 +90,321 @@ class DraggableElement extends StatelessWidget {
     this.scaleX = 1.0,
     this.scaleY = 1.0,
     this.onDelete,
+    required this.pageW,
+    required this.pageH,
+    required this.guidelineNotifier,
   });
 
   @override
-  Widget build(BuildContext context) {
-    if (!element.isVisible) return const SizedBox.shrink();
+  State<DraggableElement> createState() => _DraggableElementState();
+}
 
-    // Hide map icon elements reactively if no map location url has been added by the user
-    if (element.id.endsWith('_map_icon')) {
-      final provider = Provider.of<InvitationProvider>(context, listen: true);
+class _DraggableElementState extends State<DraggableElement> {
+  static final Map<String, DateTime> _lastTapTimes = {};
+
+  double? _localX;
+  double? _localY;
+  double? _localWidth;
+  double? _localHeight;
+  double? _localFontSize;
+  double? _localLetterSpacing;
+
+  bool _isDragging = false;
+  bool _isResizing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _syncWithWidget();
+  }
+
+  @override
+  void didUpdateWidget(DraggableElement oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_isDragging && !_isResizing) {
+      _syncWithWidget();
+    }
+  }
+
+  void _syncWithWidget() {
+    _localX = widget.element.x;
+    _localY = widget.element.y;
+    _localWidth = widget.element.width;
+    _localHeight = widget.element.height;
+    _localFontSize = widget.element.fontSize;
+    _localLetterSpacing = widget.element.letterSpacing;
+  }
+
+  void handleResize({
+    required double dx,
+    required double dy,
+    required Alignment alignment,
+  }) {
+    final double dw = dx / widget.scaleX;
+    final double dh = dy / widget.scaleY;
+
+    const double minW = 30.0;
+    const double minH = 15.0;
+    const double maxDim = 800.0;
+
+    final bool isCorner = alignment == Alignment.topLeft ||
+        alignment == Alignment.topRight ||
+        alignment == Alignment.bottomLeft ||
+        alignment == Alignment.bottomRight;
+
+    if (widget.element.type == ElementType.text) {
+      final bool isLeft = alignment == Alignment.topLeft || alignment == Alignment.bottomLeft || alignment == Alignment.centerLeft;
+      final bool isRight = alignment == Alignment.topRight || alignment == Alignment.bottomRight || alignment == Alignment.centerRight;
+      final bool isTop = alignment == Alignment.topLeft || alignment == Alignment.topRight || alignment == Alignment.topCenter;
+      final bool isBottom = alignment == Alignment.bottomLeft || alignment == Alignment.bottomRight || alignment == Alignment.bottomCenter;
+
+      if (isCorner) {
+        final double factorW = isLeft ? -1 : 1;
+        final double factorH = isTop ? -1 : 1;
+        final double widthChange = factorW * dw;
+        final double heightChange = factorH * dh;
+
+        double ratio = 1.0;
+        final double currentW = _localWidth ?? widget.element.width;
+        final double currentH = _localHeight ?? widget.element.height;
+        if (widthChange.abs() > heightChange.abs()) {
+          ratio = (currentW + widthChange) / currentW;
+        } else {
+          ratio = (currentH + heightChange) / currentH;
+        }
+
+        final double newFontSize = ((_localFontSize ?? widget.element.fontSize) * ratio).clamp(6.0, 120.0);
+        final double finalRatio = newFontSize / (_localFontSize ?? widget.element.fontSize);
+
+        final double newWidth = (currentW * finalRatio).clamp(minW, maxDim);
+        final double newHeight = (currentH * finalRatio).clamp(minH, maxDim);
+        final double newLetterSpacing = (_localLetterSpacing ?? widget.element.letterSpacing) * finalRatio;
+
+        double du = 0.0;
+        if (isLeft) {
+          du = (currentW - newWidth) / 2.0;
+        } else if (isRight) {
+          du = (newWidth - currentW) / 2.0;
+        }
+
+        double dv = 0.0;
+        if (isTop) {
+          dv = (currentH - newHeight) / 2.0;
+        } else if (isBottom) {
+          dv = (newHeight - currentH) / 2.0;
+        }
+
+        final double angleRad = widget.element.rotation * 3.141592653589793 / 180.0;
+        final double cosA = math.cos(angleRad);
+        final double sinA = math.sin(angleRad);
+
+        final double shiftX = du * cosA - dv * sinA;
+        final double shiftY = du * sinA + dv * cosA;
+
+        final double newX = (_localX ?? widget.element.x) + (currentW - newWidth) / 2.0 + shiftX;
+        final double newY = (_localY ?? widget.element.y) + (currentH - newHeight) / 2.0 + shiftY;
+
+        setState(() {
+          _localWidth = newWidth;
+          _localHeight = newHeight;
+          _localFontSize = newFontSize;
+          _localX = newX;
+          _localY = newY;
+          _localLetterSpacing = newLetterSpacing;
+        });
+      } else {
+        double newWidth = _localWidth ?? widget.element.width;
+        if (isRight) {
+          newWidth = ((_localWidth ?? widget.element.width) + dw).clamp(minW, maxDim);
+        } else if (isLeft) {
+          newWidth = ((_localWidth ?? widget.element.width) - dw).clamp(minW, maxDim);
+        }
+
+        final double newHeight = _calculateTextHeight(
+          widget.element.copyWith(
+            fontSize: _localFontSize ?? widget.element.fontSize,
+            letterSpacing: _localLetterSpacing ?? widget.element.letterSpacing,
+          ),
+          newWidth,
+          widget.activeLanguage,
+        );
+
+        double du = 0.0;
+        final double currentW = _localWidth ?? widget.element.width;
+        final double currentH = _localHeight ?? widget.element.height;
+        if (isLeft) {
+          du = (currentW - newWidth) / 2.0;
+        } else if (isRight) {
+          du = (newWidth - currentW) / 2.0;
+        }
+
+        double dv = (newHeight - currentH) / 2.0;
+
+        final double angleRad = widget.element.rotation * 3.141592653589793 / 180.0;
+        final double cosA = math.cos(angleRad);
+        final double sinA = math.sin(angleRad);
+
+        final double shiftX = du * cosA - dv * sinA;
+        final double shiftY = du * sinA + dv * cosA;
+
+        final double newX = (_localX ?? widget.element.x) + (currentW - newWidth) / 2.0 + shiftX;
+        final double newY = (_localY ?? widget.element.y) + (currentH - newHeight) / 2.0 + shiftY;
+
+        setState(() {
+          _localWidth = newWidth;
+          _localHeight = newHeight;
+          _localX = newX;
+          _localY = newY;
+        });
+      }
+    } else {
+      final bool isLeft = alignment == Alignment.topLeft || alignment == Alignment.bottomLeft || alignment == Alignment.centerLeft;
+      final bool isRight = alignment == Alignment.topRight || alignment == Alignment.bottomRight || alignment == Alignment.centerRight;
+      final bool isTop = alignment == Alignment.topLeft || alignment == Alignment.topRight || alignment == Alignment.topCenter;
+      final bool isBottom = alignment == Alignment.bottomLeft || alignment == Alignment.bottomRight || alignment == Alignment.bottomCenter;
+
+      if (isCorner) {
+        final double factorW = isLeft ? -1 : 1;
+        final double factorH = isTop ? -1 : 1;
+
+        final double widthChange = factorW * dw;
+        final double heightChange = factorH * dh;
+
+        double baseW = _localWidth ?? widget.element.width;
+        double baseH = _localHeight ?? widget.element.height;
+
+        double ratio = 1.0;
+        if (widthChange.abs() > heightChange.abs()) {
+          ratio = (baseW + widthChange) / baseW;
+        } else {
+          ratio = (baseH + heightChange) / baseH;
+        }
+
+        final double newW = ((_localWidth ?? widget.element.width) * ratio).clamp(minW, maxDim);
+        final double newH = ((_localHeight ?? widget.element.height) * ratio).clamp(minH, maxDim);
+
+        double du = 0.0;
+        final double currentW = _localWidth ?? widget.element.width;
+        final double currentH = _localHeight ?? widget.element.height;
+        if (isLeft) {
+          du = (currentW - newW) / 2.0;
+        } else if (isRight) {
+          du = (newW - currentW) / 2.0;
+        }
+
+        double dv = 0.0;
+        if (isTop) {
+          dv = (currentH - newH) / 2.0;
+        } else if (isBottom) {
+          dv = (newH - currentH) / 2.0;
+        }
+
+        final double angleRad = widget.element.rotation * 3.141592653589793 / 180.0;
+        final double cosA = math.cos(angleRad);
+        final double sinA = math.sin(angleRad);
+
+        final double shiftX = du * cosA - dv * sinA;
+        final double shiftY = du * sinA + dv * cosA;
+
+        final double newX = (_localX ?? widget.element.x) + (currentW - newW) / 2.0 + shiftX;
+        final double newY = (_localY ?? widget.element.y) + (currentH - newH) / 2.0 + shiftY;
+
+        setState(() {
+          _localWidth = newW;
+          _localHeight = newH;
+          _localX = newX;
+          _localY = newY;
+        });
+      } else {
+        double newW = _localWidth ?? widget.element.width;
+        double newH = _localHeight ?? widget.element.height;
+
+        if (alignment == Alignment.centerRight) {
+          newW = ((_localWidth ?? widget.element.width) + dw).clamp(minW, maxDim);
+        } else if (alignment == Alignment.centerLeft) {
+          newW = ((_localWidth ?? widget.element.width) - dw).clamp(minW, maxDim);
+        } else if (alignment == Alignment.bottomCenter) {
+          newH = ((_localHeight ?? widget.element.height) + dh).clamp(minH, maxDim);
+        } else if (alignment == Alignment.topCenter) {
+          newH = ((_localHeight ?? widget.element.height) - dh).clamp(minH, maxDim);
+        }
+
+        double du = 0.0;
+        final double currentW = _localWidth ?? widget.element.width;
+        final double currentH = _localHeight ?? widget.element.height;
+        if (alignment == Alignment.centerLeft) {
+          du = (currentW - newW) / 2.0;
+        } else if (alignment == Alignment.centerRight) {
+          du = (newW - currentW) / 2.0;
+        }
+
+        double dv = 0.0;
+        if (alignment == Alignment.topCenter) {
+          dv = (currentH - newH) / 2.0;
+        } else if (alignment == Alignment.bottomCenter) {
+          dv = (newH - currentH) / 2.0;
+        }
+
+        final double angleRad = widget.element.rotation * 3.141592653589793 / 180.0;
+        final double cosA = math.cos(angleRad);
+        final double sinA = math.sin(angleRad);
+
+        final double shiftX = du * cosA - dv * sinA;
+        final double shiftY = du * sinA + dv * cosA;
+
+        final double newX = (_localX ?? widget.element.x) + (currentW - newW) / 2.0 + shiftX;
+        final double newY = (_localY ?? widget.element.y) + (currentH - newH) / 2.0 + shiftY;
+
+        setState(() {
+          _localWidth = newW;
+          _localHeight = newH;
+          _localX = newX;
+          _localY = newY;
+        });
+      }
+    }
+
+    widget.guidelineNotifier.value = GuidelineInfo(
+      x: _localX!,
+      y: _localY!,
+      width: _localWidth!,
+      height: _localHeight!,
+      pageW: widget.pageW,
+      pageH: widget.pageH,
+      scaleX: widget.scaleX,
+      scaleY: widget.scaleY,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!widget.element.isVisible) return const SizedBox.shrink();
+
+    if (widget.element.id.endsWith('_map_icon')) {
+      final provider = Provider.of<InvitationProvider>(context, listen: false);
       final hasMapUrl = provider.elements.any((e) => e.mapUrl != null && e.mapUrl!.isNotEmpty);
       if (!hasMapUrl) {
         return const SizedBox.shrink();
       }
     }
 
-    final sx = scaleX;
-    final sy = scaleY;
+    final sx = widget.scaleX;
+    final sy = widget.scaleY;
     const double padding = 32.0;
 
-    double textW = element.width;
-    double textH = element.height;
-    double newX = element.x;
-    double newY = element.y;
+    double textW = _localWidth ?? widget.element.width;
+    double textH = _localHeight ?? widget.element.height;
+    double newX = _localX ?? widget.element.x;
+    double newY = _localY ?? widget.element.y;
 
-    void handleResize({
-      required double dx,
-      required double dy,
-      required Alignment alignment,
-    }) {
-      // 1. Convert screen deltas to unscaled canvas coordinates
-      final double dw = dx / sx;
-      final double dh = dy / sy;
-
-      const double minW = 30.0;
-      const double minH = 15.0;
-      const double maxDim = 800.0;
-
-      final bool isCorner = alignment == Alignment.topLeft ||
-          alignment == Alignment.topRight ||
-          alignment == Alignment.bottomLeft ||
-          alignment == Alignment.bottomRight;
-
-      if (element.type == ElementType.text) {
-        final bool isLeft = alignment == Alignment.topLeft || alignment == Alignment.bottomLeft || alignment == Alignment.centerLeft;
-        final bool isRight = alignment == Alignment.topRight || alignment == Alignment.bottomRight || alignment == Alignment.centerRight;
-        final bool isTop = alignment == Alignment.topLeft || alignment == Alignment.topRight || alignment == Alignment.topCenter;
-        final bool isBottom = alignment == Alignment.bottomLeft || alignment == Alignment.bottomRight || alignment == Alignment.bottomCenter;
-
-        if (isCorner) {
-          // Corner resize scales width, height, font size, and letter spacing proportionally
-          final double factorW = isLeft ? -1 : 1;
-          final double factorH = isTop ? -1 : 1;
-          final double widthChange = factorW * dw;
-          final double heightChange = factorH * dh;
-
-          // Stable ratio based on maximum axis drag change
-          double ratio = 1.0;
-          if (widthChange.abs() > heightChange.abs()) {
-            ratio = (element.width + widthChange) / element.width;
-          } else {
-            ratio = (element.height + heightChange) / element.height;
-          }
-
-          // Clamp and calculate new font size
-          final double newFontSize = (element.fontSize * ratio).clamp(6.0, 120.0);
-          final double finalRatio = newFontSize / element.fontSize;
-
-          // Scale model dimensions proportionally
-          final double newWidth = (element.width * finalRatio).clamp(minW, maxDim);
-          final double newHeight = (element.height * finalRatio).clamp(minH, maxDim);
-          final double newLetterSpacing = element.letterSpacing * finalRatio;
-
-          // Calculate new coordinates to keep opposite corner pinned under rotation
-          double du = 0.0;
-          if (isLeft) {
-            du = (element.width - newWidth) / 2.0;
-          } else if (isRight) {
-            du = (newWidth - element.width) / 2.0;
-          }
-
-          double dv = 0.0;
-          if (isTop) {
-            dv = (element.height - newHeight) / 2.0;
-          } else if (isBottom) {
-            dv = (newHeight - element.height) / 2.0;
-          }
-
-          final double angleRad = element.rotation * 3.141592653589793 / 180.0;
-          final double cosA = math.cos(angleRad);
-          final double sinA = math.sin(angleRad);
-
-          final double shiftX = du * cosA - dv * sinA;
-          final double shiftY = du * sinA + dv * cosA;
-
-          final double newX = element.x + (element.width - newWidth) / 2.0 + shiftX;
-          final double newY = element.y + (element.height - newHeight) / 2.0 + shiftY;
-
-          onResize(
-            newWidth,
-            newHeight,
-            newFontSize,
-            newX: newX,
-            newY: newY,
-            newLetterSpacing: newLetterSpacing,
-          );
-        } else {
-          // Side resize: modify ONLY width, keep font size same, auto wrap text, update height dynamically
-          double newWidth = element.width;
-          if (isRight) {
-            newWidth = (element.width + dw).clamp(minW, maxDim);
-          } else if (isLeft) {
-            newWidth = (element.width - dw).clamp(minW, maxDim);
-          }
-
-          // Calculate dynamic text height based on new width
-          final double newHeight = _calculateTextHeight(element, newWidth, activeLanguage);
-
-          // Calculate new coordinates to keep opposite side pinned under rotation (top edge is pinned for vertical changes)
-          double du = 0.0;
-          if (isLeft) {
-            du = (element.width - newWidth) / 2.0;
-          } else if (isRight) {
-            du = (newWidth - element.width) / 2.0;
-          }
-
-          double dv = (newHeight - element.height) / 2.0;
-
-          final double angleRad = element.rotation * 3.141592653589793 / 180.0;
-          final double cosA = math.cos(angleRad);
-          final double sinA = math.sin(angleRad);
-
-          final double shiftX = du * cosA - dv * sinA;
-          final double shiftY = du * sinA + dv * cosA;
-
-          final double newX = element.x + (element.width - newWidth) / 2.0 + shiftX;
-          final double newY = element.y + (element.height - newHeight) / 2.0 + shiftY;
-
-          onResize(
-            newWidth,
-            newHeight,
-            null,
-            newX: newX,
-            newY: newY,
-          );
-        }
-      } else {
-        // Original logic for non-text elements (image, divider, decorative)
-        final bool isLeft = alignment == Alignment.topLeft || alignment == Alignment.bottomLeft || alignment == Alignment.centerLeft;
-        final bool isRight = alignment == Alignment.topRight || alignment == Alignment.bottomRight || alignment == Alignment.centerRight;
-        final bool isTop = alignment == Alignment.topLeft || alignment == Alignment.topRight || alignment == Alignment.topCenter;
-        final bool isBottom = alignment == Alignment.bottomLeft || alignment == Alignment.bottomRight || alignment == Alignment.bottomCenter;
-
-        if (isCorner) {
-          final double factorW = isLeft ? -1 : 1;
-          final double factorH = isTop ? -1 : 1;
-
-          final double widthChange = factorW * dw;
-          final double heightChange = factorH * dh;
-
-          double baseW = element.width;
-          double baseH = element.height;
-
-          double ratio = 1.0;
-          if (widthChange.abs() > heightChange.abs()) {
-            ratio = (baseW + widthChange) / baseW;
-          } else {
-            ratio = (baseH + heightChange) / baseH;
-          }
-
-          final double newW = (element.width * ratio).clamp(minW, maxDim);
-          final double newH = (element.height * ratio).clamp(minH, maxDim);
-
-          double du = 0.0;
-          if (isLeft) {
-            du = (element.width - newW) / 2.0;
-          } else if (isRight) {
-            du = (newW - element.width) / 2.0;
-          }
-
-          double dv = 0.0;
-          if (isTop) {
-            dv = (element.height - newH) / 2.0;
-          } else if (isBottom) {
-            dv = (newH - element.height) / 2.0;
-          }
-
-          final double angleRad = element.rotation * 3.141592653589793 / 180.0;
-          final double cosA = math.cos(angleRad);
-          final double sinA = math.sin(angleRad);
-
-          final double shiftX = du * cosA - dv * sinA;
-          final double shiftY = du * sinA + dv * cosA;
-
-          final double newX = element.x + (element.width - newW) / 2.0 + shiftX;
-          final double newY = element.y + (element.height - newH) / 2.0 + shiftY;
-
-          onResize(newW, newH, null, newX: newX, newY: newY);
-        } else {
-          // Side edges for non-text
-          double newW = element.width;
-          double newH = element.height;
-
-          if (alignment == Alignment.centerRight) {
-            newW = (element.width + dw).clamp(minW, maxDim);
-          } else if (alignment == Alignment.centerLeft) {
-            newW = (element.width - dw).clamp(minW, maxDim);
-          } else if (alignment == Alignment.bottomCenter) {
-            newH = (element.height + dh).clamp(minH, maxDim);
-          } else if (alignment == Alignment.topCenter) {
-            newH = (element.height - dh).clamp(minH, maxDim);
-          }
-
-          double du = 0.0;
-          if (alignment == Alignment.centerLeft) {
-            du = (element.width - newW) / 2.0;
-          } else if (alignment == Alignment.centerRight) {
-            du = (newW - element.width) / 2.0;
-          }
-
-          double dv = 0.0;
-          if (alignment == Alignment.topCenter) {
-            dv = (element.height - newH) / 2.0;
-          } else if (alignment == Alignment.bottomCenter) {
-            dv = (newH - element.height) / 2.0;
-          }
-
-          final double angleRad = element.rotation * 3.141592653589793 / 180.0;
-          final double cosA = math.cos(angleRad);
-          final double sinA = math.sin(angleRad);
-
-          final double shiftX = du * cosA - dv * sinA;
-          final double shiftY = du * sinA + dv * cosA;
-
-          final double newX = element.x + (element.width - newW) / 2.0 + shiftX;
-          final double newY = element.y + (element.height - newH) / 2.0 + shiftY;
-
-          onResize(newW, newH, null, newX: newX, newY: newY);
-        }
-      }
-    }
+    final currentElementCopy = widget.element.copyWith(
+      x: newX,
+      y: newY,
+      width: textW,
+      height: textH,
+      fontSize: _localFontSize ?? widget.element.fontSize,
+      letterSpacing: _localLetterSpacing ?? widget.element.letterSpacing,
+    );
 
     return Positioned(
       left: (newX * sx) - padding,
@@ -312,59 +412,95 @@ class DraggableElement extends StatelessWidget {
       width: (textW * sx) + padding * 2,
       height: (textH * sy) + padding * 2,
       child: Transform.rotate(
-        angle: element.rotation * 3.141592653589793 / 180.0,
+        angle: widget.element.rotation * 3.141592653589793 / 180.0,
         child: Stack(
           clipBehavior: Clip.none,
           children: [
-            // 🔹 MAIN ELEMENT CONTENT (Wrapped with drag-to-move gestures)
             Positioned(
               left: padding,
               top: padding,
               width: textW * sx,
               height: textH * sy,
               child: Opacity(
-                opacity: element.opacity,
+                opacity: widget.element.opacity,
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
-                  onTap: onTap,
+                  onTap: widget.onTap,
                   onDoubleTap: () {
-                    final String idLower = element.id.toLowerCase();
-                    final String pathLower = (element.assetPath ?? '').toLowerCase();
+                    final String idLower = widget.element.id.toLowerCase();
+                    final String pathLower = (widget.element.assetPath ?? '').toLowerCase();
                     final bool isGaneshaOrImage = idLower.contains('ganesh') || 
                                                   pathLower.contains('ganesh') || 
-                                                  element.type == ElementType.sticker || 
-                                                  element.type == ElementType.image;
+                                                  widget.element.type == ElementType.sticker || 
+                                                  widget.element.type == ElementType.image;
 
                     if (isGaneshaOrImage) {
                       _showGaneshPicker(context);
-                    } else if (element.isEditable && element.type == ElementType.text) {
+                    } else if (widget.element.isEditable && widget.element.type == ElementType.text) {
                       _showTextEditor(context);
                     }
                   },
-                  onPanStart: (_) => onActionStart?.call(),
-                  onPanEnd: (_) => onActionEnd?.call(),
-                  onPanUpdate: element.isMovable
+                  onPanStart: (_) {
+                    _isDragging = true;
+                    widget.onActionStart?.call();
+                  },
+                  onPanEnd: (_) {
+                    _isDragging = false;
+                    widget.guidelineNotifier.value = null;
+                    widget.onDrag(_localX!, _localY!);
+                    widget.onActionEnd?.call();
+                  },
+                  onPanUpdate: widget.element.isMovable
                       ? (details) {
-                          // Rotate the local delta back to global/unrotated coordinates for dragging
-                          final double angleRad = element.rotation * 3.141592653589793 / 180.0;
+                          final double angleRad = widget.element.rotation * 3.141592653589793 / 180.0;
                           final double cosA = math.cos(angleRad);
                           final double sinA = math.sin(angleRad);
                           final double globalDx = details.delta.dx * cosA - details.delta.dy * sinA;
                           final double globalDy = details.delta.dx * sinA + details.delta.dy * cosA;
-                          onDrag(globalDx, globalDy);
+                          
+                          _localX = (_localX ?? widget.element.x) + globalDx / widget.scaleX;
+                          _localY = (_localY ?? widget.element.y) + globalDy / widget.scaleY;
+
+                          final currentW = _localWidth ?? widget.element.width;
+                          final currentH = _localHeight ?? widget.element.height;
+
+                          final centerX = _localX! + currentW / 2;
+                          if ((centerX - widget.pageW / 2).abs() < 5.0) {
+                            _localX = widget.pageW / 2 - currentW / 2;
+                          }
+
+                          final centerY = _localY! + currentH / 2;
+                          if ((centerY - widget.pageH / 2).abs() < 5.0) {
+                            _localY = widget.pageH / 2 - currentH / 2;
+                          }
+
+                          widget.guidelineNotifier.value = GuidelineInfo(
+                            x: _localX!,
+                            y: _localY!,
+                            width: currentW,
+                            height: currentH,
+                            pageW: widget.pageW,
+                            pageH: widget.pageH,
+                            scaleX: widget.scaleX,
+                            scaleY: widget.scaleY,
+                          );
+
+                          setState(() {});
                         }
                       : null,
                   child: Container(
                     width: textW * sx,
                     height: textH * sy,
-                    color: Colors.transparent, // Ensure hit testing works properly
+                    color: Colors.transparent,
                     child: Stack(
                       clipBehavior: Clip.none,
                       children: [
                         Positioned.fill(
-                          child: _buildContent(context, sx, sy),
+                          child: RepaintBoundary(
+                            child: _buildContent(context, sx, sy, currentElementCopy),
+                          ),
                         ),
-                        if (isSelected)
+                        if (widget.isSelected)
                           Positioned.fill(
                             child: IgnorePointer(
                               child: Container(
@@ -385,13 +521,12 @@ class DraggableElement extends StatelessWidget {
               ),
             ),
 
-            // 🗑️ DELETE FLOATING BUTTON ABOVE ELEMENT
-            if (isSelected && onDelete != null)
+            if (widget.isSelected && widget.onDelete != null)
               Positioned(
                 left: padding + (textW * sx) / 2 - 15.0,
                 top: padding - 36.0,
                 child: GestureDetector(
-                  onTap: onDelete,
+                  onTap: widget.onDelete,
                   child: Container(
                     width: 30.0,
                     height: 30.0,
@@ -416,9 +551,7 @@ class DraggableElement extends StatelessWidget {
                 ),
               ),
 
-            // 🔹 RESIZE HANDLES (siblings in Stack, preventing any gesture conflict!)
-            if (isSelected && element.isResizable) ...[
-              // Top-Left corner
+            if (widget.isSelected && widget.element.isResizable) ...[
               _resizeHandle(
                 alignment: Alignment.topLeft,
                 cursor: SystemMouseCursors.resizeUpLeft,
@@ -427,13 +560,27 @@ class DraggableElement extends StatelessWidget {
                 sy: sy,
                 elementW: textW,
                 elementH: textH,
-                onActionStart: () => onActionStart?.call(),
-                onActionEnd: () => onActionEnd?.call(),
+                onActionStart: () {
+                  _isResizing = true;
+                  widget.onActionStart?.call();
+                },
+                onActionEnd: () {
+                  _isResizing = false;
+                  widget.guidelineNotifier.value = null;
+                  widget.onResize(
+                    _localWidth!,
+                    _localHeight!,
+                    _localFontSize,
+                    newX: _localX,
+                    newY: _localY,
+                    newLetterSpacing: _localLetterSpacing,
+                  );
+                  widget.onActionEnd?.call();
+                },
                 onDrag: (dx, dy) {
                   handleResize(dx: dx, dy: dy, alignment: Alignment.topLeft);
                 },
               ),
-              // Top-Right corner
               _resizeHandle(
                 alignment: Alignment.topRight,
                 cursor: SystemMouseCursors.resizeUpRight,
@@ -442,13 +589,27 @@ class DraggableElement extends StatelessWidget {
                 sy: sy,
                 elementW: textW,
                 elementH: textH,
-                onActionStart: () => onActionStart?.call(),
-                onActionEnd: () => onActionEnd?.call(),
+                onActionStart: () {
+                  _isResizing = true;
+                  widget.onActionStart?.call();
+                },
+                onActionEnd: () {
+                  _isResizing = false;
+                  widget.guidelineNotifier.value = null;
+                  widget.onResize(
+                    _localWidth!,
+                    _localHeight!,
+                    _localFontSize,
+                    newX: _localX,
+                    newY: _localY,
+                    newLetterSpacing: _localLetterSpacing,
+                  );
+                  widget.onActionEnd?.call();
+                },
                 onDrag: (dx, dy) {
                   handleResize(dx: dx, dy: dy, alignment: Alignment.topRight);
                 },
               ),
-              // Bottom-Left corner
               _resizeHandle(
                 alignment: Alignment.bottomLeft,
                 cursor: SystemMouseCursors.resizeDownLeft,
@@ -457,13 +618,27 @@ class DraggableElement extends StatelessWidget {
                 sy: sy,
                 elementW: textW,
                 elementH: textH,
-                onActionStart: () => onActionStart?.call(),
-                onActionEnd: () => onActionEnd?.call(),
+                onActionStart: () {
+                  _isResizing = true;
+                  widget.onActionStart?.call();
+                },
+                onActionEnd: () {
+                  _isResizing = false;
+                  widget.guidelineNotifier.value = null;
+                  widget.onResize(
+                    _localWidth!,
+                    _localHeight!,
+                    _localFontSize,
+                    newX: _localX,
+                    newY: _localY,
+                    newLetterSpacing: _localLetterSpacing,
+                  );
+                  widget.onActionEnd?.call();
+                },
                 onDrag: (dx, dy) {
                   handleResize(dx: dx, dy: dy, alignment: Alignment.bottomLeft);
                 },
               ),
-              // Bottom-Right corner
               _resizeHandle(
                 alignment: Alignment.bottomRight,
                 cursor: SystemMouseCursors.resizeDownRight,
@@ -472,13 +647,27 @@ class DraggableElement extends StatelessWidget {
                 sy: sy,
                 elementW: textW,
                 elementH: textH,
-                onActionStart: () => onActionStart?.call(),
-                onActionEnd: () => onActionEnd?.call(),
+                onActionStart: () {
+                  _isResizing = true;
+                  widget.onActionStart?.call();
+                },
+                onActionEnd: () {
+                  _isResizing = false;
+                  widget.guidelineNotifier.value = null;
+                  widget.onResize(
+                    _localWidth!,
+                    _localHeight!,
+                    _localFontSize,
+                    newX: _localX,
+                    newY: _localY,
+                    newLetterSpacing: _localLetterSpacing,
+                  );
+                  widget.onActionEnd?.call();
+                },
                 onDrag: (dx, dy) {
                   handleResize(dx: dx, dy: dy, alignment: Alignment.bottomRight);
                 },
               ),
-              // Left edge
               _resizeHandle(
                 alignment: Alignment.centerLeft,
                 cursor: SystemMouseCursors.resizeColumn,
@@ -487,13 +676,27 @@ class DraggableElement extends StatelessWidget {
                 sy: sy,
                 elementW: textW,
                 elementH: textH,
-                onActionStart: () => onActionStart?.call(),
-                onActionEnd: () => onActionEnd?.call(),
+                onActionStart: () {
+                  _isResizing = true;
+                  widget.onActionStart?.call();
+                },
+                onActionEnd: () {
+                  _isResizing = false;
+                  widget.guidelineNotifier.value = null;
+                  widget.onResize(
+                    _localWidth!,
+                    _localHeight!,
+                    _localFontSize,
+                    newX: _localX,
+                    newY: _localY,
+                    newLetterSpacing: _localLetterSpacing,
+                  );
+                  widget.onActionEnd?.call();
+                },
                 onDrag: (dx, dy) {
                   handleResize(dx: dx, dy: 0, alignment: Alignment.centerLeft);
                 },
               ),
-              // Right edge
               _resizeHandle(
                 alignment: Alignment.centerRight,
                 cursor: SystemMouseCursors.resizeColumn,
@@ -502,14 +705,28 @@ class DraggableElement extends StatelessWidget {
                 sy: sy,
                 elementW: textW,
                 elementH: textH,
-                onActionStart: () => onActionStart?.call(),
-                onActionEnd: () => onActionEnd?.call(),
+                onActionStart: () {
+                  _isResizing = true;
+                  widget.onActionStart?.call();
+                },
+                onActionEnd: () {
+                  _isResizing = false;
+                  widget.guidelineNotifier.value = null;
+                  widget.onResize(
+                    _localWidth!,
+                    _localHeight!,
+                    _localFontSize,
+                    newX: _localX,
+                    newY: _localY,
+                    newLetterSpacing: _localLetterSpacing,
+                  );
+                  widget.onActionEnd?.call();
+                },
                 onDrag: (dx, dy) {
                   handleResize(dx: dx, dy: 0, alignment: Alignment.centerRight);
                 },
               ),
-              // Top edge (only for non-text)
-              if (element.type != ElementType.text)
+              if (widget.element.type != ElementType.text)
                 _resizeHandle(
                   alignment: Alignment.topCenter,
                   cursor: SystemMouseCursors.resizeRow,
@@ -518,14 +735,28 @@ class DraggableElement extends StatelessWidget {
                   sy: sy,
                   elementW: textW,
                   elementH: textH,
-                  onActionStart: () => onActionStart?.call(),
-                  onActionEnd: () => onActionEnd?.call(),
+                  onActionStart: () {
+                    _isResizing = true;
+                    widget.onActionStart?.call();
+                  },
+                  onActionEnd: () {
+                    _isResizing = false;
+                    widget.guidelineNotifier.value = null;
+                    widget.onResize(
+                      _localWidth!,
+                      _localHeight!,
+                      _localFontSize,
+                      newX: _localX,
+                      newY: _localY,
+                      newLetterSpacing: _localLetterSpacing,
+                    );
+                    widget.onActionEnd?.call();
+                  },
                   onDrag: (dx, dy) {
                     handleResize(dx: 0, dy: dy, alignment: Alignment.topCenter);
                   },
                 ),
-              // Bottom edge (only for non-text)
-              if (element.type != ElementType.text)
+              if (widget.element.type != ElementType.text)
                 _resizeHandle(
                   alignment: Alignment.bottomCenter,
                   cursor: SystemMouseCursors.resizeRow,
@@ -534,8 +765,23 @@ class DraggableElement extends StatelessWidget {
                   sy: sy,
                   elementW: textW,
                   elementH: textH,
-                  onActionStart: () => onActionStart?.call(),
-                  onActionEnd: () => onActionEnd?.call(),
+                  onActionStart: () {
+                    _isResizing = true;
+                    widget.onActionStart?.call();
+                  },
+                  onActionEnd: () {
+                    _isResizing = false;
+                    widget.guidelineNotifier.value = null;
+                    widget.onResize(
+                      _localWidth!,
+                      _localHeight!,
+                      _localFontSize,
+                      newX: _localX,
+                      newY: _localY,
+                      newLetterSpacing: _localLetterSpacing,
+                    );
+                    widget.onActionEnd?.call();
+                  },
                   onDrag: (dx, dy) {
                     handleResize(dx: 0, dy: dy, alignment: Alignment.bottomCenter);
                   },
@@ -547,25 +793,22 @@ class DraggableElement extends StatelessWidget {
     );
   }
 
-  // ─────────────────────────────────────────────────
-  // 🎨 RENDER CONTENT
-  // ─────────────────────────────────────────────────
-  Widget _buildContent(BuildContext context, double sx, double sy) {
+  Widget _buildContent(BuildContext context, double sx, double sy, TemplateElement element) {
     if (element.id.contains('_map_icon')) {
       return GoogleMapsIconWidget(size: element.height * sy);
     }
     switch (element.type) {
       case ElementType.text:
         return Container(
-          alignment: _getAlignment(),
+          alignment: _getAlignment(element),
           padding: EdgeInsets.zero,
           child: Text(
-            element.getDisplayText(activeLanguage),
+            element.getDisplayText(widget.activeLanguage),
             softWrap: true,
             overflow: TextOverflow.visible,
-            textAlign: element.textAlign,
-            textDirection: TemplateElement.textDirectionFor(activeLanguage),
-            style: element.getTextStyleForLanguage(activeLanguage, scale: sx),
+            textAlign: element.getTextAlignForLanguage(widget.activeLanguage),
+            textDirection: TemplateElement.textDirectionFor(widget.activeLanguage),
+            style: element.getTextStyleForLanguage(widget.activeLanguage, scale: sx),
           ),
         );
 
@@ -575,7 +818,7 @@ class DraggableElement extends StatelessWidget {
           final idLower = element.id.toLowerCase();
           final pathLower = (element.assetPath ?? '').toLowerCase();
           if (idLower.contains('ganesh') || pathLower.contains('ganesh')) {
-            final provider = Provider.of<InvitationProvider>(context, listen: true);
+            final provider = Provider.of<InvitationProvider>(context, listen: false);
             if (provider.logo.type == LogoType.customSvg) {
               if (provider.logo.rawSvgContent != null) {
                 return SvgPicture.string(
@@ -590,6 +833,14 @@ class DraggableElement extends StatelessWidget {
                   if (path.startsWith('http://') || path.startsWith('https://')) {
                     return SvgPicture.network(
                       path,
+                      width: element.width * sx,
+                      height: element.height * sy,
+                      fit: BoxFit.contain,
+                    );
+                  }
+                  if (path.startsWith('uploads/') || path.startsWith('/uploads/')) {
+                    return SvgPicture.network(
+                      resolveImageUrl(path),
                       width: element.width * sx,
                       height: element.height * sy,
                       fit: BoxFit.contain,
@@ -613,8 +864,16 @@ class DraggableElement extends StatelessWidget {
                       );
                     }
                   }
-                  return SvgPicture.file(
-                    File(path),
+                  if (File(path).existsSync()) {
+                    return SvgPicture.file(
+                      File(path),
+                      width: element.width * sx,
+                      height: element.height * sy,
+                      fit: BoxFit.contain,
+                    );
+                  }
+                  return SvgPicture.network(
+                    resolveImageUrl(path),
                     width: element.width * sx,
                     height: element.height * sy,
                     fit: BoxFit.contain,
@@ -623,34 +882,8 @@ class DraggableElement extends StatelessWidget {
               }
             } else if (provider.logo.type == LogoType.customFile && provider.logo.customFilePath != null) {
               final String path = provider.logo.customFilePath!;
-              if (path.startsWith('http://') || path.startsWith('https://')) {
-                return Image.network(
-                  path,
-                  fit: BoxFit.contain,
-                  width: element.width * sx,
-                  height: element.height * sy,
-                );
-              }
-              if (path.contains('assets/')) {
-                final clean = cleanAssetPath(path);
-                if (isNetworkImage(clean)) {
-                  return Image.network(
-                    resolveImageUrl(clean),
-                    fit: BoxFit.contain,
-                    width: element.width * sx,
-                    height: element.height * sy,
-                  );
-                } else {
-                  return Image.asset(
-                    clean,
-                    fit: BoxFit.contain,
-                    width: element.width * sx,
-                    height: element.height * sy,
-                  );
-                }
-              }
-              return Image.file(
-                File(path),
+              return AppImage(
+                src: path,
                 fit: BoxFit.contain,
                 width: element.width * sx,
                 height: element.height * sy,
@@ -658,34 +891,8 @@ class DraggableElement extends StatelessWidget {
             } else {
               final String? path = provider.logo.presetAsset ?? element.assetPath;
               if (path != null && path.isNotEmpty) {
-                if (path.startsWith('http://') || path.startsWith('https://')) {
-                  return Image.network(
-                    path,
-                    fit: BoxFit.contain,
-                    width: element.width * sx,
-                    height: element.height * sy,
-                  );
-                }
-                if (path.contains('assets/')) {
-                  final clean = cleanAssetPath(path);
-                  if (isNetworkImage(clean)) {
-                    return Image.network(
-                      resolveImageUrl(clean),
-                      fit: BoxFit.contain,
-                      width: element.width * sx,
-                      height: element.height * sy,
-                    );
-                  } else {
-                    return Image.asset(
-                      clean,
-                      fit: BoxFit.contain,
-                      width: element.width * sx,
-                      height: element.height * sy,
-                    );
-                  }
-                }
-                return Image.file(
-                  File(path),
+                return AppImage(
+                  src: path,
                   fit: BoxFit.contain,
                   width: element.width * sx,
                   height: element.height * sy,
@@ -695,20 +902,12 @@ class DraggableElement extends StatelessWidget {
           }
         }
         if (element.assetPath != null && element.assetPath!.isNotEmpty) {
-          final isNetwork = isNetworkImage(element.assetPath!);
-          return isNetwork
-              ? Image.network(
-                  resolveImageUrl(element.assetPath!),
-                  fit: BoxFit.contain,
-                  width: element.width * sx,
-                  height: element.height * sy,
-                )
-              : Image.asset(
-                  cleanAssetPath(element.assetPath!),
-                  fit: BoxFit.contain,
-                  width: element.width * sx,
-                  height: element.height * sy,
-                );
+          return AppImage(
+            src: element.assetPath!,
+            fit: BoxFit.contain,
+            width: element.width * sx,
+            height: element.height * sy,
+          );
         }
         return Container(
           color: Colors.grey.withValues(alpha: 0.3),
@@ -726,24 +925,15 @@ class DraggableElement extends StatelessWidget {
 
       case ElementType.decorative:
         if (element.assetPath != null && element.assetPath!.isNotEmpty) {
-          final isNetwork = isNetworkImage(element.assetPath!);
-          return isNetwork
-              ? Image.network(
-                  resolveImageUrl(element.assetPath!),
-                  fit: BoxFit.contain,
-                )
-              : Image.asset(
-                  cleanAssetPath(element.assetPath!),
-                  fit: BoxFit.contain,
-                );
+          return AppImage(
+            src: element.assetPath!,
+            fit: BoxFit.contain,
+          );
         }
         return const SizedBox.shrink();
     }
   }
 
-  // ─────────────────────────────────────────────────
-  // 📐 RESIZE HANDLE WIDGET
-  // ─────────────────────────────────────────────────
   Widget _resizeHandle({
     required Alignment alignment,
     required MouseCursor cursor,
@@ -826,12 +1016,6 @@ class DraggableElement extends StatelessWidget {
     );
   }
 
-  // ─────────────────────────────────────────────────
-  // ✏️ INLINE TEXT & LOGO EDITORS
-  // ─────────────────────────────────────────────────
-
-  /// Strips all known server prefixes from an asset path and normalizes it
-  /// to a clean relative path like 'assets/images/ganesh1.png'.
   String _normalizeGaneshPath(String path) {
     var p = path.trim();
     final pLower = p.toLowerCase();
@@ -844,15 +1028,17 @@ class DraggableElement extends StatelessWidget {
     if (pLower.contains('ganesh3.png')) {
       return 'assets/images/ganesh3.png';
     }
-    // Strip known server URL prefixes
     for (final prefix in [
-      'http://10.0.2.2:5000',
+      ApiConfig.baseUrl,
+      'http://192.168.1.68:8000',
+      'https://192.168.1.68:8000',
+      'http://10.0.2.2:8000',
       'http://10.0.2.2:8080',
-      'https://10.0.2.2:5000',
+      'https://10.0.2.2:8000',
       'https://10.0.2.2:8080',
-      'http://localhost:5000',
+      'http://localhost:8000',
       'http://localhost:8080',
-      'https://localhost:5000',
+      'https://localhost:8000',
       'https://localhost:8080',
     ]) {
       if (p.startsWith(prefix)) {
@@ -860,16 +1046,14 @@ class DraggableElement extends StatelessWidget {
         break;
       }
     }
-    // Remove leading slash
     if (p.startsWith('/')) p = p.substring(1);
     return p;
   }
 
-
   void _showGaneshPicker(BuildContext context) {
     final provider = Provider.of<InvitationProvider>(context, listen: false);
-    final String idLower = element.id.toLowerCase();
-    final String pathLower = (element.assetPath ?? '').toLowerCase();
+    final String idLower = widget.element.id.toLowerCase();
+    final String pathLower = (widget.element.assetPath ?? '').toLowerCase();
     final bool isGanesha = idLower.contains('ganesh') || pathLower.contains('ganesh');
 
     LogoModel tempLogo;
@@ -882,7 +1066,7 @@ class DraggableElement extends StatelessWidget {
         customFilePath: provider.logo.customFilePath,
       );
     } else {
-      final String path = element.assetPath ?? '';
+      final String path = widget.element.assetPath ?? '';
       final String normalized = _normalizeGaneshPath(path);
       if (normalized.endsWith('.svg')) {
         tempLogo = LogoModel(
@@ -924,7 +1108,6 @@ class DraggableElement extends StatelessWidget {
       selectedKey = 'uploaded';
     }
 
-    // Keep track of any custom logo state to show inside the 4th card
     LogoModel? customLogoState;
     if (tempLogo.type == LogoType.customSvg || tempLogo.type == LogoType.customFile) {
       customLogoState = tempLogo;
@@ -934,7 +1117,7 @@ class DraggableElement extends StatelessWidget {
           customLogoState = provider.logo;
         }
       } else {
-        final String path = element.assetPath ?? '';
+        final String path = widget.element.assetPath ?? '';
         final String normalized = _normalizeGaneshPath(path);
         if (path.isNotEmpty &&
             !normalized.endsWith('.svg') &&
@@ -1016,18 +1199,7 @@ class DraggableElement extends StatelessWidget {
               
               if (logo.type == LogoType.customFile && logo.customFilePath != null) {
                 final String path = logo.customFilePath!;
-                if (path.startsWith('http://') || path.startsWith('https://')) {
-                  return Image.network(path, fit: BoxFit.contain);
-                }
-                if (path.contains('assets/')) {
-                  final clean = cleanAssetPath(path);
-                  if (isNetworkImage(clean)) {
-                    return Image.network(resolveImageUrl(clean), fit: BoxFit.contain);
-                  } else {
-                    return Image.asset(clean, fit: BoxFit.contain);
-                  }
-                }
-                return Image.file(File(path), fit: BoxFit.contain);
+                return AppImage(src: path, fit: BoxFit.contain);
               }
               
               return Column(
@@ -1209,7 +1381,7 @@ class DraggableElement extends StatelessWidget {
                                     }
                                     if (newPath.isNotEmpty) {
                                       provider.updateField(() {
-                                        element.assetPath = newPath;
+                                        widget.element.assetPath = newPath;
                                       });
                                     }
                                   }
@@ -1249,8 +1421,6 @@ class DraggableElement extends StatelessWidget {
 
   bool _isDateField(TemplateElement el) {
     final id = el.id.toLowerCase();
-    
-    // Exclude obvious text fields that are not dates
     if (id.contains('title') ||
         id.contains('name') ||
         id.contains('address') ||
@@ -1281,7 +1451,6 @@ class DraggableElement extends StatelessWidget {
     final en = el.content.toLowerCase();
     final gu = el.contentGujarati.toLowerCase();
 
-    // Check for common date/time format markers
     final dateRegex = RegExp(r'\d{1,2}[/\-.]\d{1,2}[/\-.]\d{2,4}');
     final guDateRegex = RegExp(r'[૦-૯]{1,2}[/\-.][૦-૯]{1,2}[/\-.][૦-૯]{2,4}');
     
@@ -1289,14 +1458,12 @@ class DraggableElement extends StatelessWidget {
       return true;
     }
 
-    // Check for year patterns (e.g. 2025, 2026, etc. or Gujarati equivalents)
     final yearRegex = RegExp(r'\b202[5-9]\b');
     final guYearRegex = RegExp(r'૨૦૨[૫-૯]');
     if (yearRegex.hasMatch(en) || guYearRegex.hasMatch(gu)) {
       return true;
     }
 
-    // Check for month names
     const engMonths = [
       'january', 'february', 'march', 'april', 'may', 'june', 
       'july', 'august', 'september', 'october', 'november', 'december',
@@ -1314,7 +1481,6 @@ class DraggableElement extends StatelessWidget {
       if (gu.contains(month)) return true;
     }
 
-    // Explicit date indicators
     if (en.contains('date:') || 
         en.contains('time:') || 
         en.contains(' am') || 
@@ -1547,29 +1713,30 @@ class DraggableElement extends StatelessWidget {
   }
 
   void _showTextEditor(BuildContext context) {
-    if (_isDateField(element)) {
-      _showDatePickerFlow(context, element, (en, gu) {
-        onTextEdit(en, gu);
+    if (_isDateField(widget.element)) {
+      _showDatePickerFlow(context, widget.element, (en, gu) {
+        widget.onTextEdit(en, gu);
       });
       return;
     }
 
-    String currentEn = element.content;
-    String currentGu = element.contentGujarati;
-    final bool isGuj = activeLanguage != 'English';
+    String currentEn = widget.element.content;
+    String currentGu = widget.element.contentGujarati;
+    final bool isGuj = widget.activeLanguage != 'English';
+    final lang = context.read<LanguageProvider>();
 
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        title: const Text("Edit Text", style: TextStyle(fontWeight: FontWeight.bold)),
+        title: Text(lang.editText, style: const TextStyle(fontWeight: FontWeight.bold)),
         content: SizedBox(
           width: 400,
           child: TransliterationField(
-            initialText: element.getDisplayText(activeLanguage),
+            initialText: widget.element.getDisplayText(widget.activeLanguage),
             isTransliterationOn: isGuj,
-            language: activeLanguage,
-            label: "Edit Content",
+            language: widget.activeLanguage,
+            label: lang.editContent,
             maxLines: 4,
             onChanged: (en, gu) {
               currentEn = en;
@@ -1581,7 +1748,7 @@ class DraggableElement extends StatelessWidget {
           TextButton(
             onPressed: () => Navigator.pop(ctx),
             style: TextButton.styleFrom(foregroundColor: Colors.grey.shade600),
-            child: const Text("Cancel"),
+            child: Text(lang.cancel),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(
@@ -1590,18 +1757,18 @@ class DraggableElement extends StatelessWidget {
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
             onPressed: () {
-              onTextEdit(currentEn, currentGu);
+              widget.onTextEdit(currentEn, currentGu);
               Navigator.pop(ctx);
             },
-            child: const Text("Save"),
+            child: Text(lang.save),
           ),
         ],
       ),
     );
   }
 
-  Alignment _getAlignment() {
-    switch (element.textAlign) {
+  Alignment _getAlignment(TemplateElement el) {
+    switch (el.getTextAlignForLanguage(widget.activeLanguage)) {
       case TextAlign.left:
       case TextAlign.start:
         return Alignment.centerLeft;

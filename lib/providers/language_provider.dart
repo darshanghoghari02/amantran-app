@@ -7,6 +7,7 @@ import '../repositories/user_repository.dart';
 import '../services/interaction_service.dart';
 import '../services/firestore_service.dart';
 import '../services/language_registry.dart';
+import '../models/guest_model.dart';
 
 /// Holds all translated UI strings for the app.
 /// When the language changes, all widgets listening to this provider rebuild instantly.
@@ -129,11 +130,18 @@ class LanguageProvider extends ChangeNotifier {
   }
 
   Future<void> _saveToHive(String key, dynamic value) async {
-    final box = await Hive.openBox(_boxName);
-    await box.put(key, value);
+    try {
+      final box = Hive.isBoxOpen(_boxName)
+          ? Hive.box(_boxName)
+          : await Hive.openBox(_boxName);
+      await box.put(key, value);
+    } catch (e) {
+      print("Error saving to Hive box $_boxName: $e");
+    }
   }
 
   void setLanguage(String lang) {
+    if (_currentLanguage == lang) return;
     _currentLanguage = lang;
     _saveToHive(_keyAppLang, lang);
     _saveSettingsToCloud();
@@ -152,33 +160,56 @@ class LanguageProvider extends ChangeNotifier {
 
     final filtered =
         _invitationLanguages.where((l) => available.contains(l)).toSet();
-    _invitationLanguages = filtered.isNotEmpty ? filtered : available;
+    final newInvLangs = filtered.isNotEmpty ? filtered : available;
 
+    bool changed = false;
+
+    // Check if invitation languages list changed
+    if (_invitationLanguages.length != newInvLangs.length ||
+        !_invitationLanguages.every(newInvLangs.contains)) {
+      _invitationLanguages = newInvLangs;
+      changed = true;
+    }
+
+    // Check if active invitation language needs correction
     if (!_invitationLanguages.contains(_activeInvitationLanguage)) {
       _activeInvitationLanguage = _invitationLanguages.contains('Gujarati')
           ? 'Gujarati'
           : _invitationLanguages.first;
       _saveToHive(_keyInvLang, _activeInvitationLanguage);
+      changed = true;
     }
-    _saveToHive(_keyInvLangsList, _invitationLanguages.toList());
-    _saveSettingsToCloud();
-    notifyListeners();
+
+    if (changed) {
+      _saveToHive(_keyInvLangsList, _invitationLanguages.toList());
+      _saveSettingsToCloud();
+      notifyListeners();
+    }
   }
 
   void setInvitationLanguages(Set<String> langs) {
     final available = LanguageRegistry.instance.languageNames;
-    _invitationLanguages = available.isEmpty
+    final targetLangs = available.isEmpty
         ? langs
         : langs.where((l) => available.contains(l)).toSet();
-    if (_invitationLanguages.isEmpty && available.isNotEmpty) {
-      _invitationLanguages = available;
+    final newInvLangs = targetLangs.isEmpty && available.isNotEmpty
+        ? available
+        : targetLangs;
+
+    // Check if invitation languages list changed
+    if (_invitationLanguages.length == newInvLangs.length &&
+        _invitationLanguages.every(newInvLangs.contains)) {
+      return; // No change!
     }
+
+    _invitationLanguages = newInvLangs;
     _saveToHive(_keyInvLangsList, _invitationLanguages.toList());
     _saveSettingsToCloud();
     notifyListeners();
   }
 
   void setActiveInvitationLanguage(String lang) {
+    if (_activeInvitationLanguage == lang && _invitationLangUserSet) return;
     _invitationLangUserSet = true;
     _activeInvitationLanguage = lang;
     _saveToHive(_keyInvLang, lang);
@@ -260,13 +291,13 @@ class LanguageProvider extends ChangeNotifier {
         'Urdu': '!👋 السلام علیکم، $name',
       });
 
-  String get subtitle => _t({
+ String get subtitle => _t({
         'English': 'Get your perfect template.',
-        'Gujarati': 'તમારું પરફેક્ટ ટેમ્પ્લેટ મેળવો.',
-        'Hindi': 'अपना परफेक्ट टेम्पलेट पाएं.',
-        'Marathi': 'तुमचा परिपूर्ण टेम्पलेट मिळवा.',
-        'Punjabi': 'ਆਪਣਾ ਸੰਪੂਰਨ ਟੈਂਪਲੇਟ ਪ੍ਰਾਪਤ ਕਰੋ.',
-        'Urdu': '.اپنا بہترین ٹیمپلیٹ حاصل کریں',
+        'Gujarati': 'તમારું પરફેક્ટ ટેમ્પલેટ મેળવો.',
+        'Hindi': 'अपना परफेक्ट टेम्पलेट प्राप्त करें।',
+        'Marathi': 'तुमचे परफेक्ट टेम्पलेट मिळवा.',
+        'Punjabi': 'ਆਪਣਾ ਪਰਫੈਕਟ ਟੈਂਪਲੇਟ ਪ੍ਰਾਪਤ ਕਰੋ।',
+        'Urdu': 'اپنا پرفیکٹ ٹیمپلیٹ حاصل کریں۔',
       });
 
   String get searchHint => _t({
@@ -419,7 +450,7 @@ class LanguageProvider extends ChangeNotifier {
         'Hindi': 'गोपनीयता नीति',
         'Marathi': 'गोपनीयता धोरण',
         'Punjabi': 'ਗੋਪਨੀਯਤਾ ਨੀਤੀ',
-        'Urdu': 'رازداری की پالیسی',
+        'Urdu': 'رازداری کی پالیسی',
       });
 
   String get signOut => _t({
@@ -446,7 +477,7 @@ class LanguageProvider extends ChangeNotifier {
         'Hindi': 'अभी तक कोई पसंदीदा नहीं',
         'Marathi': 'अजून कोणतेही आवडते नाही',
         'Punjabi': 'ਅਜੇ ਕੋਈ ਮਨਪਸੰਦ ਨਹੀਂ',
-        'Urdu': 'ابھی तक कोई पसंदीदा नहीं',
+        'Urdu': 'ابھی تک کوئی پسندیدہ نہیں',
       });
 
   String get noDraftsYet => _t({
@@ -455,7 +486,7 @@ class LanguageProvider extends ChangeNotifier {
         'Hindi': 'अभी तक कोई ड्राफ्ट नहीं. डिझाइन शरू करें!',
         'Marathi': 'अजून कोणताही मसुदा नाही. डिझाइन सुरू करा!',
         'Punjabi': 'ਅਜੇ ਕੋਈ ਡਰਾਫਟ ਨਹੀਂ। ਡਿਜ਼ਾਈਨ ਸ਼ੁਰੂ ਕਰੋ!',
-        'Urdu': '!ابھی تک کوئی ڈرافٹ نہیں۔ ڈیزائن شروع کریں',
+        'Urdu': 'ابھی تک کوئی ڈرافٹ نہیں، ڈیزائن شروع کریں!',
       });
 
   String get selected => _t({
@@ -473,7 +504,7 @@ class LanguageProvider extends ChangeNotifier {
         'Hindi': 'ऐप भाषा बदलें',
         'Marathi': 'ऐप भाषा बदला',
         'Punjabi': 'ਐਪ ਭਾਸ਼ਾ ਬਦલો',
-        'Urdu': 'ایپ زبان تبدیل کریں',
+        'Urdu': 'ایپ کی زبان تبدیل کریں',
       });
 
   String get selectInvitationLanguages => _t({
@@ -482,7 +513,7 @@ class LanguageProvider extends ChangeNotifier {
         'Hindi': 'निमंत्रण भाषाएं चुनें',
         'Marathi': 'निमंत्रण भाषा निवडा',
         'Punjabi': 'ਸੱਦਾ ਭਾਸ਼ਾਵਾਂ ਚੁਣੋ',
-        'Urdu': 'دعوت نامہ زبانیں منتخب کریں',
+        'Urdu': 'دعوت نامہ کی زبانیں منتخب کریں',
       });
 
   String get yourProfile => _t({
@@ -554,7 +585,7 @@ class LanguageProvider extends ChangeNotifier {
         'Hindi': 'प्रोफ़ाइल सफलतापूर्वक अपडेट की गई!',
         'Marathi': 'प्रोफाइल यशस्वीरित्या अपडेट झाली!',
         'Punjabi': 'ਪ੍ਰੋਫਾਈਲ ਸਫਲਤਾਪੂਰਵਕ ਅਪਡੇਟ ਕੀਤੀ ਗਈ!',
-        'Urdu': '!پروفائل کامیابی کے साथ अप अपडेट ہوگئی',
+        'Urdu': 'پروفائل کامیابی کے ساتھ اپ ڈیٹ ہوگئی!',
       });
 
   // ─────────────────────────────────────────────────────────────
@@ -576,7 +607,7 @@ class LanguageProvider extends ChangeNotifier {
         'Hindi': 'विशेषताएं:',
         'Marathi': 'वैशिष्ट्ये:',
         'Punjabi': 'ਵਿਸ਼ੇਸ਼ਤਾਵਾਂ:',
-        'Urdu': ':خصوصیات',
+        'Urdu': 'خصوصیات:',
       });
 
   String get feature1 => _t({
@@ -594,7 +625,7 @@ class LanguageProvider extends ChangeNotifier {
         'Hindi': 'उच्च गुणवत्ता वाला निमंत्रण डाउनलोड करें',
         'Marathi': 'उच्च-गुणवत्तेचे निमंत्रण डाउनलोड करा',
         'Punjabi': 'ਉੱਚ-ਗੁਣਵੱਤਾ ਵਾਲਾ ਸੱਦਾ ਪੱਤਰ ਡਾਊਨਲੋਡ ਕਰੋ',
-        'Urdu': 'اعلی معیار کا دعوت نامہ ڈاؤن لوڈ کریں',
+        'Urdu': 'اعلیٰ معیار کا دعوت نامہ ڈاؤن لوڈ کریں',
       });
 
   String get feature3 => _t({
@@ -609,10 +640,10 @@ class LanguageProvider extends ChangeNotifier {
   String get templateDescription => _t({
         'English': 'Celebrate your special day with a touch of tradition!',
         'Gujarati': 'પરંપરાના સ્પર્શ સાથે તમારા ખાસ દિવસની ઉજવણી કરો!',
-        'Hindi': 'પરંપરાના સ્પર્શ સાથે પોતાના વિશેષ દિવસની ઉજવણી કરો!',
+        'Hindi': 'परंपरा के स्पर्श के साथ अपने विशेष दिन का जश्न मनाएं!',
         'Marathi': 'परंपरेच्या स्पर्शासह तुमच्या विशेष दिवसाचा उत्सव साजरा करा!',
         'Punjabi': 'ਪਰੰਪਰਾ ਦੇ ਅਹਿਸਾਸ ਨਾਲ ਆਪਣੇ ਖਾਸ ਦਿਨ ਦਾ ਜਸ਼ਨ ਮਨਾਓ!',
-        'Urdu': '!روایت کے لمس کے ساتھ اپنے خاص دن کا جشن منائیں',
+        'Urdu': 'روایت کے لمس کے ساتھ اپنے خاص دن کا جشن منائیں!',
       });
 
   String get next => _t({
@@ -624,13 +655,44 @@ class LanguageProvider extends ChangeNotifier {
         'Urdu': 'اگلا',
       });
 
+  String get continueLabel => _t({
+        'English': 'Continue',
+        'Gujarati': 'ચાલુ રાખો',
+        'Hindi': 'जारी रखें',
+        'Marathi': 'सुरू ठेवा',
+        'Punjabi': 'ਜਾਰੀ ਰੱਖੋ',
+        'Urdu': 'جاری رکھیں'
+      });
+
+
+  String get chooseExactlyOneLanguage => _t({
+        'English': 'Choose exactly one language for the editor',
+        'Gujarati': 'એડિટર માટે બરાબર એક ભાષા પસંદ કરો',
+        'Hindi': 'संपादक के लिए ठीक एक भाषा चुनें',
+        'Marathi': 'संपादकासाठी अचूक एक भाषा निवडा',
+        'Punjabi': 'ਸੰਪਾਦਕ ਲਈ ਬਿਲਕੁਲ ਇੱਕ ਭਾਸ਼ਾ ਚੁਣੋ',
+        'Urdu': 'ایڈیٹر کے لیے ایک زبان منتخب کریں'
+      });
+
+  String get selectOneOrMoreLanguages => _t({
+        'English': 'Select one or more languages for your templates',
+        'Gujarati': 'તમારા ટેમ્પલેટ્સ માટે એક અથવા વધુ ભાષાઓ પસંદ કરો',
+        'Hindi': 'अपने टेम्पलेट्स के लिए एक या अधिक भाषाएं चुनें',
+        'Marathi': 'तुमच्या टेम्पलेटसाठी एक किंवा अधिक भाषा निवडा',
+        'Punjabi': 'ਆਪਣੇ ਟੈਂਪਲੇਟਸ ਲਈ ਇੱਕ ਜਾਂ ਵੱਧ ਭਾਸ਼ਾਵਾਂ ਚੁਣੋ',
+        'Urdu': 'اپنے ٹیمپلیٹس کے لیے ایک یا زیادہ زبانیں منتخب کریں'
+      });
+
+
+
+
   String get previous => _t({
         'English': 'Previous',
         'Gujarati': 'પાછળ',
         'Hindi': 'पिछला',
         'Marathi': 'मागील',
         'Punjabi': 'ਪਿਛਲਾ',
-        'Urdu': 'اگلا',
+        'Urdu': 'پچھلا',
       });
 
   String get save => _t({
@@ -648,7 +710,7 @@ class LanguageProvider extends ChangeNotifier {
         'Hindi': 'सहेज रहे हैं...',
         'Marathi': 'जतन करत आहे...',
         'Punjabi': 'ਸੁਰੱਖਿਅਤ ਕੀਤਾ ਜਾ ਰਿਹਾ ਹੈ...',
-        'Urdu': 'محفوظ ہو رہا ہے...',
+        'Urdu': 'محفوظ کیا جا رہا ہے...',
       });
 
   String get downloadComplete => _t({
@@ -666,7 +728,7 @@ class LanguageProvider extends ChangeNotifier {
         'Hindi': 'पूर्ण',
         'Marathi': 'पूर्ण',
         'Punjabi': 'ਹੋ ਗਿਆ',
-        'Urdu': 'ہو گیا'
+        'Urdu': 'مکمل ہو گیا'
       });
   String get cancel => _t({
         'English': 'Cancel',
@@ -675,6 +737,51 @@ class LanguageProvider extends ChangeNotifier {
         'Marathi': 'रद्द करा',
         'Punjabi': 'ਰੱਦ ਕਰੋ',
         'Urdu': 'منسوخ کریں'
+      });
+
+  String get preview => _t({
+        'English': 'Preview',
+        'Gujarati': 'પૂર્વાવલોકન',
+        'Hindi': 'पूर्वावलोकन',
+        'Marathi': 'पूर्वावलोकन',
+        'Punjabi': 'ਪੂਰਵਦਰਸ਼ਨ',
+        'Urdu': 'پیش نظارہ',
+      });
+
+  String get download => _t({
+        'English': 'Download',
+        'Gujarati': 'ડાઉનલોડ કરો',
+        'Hindi': 'डाउनलोड करें',
+        'Marathi': 'डाउनलोड करा',
+        'Punjabi': 'ਡਾਊਨਲੋਡ ਕਰੋ',
+        'Urdu': 'ڈاؤن لوڈ کریں',
+      });
+
+  String get deletePage => _t({
+        'English': 'Delete Page?',
+        'Gujarati': 'પૃષ્ઠ કાઢી નાખવું?',
+        'Hindi': 'पेज हटाएं?',
+        'Marathi': 'पृष्ठ हटवायचे?',
+        'Punjabi': 'ਪੰਨਾ ਮિટਾਉਣਾ?',
+        'Urdu': 'صفحہ حذف کریں؟',
+      });
+
+  String get deletePageConfirm => _t({
+        'English': 'Are you sure you want to delete this page?',
+        'Gujarati': 'શું તમે ખરેખર આ પૃષ્ઠ કાઢી નાખવા માંગો છો?',
+        'Hindi': 'क्या आप वाकई इस पेज को हटाना चाहते हैं?',
+        'Marathi': 'तुम्हाला नक्की हे पृष्ठ हटवायचे आहे का?',
+        'Punjabi': 'ਕੀ ਤੁਸੀਂ ਵਾਕਈ ਇਸ ਪੰਨੇ ਨੂੰ ਮਿਟਾਉਣਾ ਚਾਹੁੰਦੇ ਹੋ?',
+        'Urdu': 'کیا آپ واقعی اس صفحہ کو حذف کرنا چاہتے ہیں؟',
+      });
+
+  String pageLabel(int index, int total) => _t({
+        'English': 'Page $index/$total',
+        'Gujarati': 'પૃષ્ઠ $index/$total',
+        'Hindi': 'पेज $index/$total',
+        'Marathi': 'पृष्ठ $index/$total',
+        'Punjabi': 'ਪੰਨਾ $index/$total',
+        'Urdu': 'صفحہ $index/$total',
       });
 
   String get edit => _t({
@@ -722,6 +829,15 @@ class LanguageProvider extends ChangeNotifier {
         'Urdu': 'دھندلاپن',
       });
 
+  String get selectTextFieldPrompt => _t({
+        'English': 'Please select a text field first',
+        'Gujarati': 'કૃપા કરીને પહેલા લખાણ પસંદ કરો',
+        'Hindi': 'कृपया पहले एक टेक्स्ट फ़ील्ड चुनें',
+        'Marathi': 'कृपया आधी मजकूर फील्ड निवडा',
+        'Punjabi': 'ਕਿਰਪਾ ਕਰਕੇ ਪਹਿਲਾਂ ਇੱਕ ਟੈਕਸਟ ਫੀਲਡ ਚੁਣੋ',
+        'Urdu': 'براہ کرم پہلے ٹیکسٹ فیلڈ منتخب کریں',
+      });
+
   // ─────────────────────────────────────────────────────────────
   // 🕉 INVITATION LABELS (SYNCED TO CANVAS)
   // ─────────────────────────────────────────────────────────────
@@ -732,7 +848,7 @@ class LanguageProvider extends ChangeNotifier {
         'Hindi': '|| श्री गणेशाय नमः ||',
         'Marathi': '|| श्री गणेशाय नमः ||',
         'Punjabi': '|| ਸ਼੍ਰੀ ਗਣੇਸ਼ਾਏ ਨਮਹ ||',
-        'Urdu': '|| سری گنیشای نمہ ||'
+        'Urdu': '|| شری گنیشائے نمہ ||'
       }, lang);
 
   String mangalikPrasangoLabelFor(String lang) => _tFor({
@@ -741,7 +857,7 @@ class LanguageProvider extends ChangeNotifier {
         'Hindi': 'मांगलिक प्रसंग',
         'Marathi': 'मांगलिक प्रसंग',
         'Punjabi': 'ਮੰਗਲਿਕ ਪ੍ਰਸੰਗ',
-        'Urdu': 'مانگلک پرسنگو'
+        'Urdu': 'مانگلک پرسنگ'
       }, lang);
 
   String shubhVivahLabelFor(String lang) => _tFor({
@@ -795,13 +911,36 @@ class LanguageProvider extends ChangeNotifier {
       }, lang);
 
   String sangLabelFor(String lang) => _tFor({
-        'English': 'with',
-        'Gujarati': 'સંગ',
         'Hindi': 'संग',
         'Marathi': 'सोबत',
         'Punjabi': 'ਸੰਗ',
         'Urdu': 'سنگ'
       }, lang);
+
+  String get guestUpdated => _t({
+        'English': 'Guest updated successfully!',
+        'Gujarati': 'મહેમાન સફળતાપૂર્વક અપડેટ થયા!',
+        'Hindi': 'अतिथि सफलतापूर्वक अपडेट किया गया!',
+        'Marathi': 'पाहुणे यशस्वीरित्या अपडेट झाले!',
+        'Punjabi': 'ਮਹਿਮਾਨ ਸਫਲਤਾਪੂਰਵਕ ਅਪਡੇਟ ਕੀਤਾ ਗਿਆ!',
+        'Urdu': '!مہمان کامیابی کے ساتھ اپ ڈیٹ ہو گیا'
+      });
+  String get guestAdded => _t({
+        'English': 'Guest added successfully!',
+        'Gujarati': 'મહેમાન સફળતાપૂર્વક ઉમેરાયા!',
+        'Hindi': 'अतिथि सफलतापूर्वक जोड़ा गया!',
+        'Marathi': 'पाहुणे यशस्वीरित्या जोडले गेले!',
+        'Punjabi': 'ਮਹਿਮਾਨ ਸਫਲਤਾਪੂਰਵਕ ਜੋੜਿਆ ਗਿਆ!',
+        'Urdu': 'مہمان کامیابی کے ساتھ شامل کیا گیا!'
+      });
+  String get pleaseEnterNameAndPhone => _t({
+        'English': 'Please enter name and phone number',
+        'Gujarati': 'કૃપા કરીને નામ અને ફોન નંબર દાખલ કરો',
+        'Hindi': 'कृपया नाम और फ़ोन नंबर दर्ज करें',
+        'Marathi': 'कृपया नाव आणि फोन नंबर प्रविष्ट करा',
+        'Punjabi': 'ਕਿਰਪਾ ਕਰਕੇ ਨਾਮ ਅਤੇ ਫੋਨ ਨੰਬਰ ਦਰਜ ਕਰੋ',
+        'Urdu': 'براہ کرم نام اور فون نمبر درج کریں'
+      });
 
   String nimantrakLabelFor(String lang) => _tFor({
         'English': 'Inviter',
@@ -874,7 +1013,7 @@ class LanguageProvider extends ChangeNotifier {
         'Gujarati': 'કન્ટેન્ટ બનાવો',
         'Hindi': 'सामग्री बनाएं',
         'Marathi': 'मजकूर तयार करा',
-        'Punjabi': 'ਸਮੱਗરી ਤਿਆਰ ਕਰੋ',
+        'Punjabi': 'ਸਮੱਗਰੀ ਤਿਆਰ ਕਰੋ',
         'Urdu': 'مواد تیار کریں'
       });
   String get previewLabel => _t({
@@ -896,7 +1035,7 @@ class LanguageProvider extends ChangeNotifier {
   String get back => _t({
         'English': 'Back',
         'Gujarati': 'પાછળ',
-        'Hindi': 'પીછે',
+        'Hindi': 'पीछे',
         'Marathi': 'मागे',
         'Punjabi': 'ਪਿੱਛੇ',
         'Urdu': 'پیچھے'
@@ -952,7 +1091,7 @@ class LanguageProvider extends ChangeNotifier {
   String get dateLabel => _t({
         'English': 'Date',
         'Gujarati': 'તારીખ',
-        'Hindi': 'તારીખ',
+        'Hindi': 'तारीख',
         'Marathi': 'तारीख',
         'Punjabi': 'ਤਾਰੀਖ',
         'Urdu': 'تاریخ'
@@ -960,7 +1099,7 @@ class LanguageProvider extends ChangeNotifier {
   String get timeLabel => _t({
         'English': 'Time',
         'Gujarati': 'સમય',
-        'Hindi': 'સમય',
+        'Hindi': 'समय',
         'Marathi': 'वेळ',
         'Punjabi': 'ਸਮਾਂ',
         'Urdu': 'وقت'
@@ -968,7 +1107,7 @@ class LanguageProvider extends ChangeNotifier {
   String get venuePlaceLabel => _t({
         'English': 'Venue / Place',
         'Gujarati': 'સ્થળ / જગ્યા',
-        'Hindi': 'સ્થાન / જગહ',
+        'Hindi': 'स्थान / जगह',
         'Marathi': 'स्थळ',
         'Punjabi': 'ਸਥਾਨ',
         'Urdu': 'مقام'
@@ -1034,7 +1173,7 @@ class LanguageProvider extends ChangeNotifier {
   String get rotationLabel => _t({
         'English': 'Rotation',
         'Gujarati': 'પરિભ્રમણ',
-        'Hindi': 'રોટેશન',
+        'Hindi': 'रोटेशन',
         'Marathi': 'रोटेशन',
         'Punjabi': 'ਰੋਟੇਸ਼ਨ',
         'Urdu': 'گھماؤ'
@@ -1042,7 +1181,7 @@ class LanguageProvider extends ChangeNotifier {
   String get opacityLabel => _t({
         'English': 'Opacity',
         'Gujarati': 'પારદર્શિતા',
-        'Hindi': 'અપારદર્શિતા',
+        'Hindi': 'अपारदर्शिता',
         'Marathi': 'अपारदर्शकता',
         'Punjabi': 'ਪਾਰਦਰਸ਼ਤਾ',
         'Urdu': 'دھندلاپن'
@@ -1050,7 +1189,7 @@ class LanguageProvider extends ChangeNotifier {
   String get chooseColorLabel => _t({
         'English': 'Choose Color',
         'Gujarati': 'રંગ પસંદ કરો',
-        'Hindi': 'રંગ ચુને',
+        'Hindi': 'रंग चुनें',
         'Marathi': 'रंग निवडा',
         'Punjabi': 'ਰੰਗ ਚੁਣੋ',
         'Urdu': 'رنگ منتخب کریں'
@@ -1065,6 +1204,24 @@ class LanguageProvider extends ChangeNotifier {
         'Punjabi': 'ਮਹਿਮਾਨ ਨੂੰ ਸੋਧੋ',
         'Urdu': 'مہمان کی ترمیم کریں'
       });
+  String get viewed => _t({
+        'English': 'Viewed',
+        'Gujarati': 'જોયેલ',
+        'Hindi': 'देखा गया',
+        'Marathi': 'पाहिलेले',
+        'Punjabi': 'ਵੇખ્યા ગયા',
+        'Urdu': 'دیکھا گیا'
+      });
+  String rsvpStatusLabel(RsvpStatus status) {
+    switch (status) {
+      case RsvpStatus.pending:
+        return pending;
+      case RsvpStatus.sent:
+        return sent;
+      case RsvpStatus.viewed:
+        return viewed;
+    }
+  }
   String get deleteGuest => _t({
         'English': 'Delete Guest',
         'Gujarati': 'મહેમાન કાઢી નાખો',
@@ -1080,14 +1237,6 @@ class LanguageProvider extends ChangeNotifier {
         'Marathi': 'बदल जतन करा',
         'Punjabi': 'ਤਬਦੀਲੀਆਂ ਸੁਰੱਖਿਅਤ ਕਰੋ',
         'Urdu': 'تبدیلیاں محفوظ کریں'
-      });
-  String get guestUpdated => _t({
-        'English': 'Guest updated successfully!',
-        'Gujarati': 'મહેમાન સફળતાપૂર્વક અપડેટ થયા!',
-        'Hindi': 'अतिथि सफलतापूर्वक अपडेट किया गया!',
-        'Marathi': 'पाहुणे यशस्वीरित्या अपडेट झाले!',
-        'Punjabi': 'ਮਹਿਮਾਨ ਸਫਲਤਾਪੂਰਵਕ ਅਪਡੇਟ ਕੀਤਾ ਗਿਆ!',
-        'Urdu': '!مہمان کامیابی کے ساتھ اپ ڈیٹ ہو گیا'
       });
   String get delete => _t({
         'English': 'Delete',
@@ -1149,7 +1298,6 @@ class LanguageProvider extends ChangeNotifier {
         'English': 'VCF Contacts',
         'Gujarati': 'VCF સંપર્કો',
         'Hindi': 'VCF संपर्क',
-        'Marathi': 'VCF संपर्क',
         'Punjabi': 'VCF ਸੰਪਰਕ',
         'Urdu': 'وی سی ایف روابط'
       });
@@ -1172,7 +1320,7 @@ class LanguageProvider extends ChangeNotifier {
   String get pdfSubtitle => _t({
         'English': 'For Printing / Sharing',
         'Gujarati': 'પ્રિન્ટિંગ / શેરિંગ માટે',
-        'Hindi': 'प्रिंटिंग / शेयरિંગ के लिए',
+        'Hindi': 'प्रिंटिंग / शेयरिंग के लिए',
         'Marathi': 'प्रिंटिंग / शेयरिंगसाठी',
         'Punjabi': 'ਪ੍ਰਿੰਟਿੰਗ / ਸ਼ੇਅਰਿੰਗ ਲਈ',
         'Urdu': 'پرنٹنگ / شیئرنگ کے لیے'
@@ -1292,7 +1440,7 @@ class LanguageProvider extends ChangeNotifier {
         'Gujarati': 'શેર કરો',
         'Hindi': 'इसके साथ साझा करें',
         'Marathi': 'यांच्यासोबत शेयर करा',
-        'Punjabi': 'ਨਾਲ સਾਂਝਾ કરો',
+        'Punjabi': 'ਨਾਲ ਸਾਂਝਾ ਕਰੋ',
         'Urdu': 'کے ساتھ شیئر کریں'
       });
 
@@ -1326,7 +1474,7 @@ class LanguageProvider extends ChangeNotifier {
         'Gujarati': 'પુષ્ટિ કરો',
         'Hindi': 'पुष्टि करें',
         'Marathi': 'पुष्टी करा',
-        'Punjabi': 'ਪੁਸ਼ટી ਕਰੋ',
+        'Punjabi': 'ਪੁਸ਼ਟੀ ਕਰੋ',
         'Urdu': 'تصدیق کریں'
       });
 
@@ -1390,16 +1538,8 @@ class LanguageProvider extends ChangeNotifier {
         'Gujarati': 'બાકી',
         'Hindi': 'लंबित',
         'Marathi': 'बाकी',
-        'Punjabi': 'ਬਾਕી',
+        'Punjabi': 'ਬਾਕੀ',
         'Urdu': 'زیر التواء'
-      });
-  String get viewed => _t({
-        'English': 'Viewed',
-        'Gujarati': 'જોયેલ',
-        'Hindi': 'देखा गया',
-        'Marathi': 'पाहिलेले',
-        'Punjabi': 'ਵੇખ્યા ગયા',
-        'Urdu': 'دیکھا گیا'
       });
   String get accountSuspended => _t({
         'English': 'Account Suspended',
@@ -1432,14 +1572,14 @@ class LanguageProvider extends ChangeNotifier {
         'Hindi': 'स्वयं जोड़ें',
         'Marathi': 'वैयक्तिकरित्या जोडा',
         'Punjabi': 'ਖੁਦ ਜੋੜੋ',
-        'Urdu': 'دستی طور પર शामिल करें'
+        'Urdu': 'دستی طور پر شامل کریں'
       });
   String get enterGuestDetail => _t({
         'English': 'Enter guest details manually',
         'Gujarati': 'મહેમાનની વિગતો જાતે દાખલ કરો',
         'Hindi': 'अतिथि विवरण स्वयं दर्ज करें',
         'Marathi': 'पाहुण्यांचे तपशील वैयक्तिकरित्या भरा',
-        'Punjabi': 'ਮਹਿਮਾਨ ਦੇ ਵੇਰવે ਖੁਦ ਦਰਜ ਕਰੋ',
+        'Punjabi': 'ਮਹਿਮਾਨ ਦੇ ਵੇਰਵੇ ਖੁਦ ਦਰਜ ਕਰੋ',
         'Urdu': 'مہمان کی تفصیلات دستی طور پر درج کریں'
       });
   String get importContacts => _t({
@@ -1458,6 +1598,30 @@ class LanguageProvider extends ChangeNotifier {
         'Punjabi': 'ਫੋਨ ਸੰਪਰਕਾਂ ਤੋਂ ਆਯਾਤ ਕਰੋ',
         'Urdu': 'فون روابط سے درآمد کریں'
       });
+  String get selectContacts => _t({
+        'English': 'Select Contacts',
+        'Gujarati': 'સંપર્કો પસંદ કરો',
+        'Hindi': 'संपर्क चुनें',
+        'Marathi': 'संपर्क निवडा',
+        'Punjabi': 'ਸੰਪਰਕ ਚੁਣੋ',
+        'Urdu': 'روابط منتخب کریں'
+      });
+  String get searchContacts => _t({
+        'English': 'Search contacts',
+        'Gujarati': 'સંપર્કો શોધો',
+        'Hindi': 'संपर्क खोजें',
+        'Marathi': 'संपर्क शोधा',
+        'Punjabi': 'ਸੰਪਰਕ ਖੋਜੋ',
+        'Urdu': 'روابط تلاش کریں'
+      });
+  String get noContactsFound => _t({
+        'English': 'No contacts found',
+        'Gujarati': 'કોઈ સંપર્કો મળ્યા નથી',
+        'Hindi': 'कोई संपर्क नहीं मिला',
+        'Marathi': 'कोणतेही संपर्क आढळले नाहीत',
+        'Punjabi': 'ਕੋਈ ਸੰਪਰਕ ਨਹੀਂ ਮਿਲਿਆ',
+        'Urdu': 'کوئی رابطہ نہیں ملا'
+      });
   String get importCsvVcf => _t({
         'English': 'Import CSV/VCF',
         'Gujarati': 'CSV/VCF આયાત કરો',
@@ -1473,6 +1637,15 @@ class LanguageProvider extends ChangeNotifier {
         'Marathi': 'CSV किंवा VCF फाइलमधून आयात करा',
         'Punjabi': 'CSV ਜਾਂ VCF ਫਾਈਲ ਤੋਂ ਆਯਾਤ ਕਰੋ',
         'Urdu': 'سی ایس وی یا وی سی ایف فائل سے درآمد کریں'
+      });
+
+  String get addAnyNote => _t({
+        'English': 'Add any note',
+        'Gujarati': 'કોઈપણ નોંધ ઉમેરો',
+        'Hindi': 'कोई भी नोट जोड़ें',
+        'Marathi': 'कोणतीही टीप जोडा',
+        'Punjabi': 'ਕੋਈ ਵੀ ਨੋਟ ਜੋੜੋ',
+        'Urdu': 'کوئی بھی نوٹ شامل کریں'
       });
 
   String guestsCount(int count) => _t({
@@ -1496,18 +1669,18 @@ class LanguageProvider extends ChangeNotifier {
         'Urdu': '500+ ٹیمپلیٹس'
       });
   String get easyCustomize => _t({
-        'English': 'Easy to Customize',
-        'Gujarati': 'કસ્ટમાઇઝ કરવું સરળ',
-        'Hindi': 'कस्टमाइज़ करना आसान',
-        'Marathi': 'सानुकूलित करणे सोपे',
-        'Punjabi': 'ਅਨੁਕੂਲਿਤ ਕਰਨਾ ਆਸਾਨ',
-        'Urdu': 'اپنی مرضی کے مطابق بنانا آسان ہے'
+        'English': 'Easy customize',
+        'Gujarati': 'સરળ કસ્ટમાઇઝ',
+        'Hindi': 'आसान कस्टमाइज़',
+        'Marathi': 'सुलभ कस्टमाइझ',
+        'Punjabi': 'ਆਸਾਨ ਕਸਟਮਾਈਜ਼',
+        'Urdu': 'آسان کسٹمائز'
       });
   String get shareInstantly => _t({
-        'English': 'Share Instantly',
+        'English': 'Share instantly',
         'Gujarati': 'તરત જ શેર કરો',
         'Hindi': 'तुरंत साझा करें',
-        'Marathi': 'त्वरित शेयर करा',
+        'Marathi': 'त्वरित शेअर करा',
         'Punjabi': 'ਤੁਰੰਤ ਸਾਂਝਾ ਕਰੋ',
         'Urdu': 'فوری شیئر کریں'
       });
@@ -2214,8 +2387,8 @@ in 3 Steps''',
         'Gujarati': 'ટેક્સ્ટ સંપાદિત કરો',
         'Hindi': 'टेक्स्ट संपादित करें',
         'Marathi': 'मजकूर संपादित करा',
-        'Punjabi': 'ਟੈਕਸਟ ਸੰਪਾਦਿਤ ਕਰੋ',
-        'Urdu': 'تحریر में संशोधन करें'
+        'Punjabi': 'ਟੈਕਸਟ ਸੰਪาਦਿਤ ਕਰੋ',
+        'Urdu': 'تحریر میں ترمیم کریں'
   });
 
   String get emailAddress => _t({
@@ -2318,12 +2491,12 @@ in 3 Steps''',
   });
 
   String get hundredPlusTemplates => _t({
-        'English': '100+ Premium Templates',
-        'Gujarati': '૧૦૦+ પ્રીમિયમ ટેમ્પ્લેટ્સ',
-        'Hindi': '100+ प्रीमियम टेम्पलेट्स',
-        'Marathi': '१००+ प्रीमियम टेम्पलेट्स',
-        'Punjabi': '100+ ਪ੍ਰੀਮੀਅਮ ਟੈਂਪਲੇਟਸ',
-        'Urdu': '100+ پریمیم ٹیمپلیٹس'
+        'English': '100+ Template',
+        'Gujarati': '૧૦૦+ ટેમ્પ્લેટ',
+        'Hindi': '100+ टेम्पलेट',
+        'Marathi': '१००+ टेम्पलेट्स',
+        'Punjabi': '100+ ਟੈਂਪਲੇਟ',
+        'Urdu': '100+ ٹیمپلیٹس'
   });
 
   String get invoiceTransactionCompleted => _t({

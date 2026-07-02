@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../../models/template_element.dart';
-import '../../../utils/image_resolver.dart';
+import '../../../widgets/app_image.dart';
 import 'static_element.dart';
 
 /// A single page in the preview that renders a background and all elements for that page.
@@ -45,15 +45,16 @@ class PreviewPage extends StatelessWidget {
             children: [
               // 🔹 BACKGROUND IMAGE
               Positioned.fill(
-                child: isNetworkImage(backgroundImage)
-                    ? Image.network(
-                        resolveImageUrl(backgroundImage),
-                        fit: BoxFit.cover,
-                      )
-                    : Image.asset(
-                        cleanAssetPath(backgroundImage.isNotEmpty ? backgroundImage : 'assets/images/banner_image.png'),
-                        fit: BoxFit.cover,
-                      ),
+                child: RepaintBoundary(
+                  child: AppImage(
+                    src: backgroundImage,
+                    fit: BoxFit.cover,
+                    errorWidget: Image.asset(
+                      'assets/images/banner_image.png',
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                ),
               ),
 
               // 🔹 ELEMENTS

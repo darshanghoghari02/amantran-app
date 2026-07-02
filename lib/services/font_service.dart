@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
-import 'package:http/http.dart' as http;
+import 'api_client.dart';
 import '../config/api_config.dart';
 import '../utils/image_resolver.dart';
 import '../models/font_model.dart';
@@ -23,7 +23,7 @@ class FontService {
   /// Starts listening to the active fonts on the backend API and downloads/registers them
   Future<void> initFontListener() async {
     try {
-      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/fonts'));
+      final response = await ApiClient.get(Uri.parse('${ApiConfig.baseUrl}/api/app/fonts'));
       if (response.statusCode == 200) {
         final List<dynamic> list = jsonDecode(response.body);
         for (var item in list) {
@@ -57,7 +57,7 @@ class FontService {
         fontBytes = await cacheFile.readAsBytes();
       } else {
         print("Downloading font: $fontFamily from $url");
-        final response = await http.get(Uri.parse(url));
+        final response = await ApiClient.get(Uri.parse(url));
         if (response.statusCode == 200) {
           fontBytes = response.bodyBytes;
           await cacheFile.writeAsBytes(fontBytes);

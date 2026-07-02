@@ -12,7 +12,9 @@ import '../../providers/subscription_provider.dart';
 import '../../widgets/top_notification.dart';
 import '../../widgets/premium_badge.dart';
 import '../../widgets/subscription_bottom_sheet.dart';
+import '../../widgets/app_image.dart';
 import '../../utils/image_resolver.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class TemplateDetailScreen extends StatefulWidget {
   final String categoryName;
@@ -43,20 +45,66 @@ class _TemplateDetailScreenState extends State<TemplateDetailScreen> {
   Future<void> _loadPages() async {
     try {
       final appData = context.read<AppDataProvider>();
-      appData.refreshTemplateDetails(widget.template.id);
-      final pagesList = await appData.getTemplatePages(widget.template.id);
-      if (mounted) {
+      
+      // Load cached pages first to show something instantly
+      final cachedPages = await appData.getTemplatePagesCachedFirst(widget.template.id);
+      if (mounted && cachedPages.isNotEmpty) {
         setState(() {
-          _pages = pagesList;
+          _pages = cachedPages;
           _isLoading = false;
         });
+        _precachePageImages(cachedPages);
+      } else {
+        // If no cache, show loading state
+        if (mounted) {
+          setState(() {
+            _isLoading = true;
+          });
+        }
       }
+      
+      // Fetch latest template details and pages from server in background (non-blocking)
+      appData.refreshTemplateDetails(widget.template.id).then((_) {
+        if (mounted) {
+          appData.getTemplatePagesCachedFirst(widget.template.id).then((freshPages) {
+            if (mounted && freshPages.isNotEmpty) {
+              setState(() {
+                _pages = freshPages;
+                _isLoading = false;
+              });
+              _precachePageImages(freshPages);
+            }
+          });
+        }
+      }).catchError((e) {
+        print("Error refreshing template details: $e");
+        // Even if refresh fails, keep showing cached data
+        if (mounted && _pages.isEmpty) {
+          setState(() {
+            _isLoading = false;
+          });
+        }
+      });
     } catch (e) {
       print("Error loading pages in TemplateDetailScreen: $e");
       if (mounted) {
         setState(() {
           _isLoading = false;
         });
+      }
+    }
+  }
+
+  void _precachePageImages(List<PageModel> pages) {
+    if (!mounted) return;
+    // Only precache the first page to improve initial load performance
+    if (pages.isNotEmpty && pages[0].backgroundImage.isNotEmpty) {
+      final url = resolveImageUrl(pages[0].backgroundImage);
+      if (url.startsWith('http')) {
+        precacheImage(
+          CachedNetworkImageProvider(url, maxWidth: 680),
+          context,
+        );
       }
     }
   }
@@ -71,6 +119,7 @@ class _TemplateDetailScreenState extends State<TemplateDetailScreen> {
   Widget build(BuildContext context) {
     final lang = context.watch<LanguageProvider>();
     final template = context.watch<AppDataProvider>().getTemplateById(widget.template.id) ?? widget.template;
+    final subProvider = context.watch<SubscriptionProvider>();
     final int totalPages = _pages.isNotEmpty ? _pages.length : 1;
 
     return Scaffold(
@@ -219,9 +268,16 @@ class _TemplateDetailScreenState extends State<TemplateDetailScreen> {
                                   ),
                                   child: ClipRRect(
                                     borderRadius: BorderRadius.circular(16),
-                                    child: isNetworkImage(backgroundUrl)
-                                        ? Image.network(resolveImageUrl(backgroundUrl), fit: BoxFit.cover)
-                                        : Image.asset(cleanAssetPath(backgroundUrl.isNotEmpty ? backgroundUrl : 'assets/images/banner_image.png'), fit: BoxFit.cover),
+                                    child: AppImage(
+                                      src: backgroundUrl,
+                                      fit: BoxFit.cover,
+                                      width: 340,
+                                      height: 600,
+                                      errorWidget: Image.asset(
+                                        'assets/images/banner_image.png',
+                                        fit: BoxFit.cover,
+                                      ),
+                                    ),
                                   ),
                                 );
                               },
@@ -316,7 +372,6 @@ class _TemplateDetailScreenState extends State<TemplateDetailScreen> {
                   height: 55,
                   child: ElevatedButton(
                     onPressed: () {
-                      final subProvider = context.read<SubscriptionProvider>();
                       final isUnlocked = subProvider.isTemplateUnlocked(template);
                       if (template.isPremium && !isUnlocked) {
                         showModalBottomSheet(

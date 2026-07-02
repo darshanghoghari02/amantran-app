@@ -38,22 +38,15 @@ class AppImage extends StatelessWidget {
         fit: fit,
         width: width,
         height: height,
-        memCacheWidth: width != null ? (width! * 2).toInt() : null,
-        fadeInDuration: const Duration(milliseconds: 200),
+        memCacheWidth: width != null ? (width! * 2).toInt() : 800,
+        memCacheHeight: height != null ? (height! * 2).toInt() : 1200,
+        maxWidthDiskCache: 1200,
+        maxHeightDiskCache: 1800,
+        fadeInDuration: const Duration(milliseconds: 100),
         placeholder: (_, __) =>
             placeholder ??
             Container(
               color: Colors.grey.shade100,
-              child: const Center(
-                child: SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 1.5,
-                    color: Color(0xFFF94C66),
-                  ),
-                ),
-              ),
             ),
         errorWidget: (_, __, ___) =>
             errorWidget ??
@@ -62,7 +55,7 @@ class AppImage extends StatelessWidget {
               child: const Icon(Icons.broken_image_outlined, color: Colors.grey, size: 24),
             ),
       );
-    } else if (cleaned.startsWith('/') && File(cleaned).existsSync()) {
+    } else if (File(cleaned).existsSync()) {
       // Local file
       child = Image.file(
         File(cleaned),

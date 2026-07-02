@@ -141,9 +141,11 @@ class _PhoneContactPickerScreenState extends State<PhoneContactPickerScreen> {
             Padding(
               padding: const EdgeInsets.all(8),
               child: TextField(
+                textAlignVertical: TextAlignVertical.center,
                 decoration: const InputDecoration(
                   hintText: "Search contacts",
                   prefixIcon: Icon(Icons.search),
+                  contentPadding: EdgeInsets.symmetric(vertical: 12),
                 ),
                 onChanged: applySearch,
               ),

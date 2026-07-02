@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart'; // Kept for Timestamp type parsing fallback
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:http/http.dart' as http;
+import '../services/api_client.dart';
 import '../config/api_config.dart';
 import '../services/firestore_service.dart';
 import '../models/subscription.dart';
@@ -161,7 +161,7 @@ class SubscriptionProvider extends ChangeNotifier with WidgetsBindingObserver {
     final resolvedUid = FirestoreService().resolvedUid;
     if (resolvedUid == null) return false;
     try {
-      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/user-subscriptions/$resolvedUid'));
+      final response = await ApiClient.get(Uri.parse('${ApiConfig.baseUrl}/api/app/user-subscriptions/$resolvedUid'));
       if (response.statusCode == 200) {
         final map = jsonDecode(response.body) as Map<String, dynamic>;
         // If planType is none or not found, user is eligible for trial
@@ -176,7 +176,7 @@ class SubscriptionProvider extends ChangeNotifier with WidgetsBindingObserver {
   /// Fetches subscription plans from Express API
   Future<void> fetchPlans() async {
     try {
-      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/subscriptions'));
+      final response = await ApiClient.get(Uri.parse('${ApiConfig.baseUrl}/api/app/subscriptions'));
       if (response.statusCode == 200) {
         final List<dynamic> list = jsonDecode(response.body);
         _plans = list
@@ -203,7 +203,7 @@ class SubscriptionProvider extends ChangeNotifier with WidgetsBindingObserver {
 
     try {
       debugPrint("fetchSubscriptionStatus: Fetching for user $resolvedUid");
-      final response = await http.get(Uri.parse('${ApiConfig.baseUrl}/api/app/user-subscriptions/$resolvedUid'));
+      final response = await ApiClient.get(Uri.parse('${ApiConfig.baseUrl}/api/app/user-subscriptions/$resolvedUid'));
       debugPrint("fetchSubscriptionStatus: Response status code: ${response.statusCode}");
       debugPrint("fetchSubscriptionStatus: Response body: ${response.body}");
       
@@ -256,7 +256,7 @@ class SubscriptionProvider extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
 
     try {
-      final response = await http.post(Uri.parse('${ApiConfig.baseUrl}/api/app/user-subscriptions/$resolvedUid/cancel'));
+      final response = await ApiClient.post(Uri.parse('${ApiConfig.baseUrl}/api/app/user-subscriptions/$resolvedUid/cancel'));
       if (response.statusCode == 200) {
         await fetchSubscriptionStatus();
         return true;
@@ -280,7 +280,7 @@ class SubscriptionProvider extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
 
     try {
-      final response = await http.post(Uri.parse('${ApiConfig.baseUrl}/api/app/user-subscriptions/$resolvedUid/reactivate'));
+      final response = await ApiClient.post(Uri.parse('${ApiConfig.baseUrl}/api/app/user-subscriptions/$resolvedUid/reactivate'));
       if (response.statusCode == 200) {
         await fetchSubscriptionStatus();
         return true;
@@ -304,7 +304,7 @@ class SubscriptionProvider extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
 
     try {
-      final response = await http.post(
+      final response = await ApiClient.post(
         Uri.parse('${ApiConfig.baseUrl}/api/app/user-subscriptions/purchase'),
         headers: {
           'Content-Type': 'application/json',
@@ -344,7 +344,7 @@ class SubscriptionProvider extends ChangeNotifier with WidgetsBindingObserver {
 
     try {
       debugPrint("purchaseTemplate: Purchasing template $templateId for user $resolvedUid");
-      final response = await http.post(
+      final response = await ApiClient.post(
         Uri.parse('${ApiConfig.baseUrl}/api/app/user-subscriptions/purchase-template'),
         headers: {
           'Content-Type': 'application/json',

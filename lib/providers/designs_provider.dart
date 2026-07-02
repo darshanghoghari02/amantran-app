@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import '../models/user_design.dart';
 import '../models/template_element.dart';
+import '../models/template_model.dart';
 import '../repositories/draft_repository.dart';
 import '../providers/app_data_provider.dart';
 import '../services/interaction_service.dart';
@@ -265,11 +266,6 @@ class DesignsProvider extends ChangeNotifier {
       throw Exception("Missing template ID");
     }
 
-    final matchedTemplate = _appData?.getTemplateById(templateId);
-    if (matchedTemplate == null) {
-      throw Exception("Template $templateId is inactive or not found");
-    }
-
     final List<dynamic>? elementsList = json['elements'] ?? customizedMap?['elements'];
     final List<TemplateElement> parsedElements = [];
     if (elementsList != null) {
@@ -295,6 +291,34 @@ class DesignsProvider extends ChangeNotifier {
     final rawIsDraft = json['isDraft'] ?? customizedMap?['isDraft'];
     final isDraft = rawIsDraft == true;
     final pdfName = json['pdfName']?.toString() ?? customizedMap?['pdfName']?.toString();
+
+    final matchedTemplate = _appData?.getTemplateById(templateId);
+    if (matchedTemplate == null) {
+      debugPrint("Warning: Template $templateId is inactive or not found in backend. Creating fallback template.");
+      // Create a fallback template to allow the design to load even if template is inactive
+      final fallbackTemplate = TemplateModel(
+        id: templateId,
+        title: 'Template (Inactive)',
+        slug: 'inactive-template',
+        categoryId: 'unknown',
+        thumbnail: '',
+        previewImage: '',
+        isActive: false,
+        isPremium: false,
+        includedInMonthlyPlan: false,
+        includedInYearlyPlan: false,
+        createdAt: DateTime.now(),
+        updatedAt: DateTime.now(),
+      );
+      return UserDesign(
+        id: json['id']?.toString() ?? customizedMap?['id']?.toString() ?? '',
+        template: fallbackTemplate,
+        elements: parsedElements,
+        updatedAt: updatedAt,
+        isDraft: isDraft,
+        pdfName: pdfName,
+      );
+    }
 
     return UserDesign(
       id: json['id']?.toString() ?? customizedMap?['id']?.toString() ?? '',

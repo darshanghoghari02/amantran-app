@@ -13,8 +13,9 @@ import '../form/form_screen.dart';
 import '../../models/user_design.dart';
 import '../../providers/designs_provider.dart';
 import '../../services/interaction_service.dart';
-import 'widgets/draggable_element.dart';
 import '../../utils/image_resolver.dart';
+import '../../widgets/app_image.dart';
+import 'widgets/draggable_element.dart';
 import 'widgets/bottom_sheets.dart';
 import 'widgets/transliteration_field.dart';
 import '../../providers/language_provider.dart';
@@ -54,6 +55,7 @@ class _EditorScreenState extends State<EditorScreen> {
   int currentPage = 0;
   final PageController _pageController = PageController();
   final TransliterationEngine _engine = TransliterationEngine();
+  final ValueNotifier<GuidelineInfo?> _guidelineNotifier = ValueNotifier<GuidelineInfo?>(null);
 
   // 🔄 UNDO / REDO
   List<List<TemplateElement>> _undoStack = [];
@@ -68,6 +70,7 @@ class _EditorScreenState extends State<EditorScreen> {
   bool _isDiscarding = false;
   bool _allowPop = false;
   late String _cardLanguage;
+  String? _lastLanguage;
 
   @override
   void initState() {
@@ -80,14 +83,31 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   String get _activeCardLanguage {
-    final lang = context.read<LanguageProvider>();
+    final lang = context.watch<LanguageProvider>();
     return lang.activeInvitationLanguage;
   }
 
   Future<void> _initEditor() async {
     try {
       final appData = context.read<AppDataProvider>();
+      
+      // Load cached pages first
       _pages = await appData.getTemplatePagesCachedFirst(widget.template.id);
+      
+      // If we are starting a new design, fetch latest pages from server in background (non-blocking)
+      if (widget.initialElements == null) {
+        appData.refreshTemplateDetails(widget.template.id).then((_) {
+          appData.getTemplatePagesCachedFirst(widget.template.id).then((freshPages) {
+            if (mounted && freshPages.isNotEmpty) {
+              setState(() {
+                _pages = freshPages;
+              });
+            }
+          });
+        }).catchError((e) {
+          print("Error refreshing template details in editor: $e");
+        });
+      }
       
       List<TemplateElement> elementsToLoad = [];
       
@@ -150,6 +170,7 @@ class _EditorScreenState extends State<EditorScreen> {
 
   @override
   void dispose() {
+    _guidelineNotifier.dispose();
     _pageController.dispose();
     super.dispose();
   }
@@ -224,6 +245,18 @@ class _EditorScreenState extends State<EditorScreen> {
       initialContentMap[activeCode] = commonTranslations[activeCode]!;
     }
 
+    // Set appropriate font family based on language
+    String initialFontFamily = 'Montserrat';
+    if (activeLang == 'Gujarati' || activeCode == 'gu') {
+      initialFontFamily = 'Noto Serif Gujarati';
+    } else if (activeLang == 'Hindi' || activeCode == 'hi' || activeLang == 'Marathi' || activeCode == 'mr') {
+      initialFontFamily = 'Noto Sans Devanagari';
+    } else if (activeLang == 'Punjabi' || activeCode == 'pa') {
+      initialFontFamily = 'Noto Sans Gurmukhi';
+    } else if (activeLang == 'Urdu' || activeCode == 'ur' || activeLang == 'Kashmiri' || activeCode == 'ks') {
+      initialFontFamily = 'Noto Nastaliq Urdu';
+    }
+
     final newElement = TemplateElement(
       id: newId,
       pageIndex: currentPage,
@@ -234,7 +267,7 @@ class _EditorScreenState extends State<EditorScreen> {
       width: width,
       height: height,
       fontSize: fontSize,
-      fontFamily: 'Montserrat',
+      fontFamily: initialFontFamily,
       color: Colors.black87,
       fontWeight: FontWeight.normal,
       textAlign: TextAlign.center,
@@ -261,12 +294,12 @@ class _EditorScreenState extends State<EditorScreen> {
               if (activeCode == 'gu') el.contentGujarati = result;
             } catch (_) {}
           });
-          provider.notifyListeners();
+          provider.notifyOfChanges();
         }
       });
     }
 
-    provider.notifyListeners();
+    provider.notifyOfChanges();
     InteractionService.logInteraction(
       type: 'add_text_element',
       description: 'Added a new custom text field on page $currentPage',
@@ -293,8 +326,9 @@ class _EditorScreenState extends State<EditorScreen> {
       }
       selectedElementId = null;
     });
+    _guidelineNotifier.value = null;
 
-    provider.notifyListeners();
+    provider.notifyOfChanges();
     InteractionService.logInteraction(
       type: 'delete_element',
       description: 'Deleted element: ${element.id}',
@@ -341,6 +375,7 @@ class _EditorScreenState extends State<EditorScreen> {
                 children: [
                   TextButton(
                     onPressed: () async {
+                      final navigator = Navigator.of(ctx);
                       setState(() {
                         _isDiscarding = true;
                       });
@@ -361,7 +396,7 @@ class _EditorScreenState extends State<EditorScreen> {
                         }
                       }
                       
-                      Navigator.pop(ctx, true);
+                      navigator.pop(true);
                     },
                     style: TextButton.styleFrom(
                         foregroundColor:
@@ -437,6 +472,22 @@ class _EditorScreenState extends State<EditorScreen> {
     final provider = context.watch<InvitationProvider>();
     final lang = context.watch<LanguageProvider>();
     final elements = provider.elements;
+
+    final activeLanguage = lang.activeInvitationLanguage;
+    if (!_isLoading && _lastLanguage != activeLanguage) {
+      _lastLanguage = activeLanguage;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        setState(() {
+          for (var el in provider.elements) {
+            if (el.type == ElementType.text) {
+              _updateTextElementDimensions(el);
+            }
+          }
+        });
+        provider.notifyOfChanges();
+      });
+    }
     return PopScope(
       canPop: _allowPop,
       onPopInvoked: (didPop) async {
@@ -684,6 +735,7 @@ class _EditorScreenState extends State<EditorScreen> {
                           currentPage = index;
                           selectedElementId = null;
                         });
+                        _guidelineNotifier.value = null;
                       },
                       itemBuilder: (context, pageIndex) {
                         final pageElements = elements
@@ -701,14 +753,13 @@ class _EditorScreenState extends State<EditorScreen> {
                         final pageW = pageIndex < _pages.length ? _pages[pageIndex].width : 1080.0;
                         final pageH = pageIndex < _pages.length ? _pages[pageIndex].height : 1920.0;
 
-                        final bool isCenteredV = selectedElement != null &&
-                            (selectedElement.x + selectedElement.width / 2 - pageW / 2).abs() < 1.0;
-
-                        final bool isCenteredH = selectedElement != null &&
-                            (selectedElement.y + selectedElement.height / 2 - pageH / 2).abs() < 1.0;
-
                         return GestureDetector(
-                          onTap: () => setState(() => selectedElementId = null),
+                          onTap: () {
+                            setState(() {
+                              selectedElementId = null;
+                            });
+                            _guidelineNotifier.value = null;
+                          },
                           child: Center(
                             child: Container(
                               width: canvasW,
@@ -729,9 +780,16 @@ class _EditorScreenState extends State<EditorScreen> {
                                   children: [
                                     // Background
                                     Positioned.fill(
-                                      child: isNetworkImage(_pages[pageIndex].backgroundImage)
-                                          ? Image.network(resolveImageUrl(_pages[pageIndex].backgroundImage), fit: BoxFit.cover)
-                                          : Image.asset(cleanAssetPath(_pages[pageIndex].backgroundImage), fit: BoxFit.cover),
+                                      child: RepaintBoundary(
+                                        child: AppImage(
+                                          src: _pages[pageIndex].backgroundImage,
+                                          fit: BoxFit.cover,
+                                          errorWidget: Image.asset(
+                                            'assets/images/banner_image.png',
+                                            fit: BoxFit.cover,
+                                          ),
+                                        ),
+                                      ),
                                     ),
                                     // Elements for this page (scaled)
                                     ...pageElements.map((element) =>
@@ -740,25 +798,31 @@ class _EditorScreenState extends State<EditorScreen> {
                                           isSelected:
                                               element.id == selectedElementId,
                                           activeLanguage: _activeCardLanguage,
-                                          onTap: () => setState(() =>
-                                              selectedElementId = element.id),
-                                          onDelete: () =>
-                                              _deleteElement(element),
-                                          onDrag: (dx, dy) => setState(() {
-                                            element.x += dx / scaleX;
-                                            element.y += dy / scaleY;
-
-                                            // Snap horizontally to center if close
-                                            final centerX = element.x + element.width / 2;
-                                            if ((centerX - pageW / 2).abs() < 5.0) {
-                                              element.x = pageW / 2 - element.width / 2;
+                                          onTap: () {
+                                            if (selectedElementId != element.id) {
+                                              setState(() {
+                                                selectedElementId = element.id;
+                                              });
                                             }
-
-                                            // Snap vertically to center if close
-                                            final centerY = element.y + element.height / 2;
-                                            if ((centerY - pageH / 2).abs() < 5.0) {
-                                              element.y = pageH / 2 - element.height / 2;
-                                            }
+                                            _guidelineNotifier.value = GuidelineInfo(
+                                              x: element.x,
+                                              y: element.y,
+                                              width: element.width,
+                                              height: element.height,
+                                              pageW: pageW,
+                                              pageH: pageH,
+                                              scaleX: scaleX,
+                                              scaleY: scaleY,
+                                            );
+                                          },
+                                          onDelete: () {
+                                            _guidelineNotifier.value = null;
+                                            _deleteElement(element);
+                                          },
+                                          onDrag: (newX, newY) => setState(() {
+                                            element.x = newX;
+                                            element.y = newY;
+                                            _autoSaveDraft();
                                           }),
                                           onResize: (w, h, fontSize,
                                                   {newX, newY, newLetterSpacing}) =>
@@ -777,8 +841,10 @@ class _EditorScreenState extends State<EditorScreen> {
                                             if (newLetterSpacing != null) {
                                               element.letterSpacing = newLetterSpacing;
                                             }
+                                            _autoSaveDraft();
                                           }),
                                           onTextEdit: (en, gu) {
+                                              _beginAction();
                                               final String activeLang = lang.activeInvitationLanguage;
                                               final bool isLocalized = activeLang != 'English';
                                               final String activeCode = TemplateElement.languageCodeFor(activeLang);
@@ -823,38 +889,61 @@ class _EditorScreenState extends State<EditorScreen> {
                                                   }
                                                 });
                                               }
+                                              _endAction();
                                             },
                                           onActionStart: _beginAction,
                                           onActionEnd: _endAction,
                                           scaleX: scaleX,
                                           scaleY: scaleY,
+                                          pageW: pageW,
+                                          pageH: pageH,
+                                          guidelineNotifier: _guidelineNotifier,
                                         )),
-                                    // Vertical Guideline for Selected Element
-                                    if (selectedElement != null)
-                                      Positioned(
-                                        top: 0,
-                                        bottom: 0,
-                                        left: (selectedElement.x + selectedElement.width / 2) * scaleX,
-                                        child: CustomPaint(
-                                          painter: GuidelinePainter(
-                                            vertical: true,
-                                            color: isCenteredV ? const Color(0xFFF94C66) : const Color(0xFF2196F3).withValues(alpha: 0.45),
-                                          ),
-                                        ),
-                                      ),
-                                    // Horizontal Guideline for Selected Element
-                                    if (selectedElement != null)
-                                      Positioned(
-                                        left: 0,
-                                        right: 0,
-                                        top: (selectedElement.y + selectedElement.height / 2) * scaleY,
-                                        child: CustomPaint(
-                                          painter: GuidelinePainter(
-                                            vertical: false,
-                                            color: isCenteredH ? const Color(0xFFF94C66) : const Color(0xFF2196F3).withValues(alpha: 0.45),
-                                          ),
-                                        ),
-                                      ),
+                                    // Dynamic Guidelines listening to the dragged/selected element
+                                    ValueListenableBuilder<GuidelineInfo?>(
+                                      valueListenable: _guidelineNotifier,
+                                      builder: (context, info, child) {
+                                        if (info == null) return const SizedBox.shrink();
+
+                                        final centerX = info.x + info.width / 2;
+                                        final centerY = info.y + info.height / 2;
+
+                                        final bool isCenteredV = (centerX - info.pageW / 2).abs() < 1.0;
+                                        final bool isCenteredH = (centerY - info.pageH / 2).abs() < 1.0;
+
+                                        return Stack(
+                                          clipBehavior: Clip.none,
+                                          children: [
+                                            Positioned(
+                                              top: 0,
+                                              bottom: 0,
+                                              left: centerX * info.scaleX,
+                                              child: CustomPaint(
+                                                painter: GuidelinePainter(
+                                                  vertical: true,
+                                                  color: isCenteredV
+                                                      ? const Color(0xFFF94C66)
+                                                      : const Color(0xFF2196F3).withValues(alpha: 0.45),
+                                                ),
+                                              ),
+                                            ),
+                                            Positioned(
+                                              left: 0,
+                                              right: 0,
+                                              top: centerY * info.scaleY,
+                                              child: CustomPaint(
+                                                painter: GuidelinePainter(
+                                                  vertical: false,
+                                                  color: isCenteredH
+                                                      ? const Color(0xFFF94C66)
+                                                      : const Color(0xFF2196F3).withValues(alpha: 0.45),
+                                                ),
+                                              ),
+                                            ),
+                                          ],
+                                        );
+                                      },
+                                    ),
                                   ],
                                 ),
                               ),
@@ -955,7 +1044,7 @@ class _EditorScreenState extends State<EditorScreen> {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            "Page ${currentPage + 1}/$totalPages",
+                            lang.pageLabel(currentPage + 1, totalPages),
                             style: const TextStyle(
                               fontSize: 12,
                               fontWeight: FontWeight.bold,
@@ -1123,7 +1212,11 @@ class _EditorScreenState extends State<EditorScreen> {
       final prevState = _undoStack.removeLast();
       provider.elements.clear();
       provider.elements.addAll(prevState.map((e) => e.copyWith()));
+      selectedElementId = null;
     });
+    _guidelineNotifier.value = null;
+    provider.notifyOfChanges();
+    _autoSaveDraft();
   }
 
   void _redo() {
@@ -1134,15 +1227,33 @@ class _EditorScreenState extends State<EditorScreen> {
       final nextState = _redoStack.removeLast();
       provider.elements.clear();
       provider.elements.addAll(nextState.map((e) => e.copyWith()));
+      selectedElementId = null;
     });
+    _guidelineNotifier.value = null;
+    provider.notifyOfChanges();
+    _autoSaveDraft();
   }
 
   // ─────────────────────────────────────────────────
   // 🛠 BOTTOM SHEETS
   // ─────────────────────────────────────────────────
 
+  void _showSelectTextFieldNotification() {
+    final lang = context.read<LanguageProvider>();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(lang.selectTextFieldPrompt),
+        backgroundColor: const Color(0xFFF94C66),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  }
+
   void _showEditBottomSheet() {
-    if (selectedElementId == null) return;
+    if (selectedElementId == null) {
+      _showSelectTextFieldNotification();
+      return;
+    }
     final provider = context.read<InvitationProvider>();
     final selected = selectedElement(provider);
     if (selected != null && _shouldLimitToolbar(selected)) return;
@@ -1180,7 +1291,7 @@ class _EditorScreenState extends State<EditorScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: const Text("Cancel"),
+              child: Text(lang.cancel),
             ),
             ElevatedButton(
               onPressed: () {
@@ -1216,7 +1327,7 @@ class _EditorScreenState extends State<EditorScreen> {
                   });
                 }
               },
-              child: const Text("Save"),
+              child: Text(lang.save),
             ),
           ],
         ),
@@ -1609,8 +1720,8 @@ class _EditorScreenState extends State<EditorScreen> {
               TextButton(
                 onPressed: () => Navigator.pop(ctx),
                 style: TextButton.styleFrom(foregroundColor: Colors.black38),
-                child: const Text("Cancel",
-                    style: TextStyle(fontWeight: FontWeight.bold)),
+                child: Text(lang.cancel,
+                    style: const TextStyle(fontWeight: FontWeight.bold)),
               ),
               ElevatedButton(
                 onPressed: !isValid
@@ -1735,7 +1846,10 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   void _showFormatBottomSheet() {
-    if (selectedElementId == null) return;
+    if (selectedElementId == null) {
+      _showSelectTextFieldNotification();
+      return;
+    }
     final provider = context.read<InvitationProvider>();
     final selected = selectedElement(provider);
     if (selected != null && _shouldLimitToolbar(selected)) return;
@@ -1753,7 +1867,10 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   void _showRotationBottomSheet() {
-    if (selectedElementId == null) return;
+    if (selectedElementId == null) {
+      _showSelectTextFieldNotification();
+      return;
+    }
     _beginAction();
     showModalBottomSheet(
       context: context,
@@ -1767,7 +1884,10 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   void _showColorBottomSheet() {
-    if (selectedElementId == null) return;
+    if (selectedElementId == null) {
+      _showSelectTextFieldNotification();
+      return;
+    }
     final provider = context.read<InvitationProvider>();
     final selected = selectedElement(provider);
     if (selected != null && _shouldLimitToolbar(selected)) return;
@@ -1784,7 +1904,10 @@ class _EditorScreenState extends State<EditorScreen> {
   }
 
   void _showOpacityBottomSheet() {
-    if (selectedElementId == null) return;
+    if (selectedElementId == null) {
+      _showSelectTextFieldNotification();
+      return;
+    }
     _beginAction();
     showModalBottomSheet(
       context: context,
@@ -1854,7 +1977,7 @@ class _EditorScreenState extends State<EditorScreen> {
         style: textStyle,
       ),
       textDirection: TextDirection.ltr,
-      textAlign: el.textAlign,
+      textAlign: el.getTextAlignForLanguage(lang),
     );
     textPainter.layout(maxWidth: maxW);
 
@@ -1862,9 +1985,9 @@ class _EditorScreenState extends State<EditorScreen> {
     final double newWidth = textPainter.width > 0 ? textPainter.width + 6.0 : 20.0;
     
     double newX = el.x;
-    if (el.textAlign == TextAlign.center) {
+    if (el.getTextAlignForLanguage(lang) == TextAlign.center) {
       newX = el.x + (oldWidth - newWidth) / 2;
-    } else if (el.textAlign == TextAlign.right || el.textAlign == TextAlign.end) {
+    } else if (el.getTextAlignForLanguage(lang) == TextAlign.right || el.getTextAlignForLanguage(lang) == TextAlign.end) {
       newX = el.x + oldWidth - newWidth;
     }
 
@@ -1908,9 +2031,9 @@ double getMaxConstraintWidth(String elementId) {
                              id.endsWith('_right');
 
   if (isLeftColumn || isRightColumn) {
-    return 160.0;
+    return 480.0;
   }
-  return 320.0;
+  return 960.0;
 }
 
 /// A lightweight custom painter to render vertical or horizontal alignment guidelines

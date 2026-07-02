@@ -1,5 +1,5 @@
 import 'dart:convert';
-import 'package:http/http.dart' as http;
+import 'api_client.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../config/api_config.dart';
 
@@ -21,7 +21,7 @@ class InteractionService {
         if (details != null) 'details': details,
       };
 
-      await http.post(
+      await ApiClient.post(
         Uri.parse('${ApiConfig.baseUrl}/api/app/audit-logs'),
         headers: {
           'Content-Type': 'application/json',

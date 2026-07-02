@@ -90,6 +90,7 @@ class _UserManagementScreenState extends State<UserManagementScreen> {
                     _searchQuery = val.trim().toLowerCase();
                   });
                 },
+                textAlignVertical: TextAlignVertical.center,
                 decoration: InputDecoration(
                   hintText: "Search by name or email...",
                   hintStyle: TextStyle(color: Colors.grey[400], fontSize: 15),

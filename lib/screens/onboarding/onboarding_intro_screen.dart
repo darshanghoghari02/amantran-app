@@ -18,6 +18,37 @@ class OnboardingIntroScreen extends StatelessWidget {
     final double logoSize = isSmallScreen ? 85.0 : 95.0;
     final double logoOffset = logoSize / 2;
 
+    // Sizing helper variables for features row and typography:
+    final double featureTitleSize;
+    final double featureSubtitleSize;
+    final double featureIconContainerSize;
+    final double featureIconSize;
+    final double featureSpacing;
+    final double dividerHeight;
+
+    if (size.height < 700) {
+      featureTitleSize = 11.5;
+      featureSubtitleSize = 8.5;
+      featureIconContainerSize = 48.0;
+      featureIconSize = 22.0;
+      featureSpacing = 10.0;
+      dividerHeight = 36.0;
+    } else if (size.height < 820) {
+      featureTitleSize = 13.0;
+      featureSubtitleSize = 10.0;
+      featureIconContainerSize = 56.0;
+      featureIconSize = 26.0;
+      featureSpacing = 14.0;
+      dividerHeight = 44.0;
+    } else {
+      featureTitleSize = 14.5;
+      featureSubtitleSize = 11.0;
+      featureIconContainerSize = 60.0;
+      featureIconSize = 28.0;
+      featureSpacing = 16.0;
+      dividerHeight = 52.0;
+    }
+
     return Scaffold(
       backgroundColor: Colors.white,
       body: Stack(
@@ -109,12 +140,13 @@ class OnboardingIntroScreen extends StatelessWidget {
                     child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 20),
                       child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.center,
                         children: [
                           SizedBox(height: logoOffset + 15), // Dynamic space for logo
                           Text(
                             lang.appTitle,
                             style: TextStyle(
-                              fontSize: isSmallScreen ? 24 : 28,
+                              fontSize: isSmallScreen ? 24 : (size.height > 820 ? 32 : 28),
                               fontWeight: FontWeight.w900,
                               color: const Color(0xFF1A1A1A),
                               letterSpacing: -0.5,
@@ -127,44 +159,56 @@ class OnboardingIntroScreen extends StatelessWidget {
                               lang.subtitle,
                               textAlign: TextAlign.center,
                               style: TextStyle(
-                                fontSize: isSmallScreen ? 13 : 14,
+                                fontSize: isSmallScreen ? 13 : (size.height > 820 ? 15 : 14),
                                 color: Colors.black45,
                                 height: 1.4,
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
                           ),
-                          SizedBox(height: isSmallScreen ? 25 : 45),
-                          
+
+                          const Spacer(),
                           // Feature Row with Dividers
                           IntrinsicHeight(
                             child: Row(
                               children: [
                                 _buildFeature(
-                                  Icons.grid_view_rounded,
-                                  lang.hundredPlusTemplates,
-                                  lang.forEveryOccasion,
-                                  const Color(0xFFFFF0F1),
-                                  const Color(0xFFF94C66),
-                                  isSmallScreen,
+                                  icon: Icons.grid_view_rounded,
+                                  title: lang.hundredPlusTemplates,
+                                  subtitle: lang.forEveryOccasion,
+                                  bgColor: const Color(0xFFFFF0F1),
+                                  iconColor: const Color(0xFFF94C66),
+                                  titleSize: featureTitleSize,
+                                  subtitleSize: featureSubtitleSize,
+                                  containerSize: featureIconContainerSize,
+                                  iconSize: featureIconSize,
+                                  spacing: featureSpacing,
                                 ),
-                                _buildDivider(),
+                                _buildDivider(dividerHeight),
                                 _buildFeature(
-                                  Icons.auto_fix_high_rounded,
-                                  lang.easyCustomize,
-                                  lang.editInFewTaps,
-                                  const Color(0xFFF5F0FF),
-                                  const Color(0xFF9B51E0),
-                                  isSmallScreen,
+                                  icon: Icons.auto_fix_high_rounded,
+                                  title: lang.easyCustomize,
+                                  subtitle: lang.editInFewTaps,
+                                  bgColor: const Color(0xFFF5F0FF),
+                                  iconColor: const Color(0xFF9B51E0),
+                                  titleSize: featureTitleSize,
+                                  subtitleSize: featureSubtitleSize,
+                                  containerSize: featureIconContainerSize,
+                                  iconSize: featureIconSize,
+                                  spacing: featureSpacing,
                                 ),
-                                _buildDivider(),
+                                _buildDivider(dividerHeight),
                                 _buildFeature(
-                                  Icons.near_me_rounded,
-                                  lang.shareInstantly,
-                                  lang.withLovedOnes,
-                                  const Color(0xFFF0FFF4),
-                                  const Color(0xFF27AE60),
-                                  isSmallScreen,
+                                  icon: Icons.near_me_rounded,
+                                  title: lang.shareInstantly,
+                                  subtitle: lang.withLovedOnes,
+                                  bgColor: const Color(0xFFF0FFF4),
+                                  iconColor: const Color(0xFF27AE60),
+                                  titleSize: featureTitleSize,
+                                  subtitleSize: featureSubtitleSize,
+                                  containerSize: featureIconContainerSize,
+                                  iconSize: featureIconSize,
+                                  spacing: featureSpacing,
                                 ),
                               ],
                             ),
@@ -203,7 +247,7 @@ class OnboardingIntroScreen extends StatelessWidget {
                               child: Text(
                                 lang.getStartedLabel,
                                 style: TextStyle(
-                                  fontSize: isSmallScreen ? 16 : 18,
+                                  fontSize: isSmallScreen ? 16 : (size.height > 820 ? 20 : 18),
                                   fontWeight: FontWeight.w800,
                                 ),
                               ),
@@ -256,38 +300,59 @@ class OnboardingIntroScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildDivider() {
+  Widget _buildDivider(double height) {
     return Container(
       width: 1,
-      height: 40,
+      height: height,
       color: Colors.black.withOpacity(0.05),
     );
   }
 
-  Widget _buildFeature(IconData icon, String title, String subtitle, Color bgColor, Color iconColor, bool isSmallScreen) {
+  Widget _buildFeature({
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Color bgColor,
+    required Color iconColor,
+    required double titleSize,
+    required double subtitleSize,
+    required double containerSize,
+    required double iconSize,
+    required double spacing,
+  }) {
     return Expanded(
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Container(
-            width: isSmallScreen ? 48 : 56,
-            height: isSmallScreen ? 48 : 56,
+            width: containerSize,
+            height: containerSize,
             decoration: BoxDecoration(
               color: bgColor,
               shape: BoxShape.circle,
             ),
-            child: Icon(icon, color: iconColor, size: isSmallScreen ? 22 : 26),
+            child: Icon(icon, color: iconColor, size: iconSize),
           ),
-          SizedBox(height: isSmallScreen ? 10 : 15),
+          SizedBox(height: spacing),
           Text(
             title,
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: isSmallScreen ? 11 : 12, fontWeight: FontWeight.w800, color: const Color(0xFF1A1A1A)),
+            style: TextStyle(
+              fontSize: titleSize,
+              fontWeight: FontWeight.w800,
+              color: const Color(0xFF1A1A1A),
+            ),
           ),
           const SizedBox(height: 6),
           Text(
             subtitle,
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: isSmallScreen ? 8 : 9, color: Colors.black38, height: 1.3, fontWeight: FontWeight.w500),
+            style: TextStyle(
+              fontSize: subtitleSize,
+              color: Colors.black38,
+              height: 1.3,
+              fontWeight: FontWeight.w500,
+            ),
           ),
         ],
       ),

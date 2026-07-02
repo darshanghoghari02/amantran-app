@@ -41,11 +41,20 @@ class TemplateModel {
     var languages = (json['languages'] as List? ?? json['supportedLanguages'] as List?) ?? [];
     var fonts = (json['fonts'] as List? ?? json['supportedFonts'] as List?) ?? [];
 
+    final categoryId = json['categoryId'] as String? ?? '';
+    final rawTitle = json['title'] as String? ?? json['name'] as String? ?? '';
+    
+    // Graceful fallback for empty/placeholder titles from backend CRUD
+    String resolvedTitle = rawTitle.trim();
+    if (resolvedTitle.isEmpty || resolvedTitle.toLowerCase() == 'none' || resolvedTitle.toLowerCase() == 'null') {
+      resolvedTitle = '${categoryId.toLowerCase().contains('wedding') ? 'Wedding' : 'Engagement'} Invitation';
+    }
+
     return TemplateModel(
       id: documentId,
-      title: json['title'] as String? ?? json['name'] as String? ?? '',
+      title: resolvedTitle,
       slug: json['slug'] as String? ?? '',
-      categoryId: json['categoryId'] as String? ?? '',
+      categoryId: categoryId,
       thumbnail: json['thumbnail'] as String? ?? '',
       previewImage: json['previewImage'] as String? ?? json['thumbnail'] as String? ?? '',
       isPremium: json['isPremium'] as bool? ?? false,

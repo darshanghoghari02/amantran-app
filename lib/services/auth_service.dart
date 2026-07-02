@@ -32,7 +32,21 @@ class AuthService {
       },
       verificationFailed: (FirebaseAuthException e) {
         print("Firebase sendOtp Verification Failed: [${e.code}] ${e.message}");
-        onFailed(e.message ?? "Verification failed");
+        String friendlyMessage = e.message ?? "Verification failed";
+        final code = e.code.toLowerCase();
+        final message = (e.message ?? '').toLowerCase();
+
+        if (code.contains('billing') || message.contains('billing') || message.contains('billing_not_enabled') || message.contains('billing-not-enabled')) {
+          friendlyMessage = "SMS service is temporarily unavailable. If you are testing, please ensure this number is registered as a Firebase test phone number.";
+        } else if (code.contains('quota') || message.contains('quota')) {
+          friendlyMessage = "SMS quota exceeded for today. Please try again later or log in using Google.";
+        } else if (code.contains('invalid-phone') || message.contains('invalid-phone') || message.contains('invalid phone')) {
+          friendlyMessage = "The phone number entered is invalid. Please check your country code and digits.";
+        } else if (code.contains('too-many-requests') || message.contains('too-many-requests')) {
+          friendlyMessage = "Too many requests. Please wait a moment before trying again.";
+        }
+
+        onFailed(friendlyMessage);
       },
       codeSent: (String verificationId, int? resendToken) {
         onCodeSent(verificationId);

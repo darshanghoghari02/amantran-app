@@ -1,9 +1,19 @@
 import '../config/api_config.dart';
+import 'package:flutter/foundation.dart';
 
 String resolveImageUrl(String path) {
   if (path.isEmpty) return '';
   
   var resolvedPath = path;
+
+  // Map local ganesh presets to backend stickers directory
+  if (resolvedPath.endsWith('ganesh1.png') && !resolvedPath.contains('/stickers/')) {
+    resolvedPath = 'assets/images/stickers/ganesh1.png';
+  } else if (resolvedPath.endsWith('ganesh2.png') && !resolvedPath.contains('/stickers/')) {
+    resolvedPath = 'assets/images/stickers/ganesh2.png';
+  } else if (resolvedPath.endsWith('ganesh3.png') && !resolvedPath.contains('/stickers/')) {
+    resolvedPath = 'assets/images/stickers/ganesh3.png';
+  }
 
   // Normalize legacy /static/ paths to /assets/
   if (resolvedPath.contains('/static/')) {
@@ -26,6 +36,7 @@ String resolveImageUrl(String path) {
   if (resolvedPath.contains('localhost:') || 
       resolvedPath.contains('127.0.0.1:') || 
       resolvedPath.contains('10.0.2.2:') || 
+      resolvedPath.contains('192.168.1.68:') ||
       resolvedPath.contains('192.168.')) {
     final uri = Uri.tryParse(resolvedPath);
     if (uri != null) {
@@ -38,7 +49,11 @@ String resolveImageUrl(String path) {
   }
   if (resolvedPath.startsWith('/assets/') || resolvedPath.startsWith('assets/')) {
     final cleanPath = resolvedPath.startsWith('/') ? resolvedPath : '/$resolvedPath';
-    return '${ApiConfig.baseUrl}$cleanPath';
+    final finalUrl = '${ApiConfig.baseUrl}$cleanPath';
+    if (kDebugMode) {
+      print('🖼️ Image Resolution: $path -> $finalUrl');
+    }
+    return finalUrl;
   }
   return resolvedPath;
 }
@@ -66,30 +81,19 @@ bool isNetworkImage(String path) {
 bool _isBundledAsset(String path) {
   final clean = path.startsWith('/') ? path.substring(1) : path;
   
-  // 1. Must start with assets/
-  if (!clean.startsWith('assets/')) return false;
-  
-  // 2. Check if it's a theme template
-  if (clean.startsWith('assets/templates/theme_')) {
-    return true;
-  }
-  
-  // 3. Check if it's wedding templete1
-  if (clean.startsWith('assets/images/wedding/templete1/')) {
-    return true;
-  }
-  
-  // 4. Check if it's in the root of assets/images/
-  if (clean.startsWith('assets/images/')) {
-    if (clean.contains('/royal_wedding/') || clean.contains('/defaults/') || clean.contains('/stickers/')) {
-      return false;
+  // Whitelist of core UI assets physically bundled in the app package.
+  // All templates, themes, stickers, and design assets must load from the backend API server.
+  final bundledWhitelist = [
+    'assets/images/invitation_logo.jpg',
+    'assets/images/banner_image.png',
+    'assets/images/placeholder.png',
+    'assets/images/default_avatar.png',
+  ];
+
+  for (final allowed in bundledWhitelist) {
+    if (clean == allowed || clean.endsWith(allowed)) {
+      return true;
     }
-    // Count slashes in the path to identify deep subfolders
-    final slashCount = '/'.allMatches(clean).length;
-    if (slashCount > 3) {
-      return false;
-    }
-    return true;
   }
   
   return false;

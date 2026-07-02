@@ -80,7 +80,7 @@ class AllDesignsScreen extends StatelessWidget {
                         crossAxisCount: 2,
                         crossAxisSpacing: 15,
                         mainAxisSpacing: 20,
-                        childAspectRatio: 0.75,
+                        childAspectRatio: 0.65,
                       ),
                       itemBuilder: (context, index) {
                         final design = designs[index];

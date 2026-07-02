@@ -43,6 +43,7 @@ Future<void> main() async {
 
   // 🔥 INIT HIVE
   await Hive.initFlutter();
+  await Hive.openBox('cms_cache');
   await AuthService.init();
 
   // 🔥 REGISTER ADAPTERS
@@ -108,25 +109,21 @@ class _MyAppState extends State<MyApp> {
     final token = await userProvider.getAuthToken();
     print("🔍 [Main] Checking auth token: ${token != null ? 'Token found' : 'No token'}");
     
-    // If JWT token exists, fetch user data from backend BEFORE showing any screen
+    // If JWT token exists, fetch user data from backend asynchronously (non-blocking)
     if (token != null && token.isNotEmpty) {
-      print("✅ [Main] Valid token found, fetching profile from cloud");
-      try {
-        await userProvider.fetchProfileFromCloud();
-      } catch (e) {
+      print("✅ [Main] Valid token found, fetching profile from cloud in background");
+      userProvider.fetchProfileFromCloud(silent: true).catchError((e) {
         print("⚠️ [Main] Startup profile fetch failed: $e");
-      }
+      });
     } else {
       print("❌ [Main] No valid token found");
       
       // Check if Firebase user exists but profile is incomplete on startup
       if (FirebaseAuth.instance.currentUser != null) {
-        print("✅ [Main] Firebase user found, fetching profile from cloud");
-        try {
-          await userProvider.fetchProfileFromCloud();
-        } catch (e) {
+        print("✅ [Main] Firebase user found, fetching profile from cloud in background");
+        userProvider.fetchProfileFromCloud(silent: true).catchError((e) {
           print("⚠️ [Main] Startup Firebase profile fetch failed: $e");
-        }
+        });
       }
     }
     

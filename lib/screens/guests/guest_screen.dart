@@ -140,6 +140,7 @@ class _GuestScreenState extends State<GuestScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Container(
             height: 50,
+            alignment: Alignment.center,
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(25),
@@ -153,6 +154,7 @@ class _GuestScreenState extends State<GuestScreen> {
             ),
             child: TextField(
               onChanged: (v) => setState(() => _search = v),
+              textAlignVertical: TextAlignVertical.center,
               decoration: InputDecoration(
                 hintText: lang.searchGuests,
                 hintStyle: const TextStyle(color: Colors.black26, fontSize: 14),
@@ -327,7 +329,7 @@ class _GuestScreenState extends State<GuestScreen> {
               borderRadius: BorderRadius.circular(15),
             ),
             child: Text(
-              guest.statusLabel,
+              context.read<LanguageProvider>().rsvpStatusLabel(guest.rsvpStatus),
               style: TextStyle(
                 fontSize: 11,
                 fontWeight: FontWeight.w700,
@@ -670,7 +672,7 @@ class _GuestScreenState extends State<GuestScreen> {
                     child: DropdownButton<RsvpStatus>(
                       isExpanded: true, value: selectedStatus,
                       items: RsvpStatus.values.map((s) => DropdownMenuItem(value: s,
-                        child: Text(s.name[0].toUpperCase() + s.name.substring(1)))).toList(),
+                        child: Text(lang.rsvpStatusLabel(s)))).toList(),
                       onChanged: (v) { if (v != null) setS(() => selectedStatus = v); },
                     ),
                   ),

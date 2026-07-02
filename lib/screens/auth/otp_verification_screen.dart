@@ -41,6 +41,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
   Timer? _timer;
   int _secondsRemaining = 0;
   bool _isLoading = false;
+  bool _isResending = false;
 
   @override
   void initState() {
@@ -100,14 +101,20 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
         // Store JWT token if provided by backend
         if (token != null && token.isNotEmpty) {
           await userProvider.setAuthToken(token);
+          print("✅ [OTP Screen] Token stored: ${token.substring(0, 20)}...");
+        } else {
+          print("⚠️ [OTP Screen] No token received from verification");
         }
         
         // Persist phone number so login survives app close / hot restart
         if (widget.phone != null && widget.phone!.isNotEmpty) {
           await userProvider.storeUserPhone(widget.phone!);
+          print("✅ [OTP Screen] Phone stored: ${widget.phone}");
         }
         
+        // Fetch profile from cloud
         await userProvider.fetchProfileFromCloud(phone: widget.phone);
+        print("✅ [OTP Screen] Profile fetched from cloud");
         
         // Only update profile if it's incomplete
         if (!userProvider.isProfileComplete) {
@@ -121,6 +128,7 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
                   : (widget.phone ?? ""),
               email: widget.email!,
             );
+            print("✅ [OTP Screen] Profile updated");
           }
         }
         
@@ -131,7 +139,16 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
           await userProvider.fetchProfileFromCloud(phone: widget.phone);
           
           if (mounted) {
-            if (userProvider.isProfileComplete) {
+            // For phone-only users (WhatsApp OTP), if they have a valid phone, go to home
+            // For email users, require full profile completion
+            final isPhoneOnlyUser = widget.isWhatsappOtp && widget.email == null;
+            final hasValidPhone = userProvider.phone.isNotEmpty && 
+                                   !userProvider.phone.contains('00000 00000') &&
+                                   !userProvider.phone.contains('0000000000');
+            
+            print("🔍 [OTP Screen] Profile check - Complete: ${userProvider.isProfileComplete}, PhoneOnly: $isPhoneOnlyUser, ValidPhone: $hasValidPhone");
+            
+            if (userProvider.isProfileComplete || (isPhoneOnlyUser && hasValidPhone)) {
               Navigator.popUntil(context, (route) => route.isFirst);
               TopNotification.show(context, message: "Welcome!", type: NotificationType.success);
             } else {
@@ -153,29 +170,29 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
     }
   }
 
-  void _handleResend() {
-    if (_secondsRemaining > 0) return;
+  void _handleResend() async {
+    if (_secondsRemaining > 0 || _isResending) return;
+
+    setState(() => _isResending = true);
 
     if (widget.email != null) {
-      EmailAuthService.sendOtp(widget.email!, widget.emailOtp!).then((success) {
-        if (success) {
-          TopNotification.show(context, message: "OTP re-sent successfully", type: NotificationType.success);
-          _startResendTimer(60); 
-        } else {
-          TopNotification.show(context, message: "Failed to resend OTP", type: NotificationType.error);
-        }
-      });
+      final success = await EmailAuthService.sendOtp(widget.email!, widget.emailOtp!);
+      if (success) {
+        TopNotification.show(context, message: "OTP re-sent successfully", type: NotificationType.success);
+        _startResendTimer(60); 
+      } else {
+        TopNotification.show(context, message: "Failed to resend OTP", type: NotificationType.error);
+      }
     } else if (widget.isWhatsappOtp) {
-      WhatsappOtpService.sendOtpToWhatsapp(widget.phone!).then((result) {
-        if (result['success']) {
-          TopNotification.show(context, message: "OTP re-sent to WhatsApp successfully", type: NotificationType.success);
-          _startResendTimer(60); 
-        } else {
-          TopNotification.show(context, message: result['error'] ?? "Failed to resend OTP", type: NotificationType.error);
-        }
-      });
+      final result = await WhatsappOtpService.sendOtpToWhatsapp(widget.phone!);
+      if (result['success']) {
+        TopNotification.show(context, message: "OTP re-sent to WhatsApp successfully", type: NotificationType.success);
+        _startResendTimer(60); 
+      } else {
+        TopNotification.show(context, message: result['error'] ?? "Failed to resend OTP", type: NotificationType.error);
+      }
     } else {
-      AuthService.sendOtp(
+      await AuthService.sendOtp(
         phone: widget.phone!,
         onCodeSent: (newVerificationId) {
           TopNotification.show(context, message: "OTP re-sent successfully", type: NotificationType.success);
@@ -186,6 +203,8 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
         },
       );
     }
+
+    setState(() => _isResending = false);
   }
 
   String _formatTimer(int seconds) {

@@ -1,18 +1,23 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'dart:io';
 import 'dart:convert';
+import 'dart:ui' as ui;
 import 'package:google_sign_in/google_sign_in.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'package:http/http.dart' as http;
 import '../../providers/user_provider.dart';
 import '../../providers/language_provider.dart';
 import '../../widgets/top_notification.dart';
+import '../../widgets/app_image.dart';
 import '../../services/auth_service.dart';
 import 'otp_verification_screen.dart';
 import '../../config/api_config.dart';
 import '../../services/whatsapp_otp_service.dart';
 import '../../utils/image_resolver.dart';
+import '../../utils/country_codes.dart';
 
 
 class LoginScreen extends StatefulWidget {
@@ -25,10 +30,240 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _phoneController = TextEditingController();
+  Country _selectedCountry = countries.firstWhere((c) => c.code == 'IN');
+  String _searchQuery = "";
+
+  @override
+  void initState() {
+    super.initState();
+    _detectCountryCode();
+  }
+
+  void _detectCountryCode() {
+    // 1. Try to get country from device system locale first (instant fallback)
+    try {
+      final countryCode = ui.PlatformDispatcher.instance.locale.countryCode;
+      if (countryCode != null && countryCode.isNotEmpty) {
+        setState(() {
+          _selectedCountry = CountryParser.detectCountry(countryCode);
+        });
+      }
+    } catch (e) {
+      print("System locale detection failed: $e");
+    }
+
+    // 2. Fetch network-based IP country code asynchronously for precise detection
+    http.get(Uri.parse('https://ipapi.co/json/')).then((response) {
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final String? netCountry = data['country_code']?.toString();
+        if (netCountry != null && netCountry.isNotEmpty) {
+          final matched = countries.firstWhere(
+            (c) => c.code.toUpperCase() == netCountry.toUpperCase(),
+            orElse: () => _selectedCountry,
+          );
+          if (mounted) {
+            setState(() {
+              _selectedCountry = matched;
+            });
+            print("Auto-detected IP country: ${matched.name} (${matched.dialCode})");
+          }
+        }
+      }
+    }).catchError((err) {
+      print("Network-based country detection failed: $err. Using system locale.");
+    });
+  }
+
+  void _showCountryPicker() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final List<Country> filteredList = countries.where((c) {
+              final query = _searchQuery.toLowerCase();
+              return c.name.toLowerCase().contains(query) ||
+                  c.dialCode.contains(query) ||
+                  c.code.toLowerCase().contains(query);
+            }).toList();
+
+            return Padding(
+              padding: EdgeInsets.only(
+                bottom: MediaQuery.of(context).viewInsets.bottom,
+              ),
+              child: Container(
+                constraints: BoxConstraints(
+                  maxHeight: MediaQuery.of(context).size.height * 0.65,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const SizedBox(height: 10),
+                    Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.shade300,
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    const Text(
+                      "Select Country",
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900,
+                        color: Color(0xFF1A1A1A),
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: Container(
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF8F9FA),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: Colors.black.withOpacity(0.05)),
+                        ),
+                        child: TextField(
+                          onChanged: (val) {
+                            setModalState(() {
+                              _searchQuery = val;
+                            });
+                          },
+                          textAlignVertical: TextAlignVertical.center,
+                          decoration: const InputDecoration(
+                            hintText: "Search country or dial code...",
+                            hintStyle: TextStyle(
+                              color: Colors.black26,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            prefixIcon: Icon(Icons.search, color: Color(0xFFF94C66)),
+                            border: InputBorder.none,
+                            contentPadding: EdgeInsets.symmetric(vertical: 12),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Expanded(
+                      child: filteredList.isEmpty
+                          ? const Center(
+                              child: Text(
+                                "No country found",
+                                style: TextStyle(color: Colors.grey, fontSize: 14),
+                              ),
+                            )
+                          : ListView.builder(
+                              physics: const BouncingScrollPhysics(),
+                              itemCount: filteredList.length,
+                              itemBuilder: (context, index) {
+                                final country = filteredList[index];
+                                final isSelected = country.code == _selectedCountry.code;
+                                return ListTile(
+                                  onTap: () {
+                                    setState(() {
+                                      _selectedCountry = country;
+                                    });
+                                    Navigator.pop(context);
+                                  },
+                                  leading: Text(
+                                    country.flag,
+                                    style: const TextStyle(fontSize: 24),
+                                  ),
+                                  title: Text(
+                                    country.name,
+                                    style: TextStyle(
+                                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                                      color: isSelected ? const Color(0xFFF94C66) : const Color(0xFF1A1A1A),
+                                      fontSize: 15,
+                                    ),
+                                  ),
+                                  trailing: Text(
+                                    country.dialCode,
+                                    style: TextStyle(
+                                      fontWeight: isSelected ? FontWeight.bold : FontWeight.w700,
+                                      color: isSelected ? const Color(0xFFF94C66) : Colors.black54,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    ).then((_) {
+      _searchQuery = "";
+    });
+  }
+
+  void _onPhoneChanged(String val) {
+    String text = val.trim();
+    if (text.isEmpty) return;
+
+    if (text.startsWith('00')) {
+      text = '+' + text.substring(2);
+    }
+
+    if (text.startsWith('+')) {
+      final country = CountryParser.parsePhone(text);
+      final local = CountryParser.getLocalNumber(text);
+      setState(() {
+        _selectedCountry = country;
+      });
+      _phoneController.value = TextEditingValue(
+        text: local,
+        selection: TextSelection.collapsed(offset: local.length),
+      );
+      return;
+    }
+
+    if (text.length > 10) {
+      final sorted = List<Country>.from(countries)
+        ..sort((a, b) => b.dialCode.replaceAll(RegExp(r'\D'), '').length.compareTo(
+            a.dialCode.replaceAll(RegExp(r'\D'), '').length));
+      for (var country in sorted) {
+        final dialDigits = country.dialCode.replaceAll(RegExp(r'\D'), '');
+        if (dialDigits.isNotEmpty && text.startsWith(dialDigits)) {
+          final local = text.substring(dialDigits.length);
+          setState(() {
+            _selectedCountry = country;
+          });
+          _phoneController.value = TextEditingValue(
+            text: local,
+            selection: TextSelection.collapsed(offset: local.length),
+          );
+          return;
+        }
+      }
+    }
+  }
+
   void _onContinue() {
     final phone = _phoneController.text.trim();
-    if (RegExp(r'^\d{10}$').hasMatch(phone)) {
-      final formattedPhone = '+91$phone';
+    final mismatchError = CountryParser.checkPhoneMismatch(_selectedCountry.dialCode, phone);
+    if (mismatchError != null) {
+      TopNotification.show(context,
+          message: mismatchError,
+          type: NotificationType.error);
+      return;
+    }
+
+    if (RegExp(r'^\d{7,15}$').hasMatch(phone)) {
+      final formattedPhone = '${_selectedCountry.dialCode}$phone';
 
       showDialog(
         context: context,
@@ -42,15 +277,58 @@ class _LoginScreenState extends State<LoginScreen> {
         Navigator.pop(context); // Remove loading
         
         if (result['success']) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => OtpVerificationScreen(
-                phone: formattedPhone,
-                isWhatsappOtp: true,
+          if (result['fallback'] == true) {
+            // Show OTP in dialog when WhatsApp fails
+            showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (ctx) => AlertDialog(
+                title: const Text('OTP Code'),
+                content: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Text('WhatsApp is unavailable. Your OTP is:'),
+                    const SizedBox(height: 16),
+                    Text(
+                      result['otp'],
+                      style: const TextStyle(
+                        fontSize: 32,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 4,
+                      ),
+                    ),
+                  ],
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () {
+                      Navigator.pop(ctx);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => OtpVerificationScreen(
+                            phone: formattedPhone,
+                            isWhatsappOtp: true,
+                          ),
+                        ),
+                      );
+                    },
+                    child: const Text('Continue'),
+                  ),
+                ],
               ),
-            ),
-          );
+            );
+          } else {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => OtpVerificationScreen(
+                  phone: formattedPhone,
+                  isWhatsappOtp: true,
+                ),
+              ),
+            );
+          }
         } else {
           // Fall back to Firebase SMS if WhatsApp OTP fails
           AuthService.sendOtp(
@@ -79,7 +357,7 @@ class _LoginScreenState extends State<LoginScreen> {
       });
     } else {
       TopNotification.show(context,
-          message: 'Please enter a valid 10-digit number',
+          message: 'Please enter a valid phone number',
           type: NotificationType.error);
     }
   }
@@ -130,11 +408,15 @@ class _LoginScreenState extends State<LoginScreen> {
       // Send ID token to backend
       final response = await http.post(
         Uri.parse('${ApiConfig.baseUrl}/api/auth/google-login'),
-        headers: {'Content-Type': 'application/json'},
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
         body: jsonEncode({
           'idToken': idToken,
         }),
-      );
+      ).timeout(const Duration(seconds: 10));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -168,8 +450,11 @@ class _LoginScreenState extends State<LoginScreen> {
           throw Exception(data['error'] ?? 'Google login failed');
         }
       } else {
-        final errorData = jsonDecode(response.body);
-        throw Exception(errorData['error'] ?? 'Backend error: ${response.statusCode}');
+        String serverError = response.body.trim();
+        if (serverError.length > 150) {
+          serverError = '${serverError.substring(0, 150)}...';
+        }
+        throw Exception("Status ${response.statusCode}: $serverError");
       }
     } on PlatformException catch (e) {
       if (mounted) {
@@ -205,12 +490,106 @@ class _LoginScreenState extends State<LoginScreen> {
       return;
     }
 
-    // Apple Sign-In not implemented for pure Google Sign-In setup
-    TopNotification.show(
-      context,
-      message: "Apple Sign-In is not available. Please use Google Sign-In.",
-      type: NotificationType.error,
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => const Center(
+        child: CircularProgressIndicator(color: Color(0xFFF94C66)),
+      ),
     );
+
+    try {
+      final credential = await SignInWithApple.getAppleIDCredential(
+        scopes: [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+      );
+
+      final String uid = credential.userIdentifier ?? '';
+      if (uid.isEmpty) {
+        throw Exception('Failed to obtain Apple User Identifier');
+      }
+
+      final String? email = credential.email;
+      final String name = [
+        credential.givenName,
+        credential.familyName
+      ].where((e) => e != null && e.isNotEmpty).join(' ');
+
+      // Send credential to backend
+      final response = await http.post(
+        Uri.parse('${ApiConfig.baseUrl}/api/auth/apple-login'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1',
+        },
+        body: jsonEncode({
+          'uid': uid,
+          'email': email,
+          'name': name.isNotEmpty ? name : null,
+        }),
+      ).timeout(const Duration(seconds: 10));
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data['success'] && data['token'] != null) {
+          final userProvider = context.read<UserProvider>();
+
+          // Store JWT token from backend
+          await userProvider.setAuthToken(data['token']);
+
+          // Update user data from backend response
+          if (data['user'] != null) {
+            await userProvider.updateUserFromBackend(data['user']);
+          }
+
+          userProvider.setSocialOtpVerified(true);
+
+          if (mounted) {
+            Navigator.pop(context); // Pop loading spinner
+
+            TopNotification.show(
+              context,
+              message: "Apple Sign-In successful",
+              type: NotificationType.success,
+            );
+
+            if (mounted) {
+              Navigator.popUntil(context, (route) => route.isFirst);
+            }
+          }
+        } else {
+          throw Exception(data['error'] ?? 'Apple login failed');
+        }
+      } else {
+        String serverError = response.body.trim();
+        if (serverError.length > 150) {
+          serverError = '${serverError.substring(0, 150)}...';
+        }
+        throw Exception("Status ${response.statusCode}: $serverError");
+      }
+    } on SignInWithAppleAuthorizationException catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        if (e.code == AuthorizationErrorCode.canceled) return;
+        TopNotification.show(
+          context,
+          message: "Apple Sign-In cancelled: ${e.message}",
+          type: NotificationType.info,
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        Navigator.pop(context);
+        TopNotification.show(
+          context,
+          message: "Apple Sign-In failed: $e",
+          type: NotificationType.error,
+        );
+      }
+    }
   }
 
   @override
@@ -220,10 +599,11 @@ class _LoginScreenState extends State<LoginScreen> {
   }
 
   String _maskPhoneNumber(String phone) {
-    final digits = phone.replaceAll(RegExp(r'\D'), '');
-    if (digits.length >= 10) {
-      final last2 = digits.substring(digits.length - 2);
-      return '+91 XXXXX XXX$last2';
+    final country = CountryParser.parsePhone(phone);
+    final localNumber = CountryParser.getLocalNumber(phone);
+    if (localNumber.length >= 4) {
+      final last2 = localNumber.substring(localNumber.length - 2);
+      return '${country.dialCode} XXXXX XXX$last2';
     }
     return phone;
   }
@@ -366,15 +746,12 @@ class _LoginScreenState extends State<LoginScreen> {
                       padding: const EdgeInsets.only(bottom: 12),
                       child: GestureDetector(
                         onTap: () {
-                          // Clean the phone number (remove +91 prefix and any non-digits)
-                          String cleanPhone = account.phone;
-                          if (cleanPhone.startsWith('+91')) {
-                            cleanPhone = cleanPhone.substring(3);
-                          }
-                          cleanPhone = cleanPhone.replaceAll(RegExp(r'\D'), '');
+                          final parsedCountry = CountryParser.parsePhone(account.phone);
+                          final localPhone = CountryParser.getLocalNumber(account.phone);
 
                           setState(() {
-                            _phoneController.text = cleanPhone;
+                            _selectedCountry = parsedCountry;
+                            _phoneController.text = localPhone;
                           });
 
                           // Automatically trigger sending OTP to this number
@@ -406,50 +783,23 @@ class _LoginScreenState extends State<LoginScreen> {
                                   shape: BoxShape.circle,
                                 ),
                                 child: ClipOval(
-                                  child: account.profileImagePath != null &&
-                                          account.profileImagePath!.isNotEmpty
-                                      ? (account.profileImagePath!.startsWith('http')
-                                          ? Image.network(
-                                              resolveImageUrl(account.profileImagePath!),
-                                              fit: BoxFit.cover,
-                                              key: ValueKey(account.profileImagePath!),
-                                            )
-                                          : (File(account.profileImagePath!).existsSync()
-                                              ? Image.file(
-                                                  File(account.profileImagePath!),
-                                                  fit: BoxFit.cover,
-                                                  key: ValueKey(account.profileImagePath!),
-                                                )
-                                              : Container(
-                                                  color: const Color(0xFFF94C66).withOpacity(0.1),
-                                                  child: Center(
-                                                    child: Text(
-                                                      account.name.isNotEmpty ? account.name[0].toUpperCase() : '?',
-                                                      style: const TextStyle(
-                                                        color: Color(0xFFF94C66),
-                                                        fontSize: 18,
-                                                        fontWeight: FontWeight.bold,
-                                                      ),
-                                                    ),
-                                                  ),
-                                                )))
-                                      : Container(
-                                          color: const Color(0xFFF94C66)
-                                              .withOpacity(0.1),
-                                          child: Center(
-                                            child: Text(
-                                              account.name.isNotEmpty
-                                                  ? account.name[0]
-                                                      .toUpperCase()
-                                                  : '?',
-                                              style: const TextStyle(
-                                                color: Color(0xFFF94C66),
-                                                fontSize: 18,
-                                                fontWeight: FontWeight.bold,
-                                              ),
-                                            ),
+                                  child: AppImage(
+                                    src: account.profileImagePath ?? '',
+                                    fit: BoxFit.cover,
+                                    errorWidget: Container(
+                                      color: const Color(0xFFF94C66).withOpacity(0.1),
+                                      child: Center(
+                                        child: Text(
+                                          account.name.isNotEmpty ? account.name[0].toUpperCase() : '?',
+                                          style: const TextStyle(
+                                            color: Color(0xFFF94C66),
+                                            fontSize: 18,
+                                            fontWeight: FontWeight.bold,
                                           ),
                                         ),
+                                      ),
+                                    ),
+                                  ),
                                 ),
                               ),
                               const SizedBox(width: 16),
@@ -538,26 +888,47 @@ class _LoginScreenState extends State<LoginScreen> {
               const SizedBox(height: 16),
               Row(
                 children: [
-                  Container(
-                    height: 56,
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    alignment: Alignment.center,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFF8F9FA),
-                      borderRadius: BorderRadius.circular(14),
-                      border: Border.all(color: Colors.black.withOpacity(0.05)),
+                  GestureDetector(
+                    onTap: _showCountryPicker,
+                    child: Container(
+                      height: 56,
+                      padding: const EdgeInsets.symmetric(horizontal: 12),
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: const Color(0xFFF8F9FA),
+                        borderRadius: BorderRadius.circular(14),
+                        border: Border.all(color: Colors.black.withOpacity(0.05)),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _selectedCountry.flag,
+                            style: const TextStyle(fontSize: 18),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            _selectedCountry.dialCode,
+                            style: const TextStyle(
+                                color: Color(0xFF1A1A1A),
+                                fontWeight: FontWeight.w800,
+                                fontSize: 15)),
+                          const SizedBox(width: 4),
+                          const Icon(
+                            Icons.keyboard_arrow_down_rounded,
+                            color: Colors.black54,
+                            size: 18,
+                          ),
+                        ],
+                      ),
                     ),
-                    child: const Text("+91",
-                        style: TextStyle(
-                            color: Color(0xFF1A1A1A),
-                            fontWeight: FontWeight.w800,
-                            fontSize: 15)),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Container(
                       height: 56,
                       padding: const EdgeInsets.symmetric(horizontal: 16),
+                      alignment: Alignment.center,
                       decoration: BoxDecoration(
                         color: const Color(0xFFF8F9FA),
                         borderRadius: BorderRadius.circular(14),
@@ -566,20 +937,24 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                       child: TextField(
                         controller: _phoneController,
+                        onChanged: _onPhoneChanged,
                         keyboardType: TextInputType.phone,
                         inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                          LengthLimitingTextInputFormatter(10),
+                          FilteringTextInputFormatter.allow(RegExp(r'[0-9+]')),
+                          LengthLimitingTextInputFormatter(15),
                         ],
                         style: const TextStyle(
                             fontWeight: FontWeight.w700, fontSize: 15),
+                        textAlignVertical: TextAlignVertical.center,
                         decoration: InputDecoration(
-                          hintText: lang.enter10DigitNumber,
+                          hintText: lang.enterPhoneNumber,
                           hintStyle: const TextStyle(
                               color: Colors.black26,
                               fontSize: 14,
                               fontWeight: FontWeight.w500),
                           border: InputBorder.none,
+                          isDense: true,
+                          contentPadding: EdgeInsets.zero,
                         ),
                       ),
                     ),
@@ -732,33 +1107,35 @@ class _LoginScreenState extends State<LoginScreen> {
                       ),
                     ),
                   ),
-                  const SizedBox(width: 24),
-                  // Apple Button
-                  GestureDetector(
-                    onTap: _handleAppleSignIn,
-                    child: Container(
-                      width: 56,
-                      height: 56,
-                      decoration: BoxDecoration(
-                        color: Colors.black,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.08),
-                            blurRadius: 12,
-                            offset: const Offset(0, 4),
+                  if (!kIsWeb && Platform.isIOS) ...[
+                    const SizedBox(width: 24),
+                    // Apple Button
+                    GestureDetector(
+                      onTap: _handleAppleSignIn,
+                      child: Container(
+                        width: 56,
+                        height: 56,
+                        decoration: BoxDecoration(
+                          color: Colors.black,
+                          shape: BoxShape.circle,
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.08),
+                              blurRadius: 12,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: const Center(
+                          child: Icon(
+                            Icons.apple,
+                            color: Colors.white,
+                            size: 28,
                           ),
-                        ],
-                      ),
-                      child: const Center(
-                        child: Icon(
-                          Icons.apple,
-                          color: Colors.white,
-                          size: 28,
                         ),
                       ),
                     ),
-                  ),
+                  ],
                 ],
               ),
               const SizedBox(height: 32),

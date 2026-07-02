@@ -8,7 +8,11 @@ import '../../providers/language_provider.dart';
 import '../../providers/subscription_provider.dart';
 import '../../widgets/top_notification.dart';
 import '../../widgets/premium_badge.dart';
+import '../../widgets/app_image.dart';
 import '../../utils/image_resolver.dart';
+import 'package:cached_network_image/cached_network_image.dart';
+import '../../providers/app_data_provider.dart';
+import '../../models/category_model.dart';
 
 class TemplateScreen extends StatefulWidget {
   final String title;
@@ -28,10 +32,43 @@ class _TemplateScreenState extends State<TemplateScreen> {
   int? openMenuIndex;
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _precacheTemplates();
+    });
+  }
+
+  void _precacheTemplates() {
+    for (final template in widget.templates) {
+      if (template.thumbnail.isNotEmpty) {
+        final url = resolveImageUrl(template.thumbnail);
+        if (url.startsWith('http')) {
+          precacheImage(
+            CachedNetworkImageProvider(url, maxWidth: 340),
+            context,
+          );
+        }
+      }
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final lang = context.watch<LanguageProvider>();
     final favoritesProvider = context.watch<FavoritesProvider>();
     final subProvider = context.watch<SubscriptionProvider>();
+    final appData = context.watch<AppDataProvider>();
+
+    // Resolve category and templates list dynamically in real-time
+    final category = appData.categories.firstWhere(
+      (c) => c.name.toLowerCase() == widget.title.toLowerCase(),
+      orElse: () => CategoryModel(id: '', name: widget.title, slug: '', coverImage: '', displayOrder: 0),
+    );
+
+    final templates = category.id.isNotEmpty
+        ? appData.getTemplatesByCategory(category.id)
+        : widget.templates;
 
     return Scaffold(
       backgroundColor: const Color(0xFFFCF9F9),
@@ -80,7 +117,7 @@ class _TemplateScreenState extends State<TemplateScreen> {
                 Expanded(
                   child: GridView.builder(
                     padding: const EdgeInsets.fromLTRB(16, 10, 16, 120),
-                    itemCount: widget.templates.length,
+                    itemCount: templates.length,
                     gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                       crossAxisCount: 2,
                       crossAxisSpacing: 16,
@@ -88,7 +125,7 @@ class _TemplateScreenState extends State<TemplateScreen> {
                       childAspectRatio: 0.65,
                     ),
                     itemBuilder: (context, index) {
-                      final template = widget.templates[index];
+                      final template = templates[index];
                       final isMenuOpen = openMenuIndex == index;
                       final isUnlocked = subProvider.isTemplateUnlocked(template);
 
@@ -129,9 +166,16 @@ class _TemplateScreenState extends State<TemplateScreen> {
                                     Positioned.fill(
                                       child: ClipRRect(
                                         borderRadius: const BorderRadius.vertical(top: Radius.circular(16)),
-                                          child: isNetworkImage(template.thumbnail)
-                                              ? Image.network(resolveImageUrl(template.thumbnail), fit: BoxFit.cover)
-                                              : Image.asset(template.thumbnail, fit: BoxFit.cover),
+                                           child: AppImage(
+                                             src: template.thumbnail,
+                                             fit: BoxFit.cover,
+                                             width: 170,
+                                             height: 260,
+                                             errorWidget: Image.asset(
+                                               'assets/images/banner_image.png',
+                                               fit: BoxFit.cover,
+                                             ),
+                                           ),
                                         ),
                                     ),
                                     // Action icons overlay
@@ -346,9 +390,14 @@ class _TemplateScreenState extends State<TemplateScreen> {
               insetPadding: const EdgeInsets.all(20),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(16),
-                child: isNetworkImage(template.thumbnail)
-                    ? Image.network(resolveImageUrl(template.thumbnail), fit: BoxFit.contain)
-                    : Image.asset(template.thumbnail, fit: BoxFit.contain),
+                child: AppImage(
+                  src: template.thumbnail,
+                  fit: BoxFit.contain,
+                  errorWidget: Image.asset(
+                    'assets/images/banner_image.png',
+                    fit: BoxFit.contain,
+                  ),
+                ),
               ),
             ),
           );

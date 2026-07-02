@@ -6,6 +6,7 @@ import '../models/page_model.dart';
 import 'language_provider.dart';
 import '../services/transliteration_engine.dart';
 import '../services/language_registry.dart';
+import '../utils/gopika_converter.dart';
 
 enum LogoType { preset, customSvg, customFile }
 
@@ -230,9 +231,17 @@ class InvitationProvider extends ChangeNotifier {
       }
       elements = initialElements.map((e) {
         var el = e.copyWith();
-        if (el.fontFamily == 'KAP011') {
-          el.fontFamily = 'Noto Serif Gujarati';
+        // Ensure English content is populated in contentMap
+        if (el.contentMap['en'] == null || el.contentMap['en']!.isEmpty) {
+          el.contentMap['en'] = el.content;
         }
+        if (el.contentMap['gu'] == null || el.contentMap['gu']!.isEmpty) {
+          el.contentMap['gu'] = el.contentGujarati;
+        }
+        // Clear stale cache: remove language slots that were incorrectly pre-filled
+        // with English text (old bug: 'text' field was copied to all language codes).
+        // Keep 'en' and 'gu' always; clear others only if they equal the English text.
+        _clearStaleLanguageSlots(el);
         // Auto-migrate old side-by-side couple layout coordinates to new stacked layout coordinates
         if (templateCategory == 'Engagement' || templateCategory == 'Baby Shower') {
           if (el.id == 'p1_groom' && (el.x == 200 || el.x == 205 || el.width == 130 || el.width == 135)) {
@@ -292,9 +301,16 @@ class InvitationProvider extends ChangeNotifier {
     }
     elements = initialElements.map((e) {
       var el = e.copyWith();
-      if (el.fontFamily == 'KAP011') {
-        el.fontFamily = 'Noto Serif Gujarati';
+      // Ensure English content is populated in contentMap
+      if (el.contentMap['en'] == null || el.contentMap['en']!.isEmpty) {
+        el.contentMap['en'] = el.content;
       }
+      if (el.contentMap['gu'] == null || el.contentMap['gu']!.isEmpty) {
+        el.contentMap['gu'] = el.contentGujarati;
+      }
+      // Clear stale cache: remove language slots that were incorrectly pre-filled
+      // with English text (old bug: 'text' field was copied to all language codes).
+      _clearStaleLanguageSlots(el);
       // Auto-migrate old side-by-side couple layout coordinates to new stacked layout coordinates
       if (templateCategory == 'Engagement' || templateCategory == 'Baby Shower') {
         if (el.id == 'p1_groom' && (el.x == 200 || el.x == 205 || el.width == 130 || el.width == 135)) {
@@ -409,11 +425,117 @@ class InvitationProvider extends ChangeNotifier {
   String tahukoEn = '';
   String tahukoGu = '';
 
+  /// Removes language slots that were incorrectly pre-filled with the English text
+  /// value (caused by the old `text` field fallback that copied to ALL language codes).
+  /// Also normalizes legacy KAP/Gopika fonts to "Noto Serif Gujarati" so all
+  /// invitation languages render correctly.
+  void _clearStaleLanguageSlots(TemplateElement el) {
+    // Normalize legacy KAP/Gopika fonts → proper Unicode font
+    if (GopikaConverter.isLegacyFont(el.fontFamily)) {
+      el.fontFamily = 'Noto Serif Gujarati';
+    }
+
+    if (el.type != ElementType.text) return;
+    final enText = el.contentMap['en'] ?? '';
+    if (enText.isEmpty) return;
+    const nonUserCodes = ['hi', 'mr', 'pa', 'ur', 'ks', 'ta', 'bn', 'te', 'kn', 'ml', 'sa', 'or', 'as', 'ne'];
+    for (final code in nonUserCodes) {
+      if (el.contentMap[code] == enText) {
+        el.contentMap.remove(code);
+      }
+    }
+  }
+
+
+  // --- Fuzzy Element ID Matcher ---
+  Iterable<TemplateElement> _findMatchingElements(String logicalId) {
+    // 1. Try exact match or startsWith match first (backwards compatibility)
+    final exact = elements.where((e) => e.id == logicalId || e.id.startsWith('${logicalId}_'));
+    if (exact.isNotEmpty) return exact;
+
+    final String lowerLogicalId = logicalId.toLowerCase();
+
+    // 2. Fuzzy mapping based on parts of the ID
+    return elements.where((e) {
+      final String eId = e.id.toLowerCase();
+
+      if (lowerLogicalId.contains('bride') && eId.contains('bride')) {
+        return true;
+      }
+      if (lowerLogicalId.contains('groom') && eId.contains('groom')) {
+        return true;
+      }
+      if (lowerLogicalId.contains('title') && eId.contains('title')) {
+        if (lowerLogicalId.startsWith('p1_') && (eId.contains('cover') || eId.contains('p1_'))) return true;
+        if (lowerLogicalId.startsWith('p0_') && eId.contains('mangal')) return true;
+        if (lowerLogicalId.startsWith('p2_') && eId.contains('sangeet')) return true;
+        if (lowerLogicalId.startsWith('p3_') && eId.contains('welcome')) return true;
+        if (lowerLogicalId.startsWith('p4_') && eId.contains('parinay')) return true;
+        if (lowerLogicalId.startsWith('p5_') && (eId.contains('thanks') || eId.contains('family'))) return true;
+        return false;
+      }
+      if (lowerLogicalId.contains('sang') && (eId.contains('weds') || eId.contains('sang') || eId.contains('sng'))) {
+        return true;
+      }
+      if (lowerLogicalId.contains('shlok') && (eId.contains('mantra') || eId.contains('shlok'))) {
+        return true;
+      }
+      if (lowerLogicalId.contains('snehi') && (eId.contains('guest') || eId.contains('snehi'))) {
+        return true;
+      }
+      if (lowerLogicalId.contains('nimantrak_title') && (eId.contains('inviter_title') || eId.contains('nimantrak_title'))) {
+        return true;
+      }
+      if (lowerLogicalId.contains('nimantrak_name') && (eId.contains('inviter_details') || eId.contains('nimantrak_name'))) {
+        return true;
+      }
+      if (lowerLogicalId.contains('date') && eId.contains('cover_date')) {
+        return true;
+      }
+      if (lowerLogicalId.contains('parents') && (eId.contains('parents') || eId.contains('welcome_groom_details') || eId.contains('groom_details'))) {
+        return true;
+      }
+      if (lowerLogicalId.contains('invite_text1') && (eId.contains('welcome_inviter') || eId.contains('invite_text'))) {
+        return true;
+      }
+      if (lowerLogicalId.contains('family_title') && (eId.contains('thanks_title') || eId.contains('family_title'))) {
+        return true;
+      }
+      if (lowerLogicalId.contains('nimantrak_names') && (eId.contains('thanks_desc') || eId.contains('nimantrak_names'))) {
+        return true;
+      }
+      if (lowerLogicalId.contains('no_gifts') && eId.contains('no_gifts')) {
+        return true;
+      }
+      if (lowerLogicalId.contains('list1a') && eId.contains('snehadhin')) {
+        return eId.contains('left') || eId.contains('right');
+      }
+      if (lowerLogicalId.contains('list2a') && eId.contains('darshna')) {
+        return eId.contains('left') || eId.contains('right');
+      }
+      if (lowerLogicalId.contains('list3') && eId.contains('mosalu')) {
+        return true;
+      }
+      if (lowerLogicalId.contains('list4') && eId.contains('ladla')) {
+        return true;
+      }
+      if (lowerLogicalId.contains('tahuko') && eId.contains('tahuko')) {
+        return true;
+      }
+
+      return false;
+    });
+  }
+
   // --- Helper Methods to read Element content ---
   String getGu(String id) {
     try {
-      final text = elements.firstWhere((e) => e.id == id || e.id.startsWith('${id}_')).contentGujarati;
-      return _sanitizeCorruptedText(text);
+      final matches = _findMatchingElements(id);
+      if (matches.isNotEmpty) {
+        final text = matches.first.contentGujarati;
+        return _sanitizeCorruptedText(text);
+      }
+      return '';
     } catch (_) {
       return '';
     }
@@ -421,8 +543,12 @@ class InvitationProvider extends ChangeNotifier {
 
   String getEn(String id) {
     try {
-      final text = elements.firstWhere((e) => e.id == id || e.id.startsWith('${id}_')).content;
-      return _sanitizeCorruptedText(text);
+      final matches = _findMatchingElements(id);
+      if (matches.isNotEmpty) {
+        final text = matches.first.content;
+        return _sanitizeCorruptedText(text);
+      }
+      return '';
     } catch (_) {
       return '';
     }
@@ -476,12 +602,32 @@ class InvitationProvider extends ChangeNotifier {
     }
   }
 
+  /// Strips all known chi-prefix variants (with/without trailing space, all
+  /// supported languages) from a name field so the provider stores only the
+  /// bare name. syncToElements re-applies the correct prefix for the active language.
+  static String _stripChiPrefixStatic(String text) {
+    return text
+        .replaceAll('ચિ. ', '')   // Gujarati with space
+        .replaceAll('ચિ.', '')    // Gujarati without space
+        .replaceAll('Chi. ', '')  // English with space
+        .replaceAll('Chi.', '')   // English without space
+        .replaceAll('chi. ', '')  // lowercase with space
+        .replaceAll('chi.', '')   // lowercase without space
+        .replaceAll('चि. ', '')   // Hindi with space
+        .replaceAll('चि.', '')    // Hindi without space
+        .replaceAll('ਚਿ. ', '')   // Punjabi with space
+        .replaceAll('ਚਿ.', '')    // Punjabi without space
+        .replaceAll('श्री. ', '') // Marathi with space
+        .replaceAll('श्री.', '')  // Marathi without space
+        .trim();
+  }
+
   void _populateFieldsFromElements() {
-    // Page 1 / Bride & Groom (Strip prefixes to keep clean input fields)
-    brideNameGu = getGu('p1_bride').replaceAll('ચિ. ', '').replaceAll('Chi. ', '').trim();
-    brideNameEn = getEn('p1_bride').replaceAll('ચિ. ', '').replaceAll('Chi. ', '').trim();
-    groomNameGu = getGu('p1_groom').replaceAll('ચિ. ', '').replaceAll('Chi. ', '').trim();
-    groomNameEn = getEn('p1_groom').replaceAll('ચિ. ', '').replaceAll('Chi. ', '').trim();
+    // Page 1 / Bride & Groom — strip ALL prefix variants; syncToElements re-applies the right one.
+    brideNameGu = _stripChiPrefixStatic(getGu('p1_bride'));
+    brideNameEn = _stripChiPrefixStatic(getEn('p1_bride'));
+    groomNameGu = _stripChiPrefixStatic(getGu('p1_groom'));
+    groomNameEn = _stripChiPrefixStatic(getEn('p1_groom'));
 
     // Date (Extract cleanly from Page 1 short date)
     final rawDate = getGu('p1_date');
@@ -584,50 +730,6 @@ class InvitationProvider extends ChangeNotifier {
       _updateGaneshAsset(logo.customFilePath!);
     }
 
-    // Page 0 (Mangalik Prasango)
-    setEl('p0_shlok1', lang.ganeshayNamahLabelFor('English'),
-        lbl(lang.ganeshayNamahLabelFor));
-    setEl('p0_title', lang.mangalikPrasangoLabelFor('English'),
-        lbl(lang.mangalikPrasangoLabelFor));
-
-    // Page 1 Title (Wedding / Engagement / Baby Shower Specifics)
-    if (templateCategory == 'Engagement') {
-      setEl('p1_title', 'Chandla Vidhi', 'ચાંદલા વિધિ');
-    } else if (templateCategory == 'Baby Shower') {
-      setEl('p1_title', 'Shrimant Sanskar', 'શ્રીમંત સંસ્કાર');
-    } else {
-      setEl('p1_title', lang.shubhVivahLabelFor('English'),
-          lbl(lang.shubhVivahLabelFor));
-    }
-    setEl('p1_sang', lang.sangLabelFor('English'), lbl(lang.sangLabelFor));
-    setEl('p1_shlok', lang.ganeshayNamahLabelFor('English'),
-        lbl(lang.ganeshayNamahLabelFor));
-    setEl('p1_snehi', lang.dearGuestLabelFor('English'),
-        lbl(lang.dearGuestLabelFor));
-
-    if (templateCategory == 'Engagement' || templateCategory == 'Baby Shower') {
-      setEl('p1_nimantrak_title', 'Inviter', 'નિમંત્રક');
-    } else {
-      setEl('p1_nimantrak_title', lang.nimantrakLabelFor('English'),
-          lbl(lang.nimantrakLabelFor));
-    }
-
-    // Page 2 (Sangeet Sandhya)
-    setEl('p2_shlok', lang.ganeshayNamahLabelFor('English'),
-        lbl(lang.ganeshayNamahLabelFor));
-    setEl('p2_title', lang.sangeetSandhyaLabelFor('English'),
-        lbl(lang.sangeetSandhyaLabelFor));
-    setEl('p2_sang', lang.sangLabelFor('English'), lbl(lang.sangLabelFor));
-
-    // Page 3 (Lagnotsav)
-    setEl('p3_title', lang.lagnotsavLabelFor('English'),
-        lbl(lang.lagnotsavLabelFor));
-    setEl('p3_sang', lang.sangLabelFor('English'), lbl(lang.sangLabelFor));
-
-    // Page 4 (Parinay Utsav)
-    setEl('p4_title', lang.parinayUtsavLabelFor('English'),
-        lbl(lang.parinayUtsavLabelFor));
-    setEl('p4_sang', lang.sangLabelFor('English'), lbl(lang.sangLabelFor));
 
     // Page 0 & 4 (Events)
     if (events.isNotEmpty) {
@@ -781,10 +883,13 @@ class InvitationProvider extends ChangeNotifier {
       {required String targetLang}) {
     try {
       final langCode = TemplateElement.languageCodeFor(targetLang);
-      final matches =
-          elements.where((e) => e.id == id || e.id.startsWith('${id}_'));
+      final matches = _findMatchingElements(id);
       for (final el in matches) {
-        if (english.isNotEmpty) el.content = english;
+        if (english.isNotEmpty) {
+          el.content = english;
+          el.contentMap['en'] = english;
+        }
+        // Update the target language content
         if (localized.isNotEmpty) {
           el.contentMap[langCode] = localized;
           if (langCode == 'gu') el.contentGujarati = localized;
@@ -795,7 +900,7 @@ class InvitationProvider extends ChangeNotifier {
 
   void _updateAsset(String id, String path) {
     try {
-      final matches = elements.where((e) => e.id == id || e.id.startsWith('${id}_'));
+      final matches = _findMatchingElements(id);
       for (final el in matches) {
         el.assetPath = path;
       }
@@ -805,46 +910,48 @@ class InvitationProvider extends ChangeNotifier {
   // --- Inline Canvas Edit Sync Back to Provider ---
   void syncElementBackToProvider(TemplateElement element) {
     final id = element.id;
-    if (id == 'p1_bride' || id == 'p2_bride' || id == 'p3_bride' || id == 'p4_bride') {
-      brideNameGu = element.contentGujarati.replaceAll('ચિ. ', '').replaceAll('Chi. ', '').trim();
-      brideNameEn = element.content.replaceAll('ચિ. ', '').replaceAll('Chi. ', '').trim();
-    } else if (id == 'p1_groom' || id == 'p2_groom' || id == 'p3_groom' || id == 'p4_groom') {
-      groomNameGu = element.contentGujarati.replaceAll('ચિ. ', '').replaceAll('Chi. ', '').trim();
-      groomNameEn = element.content.replaceAll('ચિ. ', '').replaceAll('Chi. ', '').trim();
-    } else if (id == 'p5_family_title') {
+    final lowerId = id.toLowerCase();
+    
+    if (id == 'p1_bride' || id == 'p2_bride' || id == 'p3_bride' || id == 'p4_bride' || lowerId.contains('bride')) {
+      brideNameGu = _stripChiPrefixStatic(element.contentGujarati);
+      brideNameEn = _stripChiPrefixStatic(element.content);
+    } else if (id == 'p1_groom' || id == 'p2_groom' || id == 'p3_groom' || id == 'p4_groom' || lowerId.contains('groom')) {
+      groomNameGu = _stripChiPrefixStatic(element.contentGujarati);
+      groomNameEn = _stripChiPrefixStatic(element.content);
+    } else if (id == 'p5_family_title' || lowerId.contains('family_title') || lowerId.contains('thanks_title')) {
       familyNameGu = element.contentGujarati;
       familyNameEn = element.content;
-    } else if (id == 'p3_invite_text1') {
+    } else if (id == 'p3_invite_text1' || lowerId.contains('invite_text') || lowerId.contains('welcome_inviter')) {
       invitationTextGu = element.contentGujarati;
       invitationTextEn = element.content;
-    } else if (id == 'p3_parents') {
+    } else if (id == 'p3_parents' || lowerId.contains('parents') || lowerId.contains('groom_details')) {
       parentsNameFullGu = element.contentGujarati;
       parentsNameFullEn = element.content;
-    } else if (id == 'p1_nimantrak_name') {
+    } else if (id == 'p1_nimantrak_name' || lowerId.contains('nimantrak_name') || lowerId.contains('inviter_details')) {
       nimantrakNameGu = element.contentGujarati;
       nimantrakNameEn = element.content;
-    } else if (id == 'p5_nimantrak_names') {
+    } else if (id == 'p5_nimantrak_names' || lowerId.contains('nimantrak_names') || lowerId.contains('thanks_desc')) {
       nimantrakListGu = element.contentGujarati;
       nimantrakListEn = element.content;
-    } else if (id == 'p5_no_gifts') {
+    } else if (id == 'p5_no_gifts' || lowerId.contains('no_gifts')) {
       noGiftsTextGu = element.contentGujarati;
       noGiftsTextEn = element.content;
-    } else if (id == 'p6_list1a') {
+    } else if (id == 'p6_list1a' || (lowerId.contains('snehadhin') && (lowerId.contains('left') || lowerId.contains('right')))) {
       snehdhinGu = element.contentGujarati;
       snehdhinEn = element.content;
-    } else if (id == 'p6_list2a') {
+    } else if (id == 'p6_list2a' || (lowerId.contains('darshna') && (lowerId.contains('left') || lowerId.contains('right')))) {
       darshanabhilashiGu = element.contentGujarati;
       darshanabhilashiEn = element.content;
-    } else if (id == 'p6_list3') {
+    } else if (id == 'p6_list3' || lowerId.contains('mosalu')) {
       mameruMosalGu = element.contentGujarati;
       mameruMosalEn = element.content;
-    } else if (id == 'p6_list4') {
+    } else if (id == 'p6_list4' || lowerId.contains('ladla')) {
       masiFoiLadlaGu = element.contentGujarati;
       masiFoiLadlaEn = element.content;
-    } else if (id == 'p6_tahuko_text') {
+    } else if (id == 'p6_tahuko_text' || lowerId.contains('tahuko')) {
       tahukoGu = element.contentGujarati;
       tahukoEn = element.content;
-    } else if (id == 'p1_date') {
+    } else if (id == 'p1_date' || (lowerId.contains('date') && lowerId.contains('cover'))) {
       weddingDate = element.contentGujarati.replaceAll('તા. ', '').replaceAll('Date: ', '').trim();
     }
     notifyListeners();
@@ -908,9 +1015,9 @@ class InvitationProvider extends ChangeNotifier {
                                id.endsWith('_right');
 
     if (isLeftColumn || isRightColumn) {
-      return 160.0;
+      return 480.0;
     }
-    return 320.0;
+    return 960.0;
   }
 
   KankotriData get data {
@@ -968,5 +1075,9 @@ class InvitationProvider extends ChangeNotifier {
       noGiftsText: noGiftsTextEn,
       noGiftsTextGu: noGiftsTextGu,
     );
+  }
+
+  void notifyOfChanges() {
+    notifyListeners();
   }
 }

@@ -28,10 +28,11 @@ class _AddGuestFormState extends State<AddGuestForm> {
   }
 
   void _save() {
+    final lang = context.read<LanguageProvider>();
     final name = _nameCtrl.text.trim();
     final phone = _phoneCtrl.text.trim();
     if (name.isEmpty || phone.isEmpty) {
-      TopNotification.show(context, message: "Please enter name and phone number", type: NotificationType.error);
+      TopNotification.show(context, message: lang.pleaseEnterNameAndPhone, type: NotificationType.error);
       return;
     }
     final guestId = DateTime.now().millisecondsSinceEpoch.toString();
@@ -53,7 +54,7 @@ class _AddGuestFormState extends State<AddGuestForm> {
       },
     );
     Navigator.pop(context);
-    TopNotification.show(context, message: "Guest added successfully");
+    TopNotification.show(context, message: lang.guestAdded);
   }
 
   @override
@@ -106,7 +107,7 @@ class _AddGuestFormState extends State<AddGuestForm> {
                     const SizedBox(height: 8),
                     TextField(
                       controller: _nameCtrl,
-                      decoration: _inputDecoration("Enter name"),
+                      decoration: _inputDecoration(lang.enterName),
                     ),
                     const SizedBox(height: 20),
                     Text(lang.phoneNumber, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: Colors.black87)),
@@ -115,7 +116,7 @@ class _AddGuestFormState extends State<AddGuestForm> {
                       controller: _phoneCtrl,
                       keyboardType: TextInputType.phone,
                       inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(10)],
-                      decoration: _inputDecoration("Enter name phone number"),
+                      decoration: _inputDecoration(lang.enterPhone),
                     ),
                     const SizedBox(height: 20),
                     Text(lang.noteOptional, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: Colors.black87)),
@@ -123,7 +124,7 @@ class _AddGuestFormState extends State<AddGuestForm> {
                     TextField(
                       controller: _noteCtrl,
                       maxLines: 3,
-                      decoration: _inputDecoration("Add any note"),
+                      decoration: _inputDecoration(lang.addAnyNote),
                     ),
                     const SizedBox(height: 20),
                     Text(lang.rsvpStatus, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14, color: Colors.black87)),
@@ -141,7 +142,7 @@ class _AddGuestFormState extends State<AddGuestForm> {
                           icon: const Icon(Icons.keyboard_arrow_down, color: Colors.black54),
                           items: RsvpStatus.values.map((s) => DropdownMenuItem(
                             value: s,
-                            child: Text(s.name[0].toUpperCase() + s.name.substring(1), style: const TextStyle(fontSize: 14)),
+                            child: Text(lang.rsvpStatusLabel(s), style: const TextStyle(fontSize: 14)),
                           )).toList(),
                           onChanged: (v) { if (v != null) setState(() => _rsvpStatus = v); },
                         ),

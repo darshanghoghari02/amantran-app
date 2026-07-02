@@ -59,7 +59,7 @@ class UserProvider extends ChangeNotifier {
   UserProvider() {
     initialization = _init();
     // Periodically verify account status from backend to instantly enforce suspensions
-    _statusTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+    _statusTimer = Timer.periodic(const Duration(seconds: 300), (timer) {
       checkUserStatusSilently();
     });
   }
@@ -91,9 +91,9 @@ class UserProvider extends ChangeNotifier {
         
     final cleanedPhone = _phone.replaceAll(RegExp(r'\D'), '');
     final hasPhone = _phone.isNotEmpty && 
-        _phone != '+91 00000 00000' && 
-        _phone != '+910000000000' &&
-        cleanedPhone.length >= 10;
+        !_phone.contains('00000 00000') && 
+        !_phone.contains('0000000000') &&
+        cleanedPhone.length >= 9;
     
     // Profile is complete if user has name, email, and phone number
     return hasName && hasEmail && hasPhone;
@@ -101,9 +101,14 @@ class UserProvider extends ChangeNotifier {
 
   String _normalizePhone(String phone) {
     String cleaned = phone.replaceAll(RegExp(r'[^\d+]'), '');
-    if (cleaned.length == 10 && !cleaned.startsWith('+')) {
+    if (cleaned.startsWith('+')) {
+      return cleaned;
+    }
+    if (cleaned.length == 10) {
       cleaned = '+91$cleaned';
     } else if (cleaned.startsWith('91') && cleaned.length == 12) {
+      cleaned = '+$cleaned';
+    } else if (cleaned.isNotEmpty) {
       cleaned = '+$cleaned';
     }
     return cleaned;

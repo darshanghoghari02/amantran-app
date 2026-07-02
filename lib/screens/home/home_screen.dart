@@ -223,6 +223,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: Container(
                   height: 55,
+                  alignment: Alignment.center,
                   decoration: BoxDecoration(
                     color: Colors.white,
                     borderRadius: BorderRadius.circular(27.5),
@@ -239,6 +240,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     onChanged: (value) {
                       _searchQuery.value = value;
                     },
+                    textAlignVertical: TextAlignVertical.center,
                     decoration: InputDecoration(
                       hintText: lang.searchHint,
                       hintStyle: const TextStyle(color: Colors.black38, fontSize: 14),
@@ -446,7 +448,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       crossAxisCount: 2,
                       crossAxisSpacing: 15,
                       mainAxisSpacing: 20,
-                      childAspectRatio: 0.75,
+                      childAspectRatio: 0.62,
                     ),
                     itemBuilder: (context, index) {
                       final template = favorites[index];
@@ -619,7 +621,7 @@ class _HomeScreenState extends State<HomeScreen> {
               crossAxisCount: 2,
               crossAxisSpacing: 15,
               mainAxisSpacing: 20,
-              childAspectRatio: 0.75,
+              childAspectRatio: 0.62,
             ),
             itemBuilder: (context, index) {
               final t = results[index];
@@ -678,30 +680,35 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
         const SizedBox(height: 15),
         SizedBox(
-          height: 200,
+          height: 230,
           child: ListView.builder(
             padding: const EdgeInsets.only(left: 20),
             scrollDirection: Axis.horizontal,
             itemCount: items.length,
             itemBuilder: (context, index) {
               final design = items[index];
+              final editAction = () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => EditorScreen(
+                      template: design.template,
+                      designId: design.id,
+                      initialElements: design.elements,
+                    ),
+                  ),
+                );
+              };
+
               return Container(
-                width: 140,
+                width: 150,
                 margin: const EdgeInsets.only(right: 15),
                 child: DraftCard(
                   design: design,
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(
-                        builder: (_) => EditorScreen(
-                          template: design.template,
-                          designId: design.id,
-                          initialElements: design.elements,
-                        ),
-                      ),
-                    );
-                  },
+                  showActions: true,
+                  onDelete: () => _showDeleteDesignConfirm(design),
+                  onEdit: editAction,
+                  onTap: editAction,
                 ),
               );
             },
@@ -746,7 +753,7 @@ class _HomeScreenState extends State<HomeScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 20),
           gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: 2,
-            childAspectRatio: 0.8,
+            childAspectRatio: 0.65,
             crossAxisSpacing: 15,
             mainAxisSpacing: 20,
           ),
@@ -838,7 +845,7 @@ class _TemplateCard extends StatelessWidget {
         : title.split(' ').map((w) => w.isEmpty ? w : '${w[0].toUpperCase()}${w.substring(1)}').join(' ');
 
     return Container(
-      width: isGrid ? null : 160,
+      width: isGrid ? null : 150,
       margin: isGrid ? EdgeInsets.zero : const EdgeInsets.only(right: 15),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.center,
@@ -863,23 +870,30 @@ class _TemplateCard extends StatelessWidget {
                     AppImage(
                       src: template.thumbnail,
                       fit: BoxFit.cover,
+                      width: 150,
+                      height: 220,
                     ),
-                    // Favourite button — isolated rebuild
+                    // Premium badge on left, Favorite button on right
                     Positioned(
                       top: 10,
                       left: 10,
-                      child: _FavoriteButton(template: template, lang: lang),
-                    ),
-                    if (template.isPremium)
-                      const Positioned(
-                        top: 10,
-                        right: 10,
-                        child: PremiumBadge(
-                          fontSize: 7.5,
-                          iconSize: 9.0,
-                          padding: EdgeInsets.symmetric(horizontal: 6, vertical: 3.5),
-                        ),
+                      right: 10,
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        crossAxisAlignment: CrossAxisAlignment.center,
+                        children: [
+                          if (template.isPremium)
+                            const PremiumBadge(
+                              fontSize: 7.5,
+                              iconSize: 9.0,
+                              padding: EdgeInsets.symmetric(horizontal: 6, vertical: 3.5),
+                            )
+                          else
+                            const SizedBox.shrink(),
+                          _FavoriteButton(template: template, lang: lang),
+                        ],
                       ),
+                    ),
                   ],
                 ),
               ),

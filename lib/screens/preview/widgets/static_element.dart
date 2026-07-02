@@ -5,6 +5,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:url_launcher/url_launcher_string.dart';
 import '../../../models/template_element.dart';
 import '../../../providers/invitation_provider.dart';
+import '../../../widgets/app_image.dart';
 import '../../../utils/image_resolver.dart';
 
 /// A read-only version of DraggableElement for the preview screens.
@@ -38,7 +39,9 @@ class StaticElement extends StatelessWidget {
     Widget content = SizedBox(
       width: element.width * scaleX,
       height: element.height * scaleY,
-      child: _buildContent(context),
+      child: RepaintBoundary(
+        child: _buildContent(context),
+      ),
     );
 
     // Make map elements clickable in preview
@@ -81,7 +84,7 @@ class StaticElement extends StatelessWidget {
           padding: EdgeInsets.zero,
           child: Text(
             element.getDisplayText(activeLanguage),
-            textAlign: element.textAlign,
+            textAlign: element.getTextAlignForLanguage(activeLanguage),
             textDirection: TemplateElement.textDirectionFor(activeLanguage),
             softWrap: true,
             overflow: TextOverflow.visible,
@@ -95,7 +98,7 @@ class StaticElement extends StatelessWidget {
           final idLower = element.id.toLowerCase();
           final pathLower = (element.assetPath ?? '').toLowerCase();
           if (idLower.contains('ganesh') || pathLower.contains('ganesh')) {
-            final provider = Provider.of<InvitationProvider>(context, listen: true);
+            final provider = Provider.of<InvitationProvider>(context, listen: false);
             if (provider.logo.type == LogoType.customSvg) {
               if (provider.logo.rawSvgContent != null) {
                 return SvgPicture.string(
@@ -110,6 +113,14 @@ class StaticElement extends StatelessWidget {
                   if (path.startsWith('http://') || path.startsWith('https://')) {
                     return SvgPicture.network(
                       path,
+                      width: element.width * scaleX,
+                      height: element.height * scaleY,
+                      fit: BoxFit.contain,
+                    );
+                  }
+                  if (path.startsWith('uploads/') || path.startsWith('/uploads/')) {
+                    return SvgPicture.network(
+                      resolveImageUrl(path),
                       width: element.width * scaleX,
                       height: element.height * scaleY,
                       fit: BoxFit.contain,
@@ -133,8 +144,16 @@ class StaticElement extends StatelessWidget {
                       );
                     }
                   }
-                  return SvgPicture.file(
-                    File(path),
+                  if (File(path).existsSync()) {
+                    return SvgPicture.file(
+                      File(path),
+                      width: element.width * scaleX,
+                      height: element.height * scaleY,
+                      fit: BoxFit.contain,
+                    );
+                  }
+                  return SvgPicture.network(
+                    resolveImageUrl(path),
                     width: element.width * scaleX,
                     height: element.height * scaleY,
                     fit: BoxFit.contain,
@@ -143,34 +162,8 @@ class StaticElement extends StatelessWidget {
               }
             } else if (provider.logo.type == LogoType.customFile && provider.logo.customFilePath != null) {
               final String path = provider.logo.customFilePath!;
-              if (path.startsWith('http://') || path.startsWith('https://')) {
-                return Image.network(
-                  path,
-                  fit: BoxFit.contain,
-                  width: element.width * scaleX,
-                  height: element.height * scaleY,
-                );
-              }
-              if (path.contains('assets/')) {
-                final clean = cleanAssetPath(path);
-                if (isNetworkImage(clean)) {
-                  return Image.network(
-                    resolveImageUrl(clean),
-                    fit: BoxFit.contain,
-                    width: element.width * scaleX,
-                    height: element.height * scaleY,
-                  );
-                } else {
-                  return Image.asset(
-                    clean,
-                    fit: BoxFit.contain,
-                    width: element.width * scaleX,
-                    height: element.height * scaleY,
-                  );
-                }
-              }
-              return Image.file(
-                File(path),
+              return AppImage(
+                src: path,
                 fit: BoxFit.contain,
                 width: element.width * scaleX,
                 height: element.height * scaleY,
@@ -178,34 +171,8 @@ class StaticElement extends StatelessWidget {
             } else {
               final String? path = provider.logo.presetAsset ?? element.assetPath;
               if (path != null && path.isNotEmpty) {
-                if (path.startsWith('http://') || path.startsWith('https://')) {
-                  return Image.network(
-                    path,
-                    fit: BoxFit.contain,
-                    width: element.width * scaleX,
-                    height: element.height * scaleY,
-                  );
-                }
-                if (path.contains('assets/')) {
-                  final clean = cleanAssetPath(path);
-                  if (isNetworkImage(clean)) {
-                    return Image.network(
-                      resolveImageUrl(clean),
-                      fit: BoxFit.contain,
-                      width: element.width * scaleX,
-                      height: element.height * scaleY,
-                    );
-                  } else {
-                    return Image.asset(
-                      clean,
-                      fit: BoxFit.contain,
-                      width: element.width * scaleX,
-                      height: element.height * scaleY,
-                    );
-                  }
-                }
-                return Image.file(
-                  File(path),
+                return AppImage(
+                  src: path,
                   fit: BoxFit.contain,
                   width: element.width * scaleX,
                   height: element.height * scaleY,
@@ -215,20 +182,12 @@ class StaticElement extends StatelessWidget {
           }
         }
         if (element.assetPath != null && element.assetPath!.isNotEmpty) {
-          final isNetwork = isNetworkImage(element.assetPath!);
-          return isNetwork
-              ? Image.network(
-                  resolveImageUrl(element.assetPath!),
-                  fit: BoxFit.contain,
-                  width: element.width * scaleX,
-                  height: element.height * scaleY,
-                )
-              : Image.asset(
-                  cleanAssetPath(element.assetPath!),
-                  fit: BoxFit.contain,
-                  width: element.width * scaleX,
-                  height: element.height * scaleY,
-                );
+          return AppImage(
+            src: element.assetPath!,
+            fit: BoxFit.contain,
+            width: element.width * scaleX,
+            height: element.height * scaleY,
+          );
         }
         return const SizedBox.shrink();
 
@@ -243,27 +202,19 @@ class StaticElement extends StatelessWidget {
 
       case ElementType.decorative:
         if (element.assetPath != null && element.assetPath!.isNotEmpty) {
-          final isNetwork = isNetworkImage(element.assetPath!);
-          return isNetwork
-              ? Image.network(
-                  resolveImageUrl(element.assetPath!),
-                  fit: BoxFit.contain,
-                  width: element.width * scaleX,
-                  height: element.height * scaleY,
-                )
-              : Image.asset(
-                  cleanAssetPath(element.assetPath!),
-                  fit: BoxFit.contain,
-                  width: element.width * scaleX,
-                  height: element.height * scaleY,
-                );
+          return AppImage(
+            src: element.assetPath!,
+            fit: BoxFit.contain,
+            width: element.width * scaleX,
+            height: element.height * scaleY,
+          );
         }
         return const SizedBox.shrink();
     }
   }
 
   Alignment _getAlignment() {
-    switch (element.textAlign) {
+    switch (element.getTextAlignForLanguage(activeLanguage)) {
       case TextAlign.left:
       case TextAlign.start:
         return Alignment.centerLeft;
@@ -317,8 +268,8 @@ double getMaxConstraintWidth(String elementId) {
                              id.endsWith('_right');
 
   if (isLeftColumn || isRightColumn) {
-    return 160.0;
+    return 480.0;
   }
-  return 320.0;
+  return 960.0;
 }
 
